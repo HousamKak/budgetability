@@ -230,7 +230,7 @@ export function MonthlyBookDialog({
                                     <div className="flex gap-1 justify-end">
                                       <button
                                         onClick={saveExpenseEdit}
-                                        className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors cursor-pointer flex items-center gap-1"
+                                        className="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors cursor-pointer flex items-center gap-1"
                                       >
                                         <Check className="w-3 h-3" /> Save
                                       </button>
@@ -385,7 +385,7 @@ export function MonthlyBookDialog({
                                     <div className="flex gap-1 justify-end">
                                       <button
                                         onClick={savePlanEdit}
-                                        className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors cursor-pointer flex items-center gap-1"
+                                        className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors cursor-pointer flex items-center gap-1"
                                       >
                                         <Check className="w-3 h-3" /> Save
                                       </button>

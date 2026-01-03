@@ -362,7 +362,7 @@ export function Calendar({
                             <div className="flex gap-1 justify-end">
                               <button
                                 onClick={(e) => savePlanEdit(p.id, e)}
-                                className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors cursor-pointer flex items-center gap-1"
+                                className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors cursor-pointer flex items-center gap-1"
                               >
                                 <Check className="w-3 h-3" /> Save
                               </button>
@@ -391,6 +391,13 @@ export function Calendar({
                               )}
                             </div>
                             <div className="flex gap-1">
+                              <button
+                                className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors cursor-pointer handwriting h-7"
+                                onClick={() => onMarkPlanPaid(p)}
+                                title="Mark as paid"
+                              >
+                                ✓ Paid
+                              </button>
                               {onUpdatePlan && (
                                 <Button
                                   size="icon"
@@ -402,13 +409,6 @@ export function Calendar({
                                   <Pencil className="w-3.5 h-3.5 text-amber-600" />
                                 </Button>
                               )}
-                              <button
-                                className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors cursor-pointer handwriting h-7"
-                                onClick={() => onMarkPlanPaid(p)}
-                                title="Mark as paid"
-                              >
-                                ✓ Paid
-                              </button>
                               <Button
                                 size="icon"
                                 variant="ghost"
@@ -490,7 +490,7 @@ export function Calendar({
                             <div className="flex gap-1 justify-end">
                               <button
                                 onClick={(ev) => saveExpenseEdit(e.id, ev)}
-                                className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors cursor-pointer flex items-center gap-1"
+                                className="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors cursor-pointer flex items-center gap-1"
                               >
                                 <Check className="w-3 h-3" /> Save
                               </button>

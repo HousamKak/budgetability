@@ -1,4 +1,4 @@
-# Daily Budget App
+# Budgetability
 
 A modern, responsive budget tracking application with Supabase backend and GitHub Pages deployment.
 
@@ -16,6 +16,7 @@ A modern, responsive budget tracking application with Supabase backend and GitHu
 1. **Create a Supabase project** at [supabase.com](https://supabase.com)
 
 2. **Run the database schema** in your Supabase SQL editor:
+
    ```sql
    -- Copy and paste the contents from supabase/schema.sql
    ```
@@ -29,6 +30,7 @@ A modern, responsive budget tracking application with Supabase backend and GitHu
 1. **Fork this repository**
 
 2. **Configure repository secrets** (Settings > Secrets and variables > Actions):
+
    ```
    VITE_SUPABASE_URL=your_supabase_project_url
    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
@@ -40,6 +42,7 @@ A modern, responsive budget tracking application with Supabase backend and GitHu
 ### 3. Deploy
 
 Push to the `main` branch and GitHub Actions will automatically:
+
 - Build the React app
 - Deploy to GitHub Pages
 - Your app will be available at: `https://yourusername.github.io/repository-name`
@@ -82,12 +85,14 @@ Three main tables with Row Level Security:
 ## Deployment Details
 
 ### Supabase Setup
+
 - PostgreSQL database with Row Level Security
 - Built-in authentication system
 - Real-time subscriptions ready
 - Automatic backups and scaling
 
 ### GitHub Pages Deployment
+
 - Automatic builds on push to main
 - Optimized static site delivery
 - Custom domain support
@@ -96,12 +101,14 @@ Three main tables with Row Level Security:
 ## Environment Variables
 
 Production environment (GitHub Secrets):
+
 ```
 VITE_SUPABASE_URL=your_supabase_project_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
 Local development (.env):
+
 ```
 VITE_SUPABASE_URL=your_supabase_project_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key

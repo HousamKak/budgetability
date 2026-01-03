@@ -1,4 +1,4 @@
--- Daily Budget App - Complete Database Schema
+-- Budgetability - Complete Database Schema
 -- Run this in Supabase SQL Editor
 
 -- Enable UUID extension

@@ -1,10 +1,5 @@
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Expense, type PlanItem } from "@/lib/data-service";
@@ -13,7 +8,6 @@ import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { Check, Pencil, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CategoryPicker } from "./CategoryPicker";
-import { Plus } from "./Icons";
 
 type DialogMode = "expense" | "plan";
 
@@ -255,13 +249,6 @@ export function ExpenseDialog({
           }
         }}
       >
-        <DialogTrigger asChild>
-          <Button className={dialogStyles.buttons.primary}>
-            <Plus className="mr-0 sm:mr-1 w-3 h-3 sm:w-4 sm:h-4" />
-            <span className="hidden sm:inline">Quick add</span>
-            <span className="sm:hidden">Add</span>
-          </Button>
-        </DialogTrigger>
         <DialogContent
           className={cn("sm:max-w-md", bookMode && "sm:max-w-4xl")}
           aria-describedby={undefined}

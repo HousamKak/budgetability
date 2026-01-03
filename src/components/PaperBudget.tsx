@@ -1,4 +1,5 @@
-import { AuthButton, AuthDialog } from "@/components/Auth";
+import { AuthDialog } from "@/components/Auth";
+import { ProfilePanel } from "@/components/ProfilePanel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -6,7 +7,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { dataService, type Expense, type PlanItem } from "@/lib/data-service";
 import { supabase } from "@/lib/supabase";
@@ -15,19 +15,12 @@ import { useEffect, useMemo, useState } from "react";
 // Import our new components
 import { layoutStyles } from "@/styles";
 import { Calendar } from "./budget/Calendar";
+import { DashboardHeader } from "./budget/DashboardHeader";
 import { ExpenseDialog } from "./budget/ExpenseDialog";
-import {
-  Book,
-  CalendarIcon,
-  ChevronLeft,
-  ChevronRight,
-  Trash,
-  Wallet,
-} from "./budget/Icons";
+import { CalendarIcon, Trash, Wallet } from "./budget/Icons";
 import { MonthlyBookDialog } from "./budget/MonthlyBookDialog";
 import { PlannerPanel } from "./budget/PlannerPanel";
 import { QuoteModal } from "./budget/QuoteModal";
-import { SummaryCard } from "./budget/SummaryCard";
 import { datePickerStyles, getRandomQuote } from "./budget/constants";
 import { useDebounce } from "./budget/hooks/useDebounce";
 import { makeId, monthKey, weekCount, weekIndexOf, ymd } from "./budget/utils";
@@ -128,8 +121,6 @@ export default function PaperBudget() {
     () => plans.reduce((s, p) => s + p.amount, 0),
     [plans]
   );
-  const leftNow = Math.max(0, budget - totalSpent);
-  const leftAfterPlanned = budget - totalSpent - totalPlanned;
 
   // nav
   function gotoPrev() {
@@ -437,241 +428,145 @@ export default function PaperBudget() {
         </div>
       )}
 
-      {/* top bar (slightly tighter on mobile) */}
-      <div className="mx-auto max-w-7xl px-1 sm:px-2 pt-4 sm:pt-6 pb-3">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-1 sm:gap-2">
-            <Button
-              variant="ghost"
-              onClick={gotoPrev}
-              className="apple-button rounded-2xl shadow-sm bg-white/60 hover:bg-white/80 border border-amber-200/50 h-8 w-8 sm:h-10 sm:w-10 p-0"
-              aria-label="Previous month"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <h1 className="text-lg sm:text-2xl lg:text-3xl font-bold tracking-wide drop-shadow-[0_1px_0_rgba(0,0,0,0.1)] handwriting">
-              {monthLabel}
-            </h1>
-            <Button
-              variant="ghost"
-              onClick={gotoNext}
-              className="rounded-2xl shadow-sm bg-white/60 hover:bg-white/80 border border-amber-200/50 cursor-pointer h-8 w-8 sm:h-10 sm:w-10 p-0"
-              aria-label="Next month"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+      {/* New Dashboard Header with Profile, Navigation, and Summary Cards */}
+      <DashboardHeader
+        monthLabel={monthLabel}
+        year={year}
+        month={month}
+        budget={budget}
+        budgetInput={budgetInput}
+        totalSpent={totalSpent}
+        totalPlanned={totalPlanned}
+        onBudgetInputChange={setBudgetInput}
+        onGotoPrev={gotoPrev}
+        onGotoNext={gotoNext}
+        onOpenMonthlyBook={() => setMonthlyBookOpen(true)}
+        onOpenClearDialog={() => setClearDialogOpen(true)}
+        onOpenQuickAdd={() => setOpen(true)}
+      />
 
-            {/* Monthly book button */}
-            <button
-              onClick={() => setMonthlyBookOpen(true)}
-              className="p-2 rounded-xl bg-amber-100/60 hover:bg-amber-200/80 border border-amber-300/50 cursor-pointer transition-all duration-200 hover:scale-110 shadow-sm h-8 w-8 sm:h-10 sm:w-10"
-              title="Open monthly book"
-            >
-              <Book className="h-4 w-4 sm:h-5 sm:w-5 text-amber-700" />
-            </button>
+      {/* Profile Panel at bottom left */}
+      <ProfilePanel onOpenAuthDialog={() => setShowAuthDialog(true)} />
 
-            {/* Clear month button - papery cartoony style */}
-            <div className="relative ml-3">
-              <Button
-                variant="outline"
-                size="sm"
-                className="relative bg-gradient-to-br from-red-100 via-red-50 to-pink-50 border-2 border-red-300/70 rounded-2xl px-4 py-2 shadow-md transform hover:scale-105 transition-all duration-200 text-red-700 hover:text-red-800 hover:bg-gradient-to-br hover:from-red-200 hover:via-red-100 hover:to-pink-100 cursor-pointer handwriting"
-                onClick={() => setClearDialogOpen(true)}
-              >
-                {/* Paper texture overlay */}
-                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_1px_1px,rgba(220,38,38,0.3)_1px,transparent_0)] bg-[length:8px_8px] rounded-2xl"></div>
-                {/* Torn edge effect */}
-                <div className="absolute -top-0.5 left-2 right-2 h-1 bg-red-200/50 rounded-t-2xl"></div>
-                <div className="relative flex items-center gap-1.5">
-                  <Trash className="w-4 h-4" />
-                  <span className="text-sm font-bold hidden sm:inline">
-                    Clear this month
-                  </span>
-                </div>
-              </Button>
-            </div>
-          </div>
+      {/* ExpenseDialog - moved outside header for cleaner structure */}
+      <ExpenseDialog
+        open={open}
+        onOpenChange={handleDialogOpenChange}
+        formDate={formDate}
+        onFormDateChange={setFormDate}
+        amount={amount}
+        onAmountChange={setAmount}
+        category={category}
+        onCategoryChange={setCategory}
+        note={note}
+        onNoteChange={setNote}
+        onSubmit={submitExpense}
+        onSubmitPlan={submitPlan}
+        dayExpenses={expenses.filter((e) => e.date === formDate)}
+        dayPlans={plans.filter((p) => p.targetDate === formDate)}
+        onMarkPlanPaid={markPlanPaid}
+        onRemovePlan={removePlan}
+        onRemoveExpense={removeExpense}
+        editingExpense={editingExpense}
+        editingPlan={editingPlan}
+        onUpdateExpense={handleUpdateExpense}
+        onUpdatePlan={handleUpdatePlan}
+        onInlineUpdateExpense={updateExpense}
+        onInlineUpdatePlan={updatePlan}
+        onEditExpense={handleEditExpense}
+        onEditPlan={handleEditPlan}
+        hideTrigger
+      />
+      <MonthlyBookDialog
+        open={monthlyBookOpen}
+        onOpenChange={setMonthlyBookOpen}
+        monthLabel={monthLabel}
+        expenses={expenses}
+        plans={plans}
+        onMarkPlanPaid={markPlanPaid}
+        onRemovePlan={removePlan}
+        onRemoveExpense={removeExpense}
+        onEditExpense={handleEditExpense}
+        onEditPlan={handleEditPlan}
+        onUpdateExpense={updateExpense}
+        onUpdatePlan={updatePlan}
+      />
 
-          <div className="flex items-center gap-1 sm:gap-3">
-            <div className="flex items-center gap-1 sm:gap-2 bg-white/80 rounded-xl px-2 sm:px-3 py-1 sm:py-2 shadow-sm border border-amber-200">
-              <Wallet className="w-4 h-4 text-stone-600" />
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                value={budgetInput}
-                onChange={(e) => setBudgetInput(e.target.value)}
-                placeholder="0.00"
-                inputMode="decimal"
-                aria-label="Monthly budget amount"
-                className="h-6 sm:h-8 w-20 sm:w-28 bg-transparent border-none focus-visible:ring-0 p-0 text-right font-semibold text-sm"
-              />
-              <span className="text-xs sm:text-sm opacity-70 hidden sm:inline">
-                budget
-              </span>
-            </div>
+      {/* Clear Month Confirmation Dialog */}
+      <Dialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
+        <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
+          <div className="relative bg-gradient-to-br from-red-100 via-red-50 to-pink-50 border-2 border-red-300/70 rounded-2xl p-6 shadow-xl overflow-hidden">
+            {/* Paper texture overlay */}
+            <div className="absolute inset-0 opacity-15 bg-[radial-gradient(circle_at_1px_1px,rgba(220,38,38,0.3)_1px,transparent_0)] bg-[length:12px_12px] rounded-2xl pointer-events-none"></div>
 
-            <ExpenseDialog
-              open={open}
-              onOpenChange={handleDialogOpenChange}
-              formDate={formDate}
-              onFormDateChange={setFormDate}
-              amount={amount}
-              onAmountChange={setAmount}
-              category={category}
-              onCategoryChange={setCategory}
-              note={note}
-              onNoteChange={setNote}
-              onSubmit={submitExpense}
-              onSubmitPlan={submitPlan}
-              dayExpenses={expenses.filter((e) => e.date === formDate)}
-              dayPlans={plans.filter((p) => p.targetDate === formDate)}
-              onMarkPlanPaid={markPlanPaid}
-              onRemovePlan={removePlan}
-              onRemoveExpense={removeExpense}
-              editingExpense={editingExpense}
-              editingPlan={editingPlan}
-              onUpdateExpense={handleUpdateExpense}
-              onUpdatePlan={handleUpdatePlan}
-              onInlineUpdateExpense={updateExpense}
-              onInlineUpdatePlan={updatePlan}
-              onEditExpense={handleEditExpense}
-              onEditPlan={handleEditPlan}
-            />
+            {/* Red tape effect */}
+            <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-16 h-6 bg-red-300/60 rounded-sm shadow-sm transform rotate-3"></div>
 
-            <MonthlyBookDialog
-              open={monthlyBookOpen}
-              onOpenChange={setMonthlyBookOpen}
-              monthLabel={monthLabel}
-              expenses={expenses}
-              plans={plans}
-              onMarkPlanPaid={markPlanPaid}
-              onRemovePlan={removePlan}
-              onRemoveExpense={removeExpense}
-              onEditExpense={handleEditExpense}
-              onEditPlan={handleEditPlan}
-              onUpdateExpense={updateExpense}
-              onUpdatePlan={updatePlan}
-            />
+            {/* Torn edge effect */}
+            <div className="absolute -top-1 left-4 right-4 h-3 bg-[repeating-linear-gradient(90deg,#fca5a5,#fca5a5_8px,#fecaca_8px,#fecaca_16px)] rounded-t-2xl opacity-70"></div>
 
-            <AuthButton />
-          </div>
-        </div>
-
-        {/* Clear Month Confirmation Dialog */}
-        <Dialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
-          <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
-            <div className="relative bg-gradient-to-br from-red-100 via-red-50 to-pink-50 border-2 border-red-300/70 rounded-2xl p-6 shadow-xl overflow-hidden">
-              {/* Paper texture overlay */}
-              <div className="absolute inset-0 opacity-15 bg-[radial-gradient(circle_at_1px_1px,rgba(220,38,38,0.3)_1px,transparent_0)] bg-[length:12px_12px] rounded-2xl pointer-events-none"></div>
-
-              {/* Red tape effect */}
-              <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-16 h-6 bg-red-300/60 rounded-sm shadow-sm transform rotate-3"></div>
-
-              {/* Torn edge effect */}
-              <div className="absolute -top-1 left-4 right-4 h-3 bg-[repeating-linear-gradient(90deg,#fca5a5,#fca5a5_8px,#fecaca_8px,#fecaca_16px)] rounded-t-2xl opacity-70"></div>
-
-              <div className="relative z-10">
-                <DialogHeader>
-                  <DialogTitle className="font-bold text-xl text-red-700 handwriting text-center mb-4">
-                    ⚠️ Clear Month Data
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <p className="text-sm text-stone-700">
-                    This will permanently delete <strong>all data</strong> for{" "}
-                    <strong>{monthLabel}</strong>:
+            <div className="relative z-10">
+              <DialogHeader>
+                <DialogTitle className="font-bold text-xl text-red-700 handwriting text-center mb-4">
+                  ⚠️ Clear Month Data
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <p className="text-sm text-stone-700">
+                  This will permanently delete <strong>all data</strong> for{" "}
+                  <strong>{monthLabel}</strong>:
+                </p>
+                <ul className="text-sm text-stone-600 space-y-1 ml-4">
+                  <li>
+                    • Budget amount: <strong>${budget.toFixed(2)}</strong>
+                  </li>
+                  <li>
+                    • All expenses:{" "}
+                    <strong>
+                      {expenses.length} items (${totalSpent.toFixed(2)})
+                    </strong>
+                  </li>
+                  <li>
+                    • All planned items: <strong>{plans.length} items</strong>
+                  </li>
+                </ul>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-sm text-red-800 font-medium">
+                    ⚠️ This action cannot be undone!
                   </p>
-                  <ul className="text-sm text-stone-600 space-y-1 ml-4">
-                    <li>
-                      • Budget amount: <strong>${budget.toFixed(2)}</strong>
-                    </li>
-                    <li>
-                      • All expenses:{" "}
-                      <strong>
-                        {expenses.length} items (${totalSpent.toFixed(2)})
-                      </strong>
-                    </li>
-                    <li>
-                      • All planned items: <strong>{plans.length} items</strong>
-                    </li>
-                  </ul>
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                    <p className="text-sm text-red-800 font-medium">
-                      ⚠️ This action cannot be undone!
-                    </p>
-                  </div>
-                  <div className="flex justify-end gap-2 pt-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => setClearDialogOpen(false)}
-                      className="cursor-pointer handwriting rounded-xl bg-white/80 hover:bg-stone-100 border-stone-300 hover:border-stone-400 text-stone-700 hover:text-stone-900 shadow-sm"
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      className="bg-red-600 hover:bg-red-700 text-white cursor-pointer handwriting rounded-xl shadow-sm"
-                      onClick={() => {
-                        clearMonth();
-                        setClearDialogOpen(false);
-                      }}
-                    >
-                      <Trash className="w-4 h-4 mr-1" />
-                      Clear All Data
-                    </Button>
-                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setClearDialogOpen(false)}
+                    className="cursor-pointer handwriting rounded-xl bg-white/80 hover:bg-stone-100 border-stone-300 hover:border-stone-400 text-stone-700 hover:text-stone-900 shadow-sm"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    className="bg-red-600 hover:bg-red-700 text-white cursor-pointer handwriting rounded-xl shadow-sm"
+                    onClick={() => {
+                      clearMonth();
+                      setClearDialogOpen(false);
+                    }}
+                  >
+                    <Trash className="w-4 h-4 mr-1" />
+                    Clear All Data
+                  </Button>
                 </div>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
-      </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* layout: calendar + planner */}
       <div
-        className={`mx-auto max-w-7xl px-1 sm:px-2 pb-2 lg:pb-12 mobile-content-area lg:flex-1 mobile-tab-${activeTab}`}
+        className={`mx-auto max-w-7xl px-2 sm:px-4 pb-2 lg:pb-12 mobile-content-area lg:flex-1 mobile-tab-${activeTab}`}
       >
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_520px] gap-4 items-start h-full lg:h-auto">
-          {/* Left column: Summary + Calendar */}
+          {/* Left column: Calendar */}
           <div className="space-y-4">
-            {/* quick summary - spans above calendar only */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
-              <SummaryCard
-                title="Starting cash"
-                value={budget}
-                titleTooltip="Your monthly budget amount. This is the total money you have allocated for this month."
-              />
-              <SummaryCard
-                title="Spent so far"
-                value={totalSpent}
-                red
-                leftAmount={leftNow}
-                leftLabel="left now"
-                titleTooltip="Total amount you have already spent this month. Calculated by summing all your recorded expenses."
-                leftLabelTooltip={`Money remaining right now. Calculated as: Starting cash - Spent so far = $${budget.toFixed(
-                  2
-                )} - $${totalSpent.toFixed(2)} = $${leftNow.toFixed(2)}`}
-              />
-              <SummaryCard
-                title="Planned so far"
-                value={totalPlanned}
-                blue
-                leftAmount={leftAfterPlanned}
-                leftLabel="left after"
-                leftAmountRed={leftAfterPlanned < 0}
-                titleTooltip="Total amount you have planned to spend but haven't spent yet. This includes all your planned items that are not yet marked as paid."
-                leftLabelTooltip={`Money that will remain after all planned expenses. ${
-                  leftAfterPlanned < 0
-                    ? "Negative means you have overplanned beyond your remaining budget."
-                    : ""
-                } Calculated as: Starting cash - Spent so far - Planned so far = $${budget.toFixed(
-                  2
-                )} - $${totalSpent.toFixed(2)} - $${totalPlanned.toFixed(
-                  2
-                )} = $${leftAfterPlanned.toFixed(2)}`}
-              />
-            </div>
-
             {/* Calendar - show on mobile only when calendar tab active, always show on desktop */}
             <div
               className="mobile-calendar-area lg:h-auto lg:flex lg:flex-col lg:max-h-[85vh]"
@@ -702,11 +597,8 @@ export default function PaperBudget() {
             </div>
           </div>
 
-          {/* Right column: Empty space above + Planner Panel */}
-          <div className="space-y-4">
-            {/* Empty space to match the height of summary cards */}
-            <div className="hidden lg:block h-[100px]"></div>
-
+          {/* Right column: Planner Panel */}
+          <div>
             {/* Planner Panel (on mobile: toggled by bottom tabs) */}
             <div
               className="mobile-planner-area lg:mt-0"

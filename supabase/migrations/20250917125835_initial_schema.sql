@@ -1,4 +1,4 @@
--- Initial schema migration for Daily Budget App
+-- Initial schema migration for Budgetability
 -- This creates all the core tables, policies, functions, and triggers
 
 -- Enable UUID extension

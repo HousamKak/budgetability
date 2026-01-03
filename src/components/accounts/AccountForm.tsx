@@ -86,24 +86,25 @@ export function AccountForm({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          "sm:max-w-md",
+          "sm:max-w-md rounded-3xl border-4",
           paperTheme.colors.background.cardGradient,
-          paperTheme.colors.borders.paper
+          paperTheme.colors.borders.paper,
+          paperTheme.effects.shadow
         )}
         aria-describedby={undefined}
       >
         {/* Paper texture */}
         <div
           className={cn(
-            "absolute inset-0 opacity-15 pointer-events-none rounded-lg",
+            "absolute inset-0 opacity-15 pointer-events-none rounded-3xl",
             paperTheme.effects.paperTexture
           )}
         />
 
-        <DialogHeader className="relative">
+        <DialogHeader className="relative pb-4">
           <DialogTitle
             className={cn(
-              "text-xl",
+              "text-2xl",
               paperTheme.colors.text.accent,
               paperTheme.fonts.handwriting
             )}
@@ -112,10 +113,10 @@ export function AccountForm({
           </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="relative space-y-4 pt-2">
+        <form onSubmit={handleSubmit} className="relative space-y-5 pt-2">
           {/* Account Name */}
-          <div className="space-y-1.5">
-            <Label htmlFor="name" className={paperTheme.fonts.handwriting}>
+          <div className="space-y-2">
+            <Label htmlFor="name" className={cn("text-base", paperTheme.fonts.handwriting)}>
               Account Name
             </Label>
             <input
@@ -126,24 +127,24 @@ export function AccountForm({
               placeholder="e.g., Main Checking"
               required
               className={cn(
-                "w-full px-3 py-2 rounded-lg border text-sm",
+                "w-full px-4 py-3 rounded-xl border-2 text-sm shadow-sm",
                 paperTheme.colors.borders.amber,
                 paperTheme.colors.background.white,
-                "focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                "focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:shadow-md transition-shadow"
               )}
             />
           </div>
 
           {/* Account Type */}
-          <div className="space-y-1.5">
-            <Label className={paperTheme.fonts.handwriting}>Account Type</Label>
+          <div className="space-y-2">
+            <Label className={cn("text-base", paperTheme.fonts.handwriting)}>Account Type</Label>
             <Select
               value={accountType}
               onValueChange={(v) => setAccountType(v as Account["accountType"])}
             >
               <SelectTrigger
                 className={cn(
-                  "w-full",
+                  "w-full rounded-xl border-2 shadow-sm",
                   paperTheme.colors.borders.amber,
                   paperTheme.colors.background.white
                 )}
@@ -163,12 +164,12 @@ export function AccountForm({
           </div>
 
           {/* Initial Balance */}
-          <div className="space-y-1.5">
-            <Label htmlFor="balance" className={paperTheme.fonts.handwriting}>
+          <div className="space-y-2">
+            <Label htmlFor="balance" className={cn("text-base", paperTheme.fonts.handwriting)}>
               {isEditing ? "Initial Balance" : "Starting Balance"}
             </Label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-500">
                 $
               </span>
               <input
@@ -180,10 +181,10 @@ export function AccountForm({
                 onChange={(e) => setInitialBalance(e.target.value)}
                 placeholder="0.00"
                 className={cn(
-                  "w-full pl-7 pr-3 py-2 rounded-lg border text-sm",
+                  "w-full pl-9 pr-4 py-3 rounded-xl border-2 text-sm shadow-sm",
                   paperTheme.colors.borders.amber,
                   paperTheme.colors.background.white,
-                  "focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                  "focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:shadow-md transition-shadow"
                 )}
               />
             </div>
@@ -201,7 +202,7 @@ export function AccountForm({
               type="checkbox"
               checked={isDefault}
               onChange={(e) => setIsDefault(e.target.checked)}
-              className="w-4 h-4 rounded border-amber-300 text-amber-500 focus:ring-amber-400"
+              className="w-4 h-4 rounded-md border-2 border-amber-300 text-amber-500 focus:ring-amber-400 shadow-sm"
             />
             <Label
               htmlFor="isDefault"
@@ -214,12 +215,12 @@ export function AccountForm({
           {/* Preview card */}
           <div
             className={cn(
-              "p-3 rounded-lg border",
+              "p-4 rounded-xl border-2 shadow-sm",
               paperTheme.colors.borders.amber,
               "bg-white/50"
             )}
           >
-            <p className="text-xs text-stone-500 mb-1">Preview</p>
+            <p className="text-xs text-stone-500 mb-2">Preview</p>
             <div className="flex items-center gap-2">
               <div
                 className="w-8 h-8 rounded-full flex items-center justify-center"
@@ -247,11 +248,11 @@ export function AccountForm({
           </div>
 
           {/* Actions */}
-          <div className="flex gap-2 pt-2">
+          <div className="flex gap-3 pt-4">
             <Button
               type="button"
               variant="outline"
-              className="flex-1"
+              className="flex-1 rounded-xl border-2 border-amber-900/20 shadow-sm hover:shadow-md transition-all py-5"
               onClick={() => onOpenChange(false)}
             >
               Cancel
@@ -259,7 +260,7 @@ export function AccountForm({
             <Button
               type="submit"
               className={cn(
-                "flex-1",
+                "flex-1 rounded-xl shadow-sm hover:shadow-md transition-all py-5",
                 "bg-amber-500 hover:bg-amber-600 text-white"
               )}
               disabled={!name.trim()}

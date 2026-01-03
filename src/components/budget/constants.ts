@@ -1,15 +1,3 @@
-// Categories for expenses and plans
-export const CATEGORIES = [
-  "groceries",
-  "household",
-  "transport",
-  "eating out",
-  "health",
-  "gifts",
-  "bills",
-  "other",
-];
-
 // Custom date picker styles
 export const datePickerStyles = `
   /* Custom styling for all date pickers */
@@ -171,7 +159,7 @@ export const DAILY_QUOTES = [
   "Every tracked expense is data for better decisions! 📊",
   "Your money works hardest when you work smartest! 🧠",
   "Budget with love, spend with logic! ❤️🧮",
-  "You're not restricting your life, you're designing it! 🎨"
+  "You're not restricting your life, you're designing it! 🎨",
 ];
 
 export const getRandomQuote = () => {
