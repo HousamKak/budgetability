@@ -525,6 +525,7 @@ export default function PaperBudget() {
         totalSpent={totalSpent}
         totalPlanned={totalPlanned}
         totalAllocated={totalAllocated}
+        linkedAccountsCount={allocations.length}
         onBudgetInputChange={setBudgetInput}
         onGotoPrev={gotoPrev}
         onGotoNext={gotoNext}

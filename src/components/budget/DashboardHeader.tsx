@@ -13,6 +13,7 @@ interface DashboardHeaderProps {
   totalSpent: number;
   totalPlanned: number;
   totalAllocated?: number;
+  linkedAccountsCount?: number;
   onBudgetInputChange: (value: string) => void;
   onGotoPrev: () => void;
   onGotoNext: () => void;
@@ -29,6 +30,7 @@ export function DashboardHeader({
   totalSpent,
   totalPlanned,
   totalAllocated,
+  linkedAccountsCount = 0,
   onBudgetInputChange,
   onGotoPrev,
   onGotoNext,
@@ -72,76 +74,122 @@ export function DashboardHeader({
           </div>
 
           {/* Action Buttons Row */}
-          <div className="flex items-center justify-center gap-2 flex-wrap">
-            {/* Budget Button */}
-            <button
-              onClick={onOpenBudgetSetup}
-              className={cn(
-                "flex items-center gap-2 rounded-xl px-3 py-2 shadow-sm cursor-pointer",
-                "bg-white/80 border border-amber-200 hover:bg-amber-50/80 hover:border-amber-300",
-                "transition-all duration-150"
-              )}
-              title="Click to setup budget and link accounts"
-            >
-              <Wallet className="w-4 h-4 text-amber-600" />
-              <div className="text-right">
-                <p
-                  className={cn(
-                    "text-sm font-semibold leading-none",
-                    paperTheme.fonts.handwriting,
-                    budget > 0 ? "text-stone-800" : "text-stone-400"
-                  )}
-                >
-                  {budget > 0 ? formatCurrency(budget) : "Set Budget"}
-                </p>
-                {totalAllocated !== undefined && totalAllocated > 0 && (
-                  <p className="text-xs text-stone-400 mt-0.5">
-                    {formatCurrency(totalAllocated)} allocated
-                  </p>
-                )}
-              </div>
-            </button>
-
+          <div className="flex items-center justify-center gap-1.5">
             {/* Quick Add Button */}
             <Button
               onClick={onOpenQuickAdd}
-              className="rounded-xl bg-amber-200/80 hover:bg-amber-300/80 text-stone-900 border border-amber-300 shadow-sm h-10 px-3"
+              className="rounded-lg bg-amber-200/80 hover:bg-amber-300/80 text-stone-900 border border-amber-300 shadow-sm h-8 px-2"
               title="Quick add expense or plan"
             >
-              <Plus className="w-4 h-4 mr-1" />
-              <span className="text-sm font-medium">Quick Add</span>
+              <Plus className="w-3.5 h-3.5 mr-0.5" />
+              <span className="text-xs font-medium">Quick Add</span>
             </Button>
 
             {/* Monthly Book */}
             <Button
               variant="ghost"
               onClick={onOpenMonthlyBook}
-              className="rounded-xl bg-amber-100/60 hover:bg-amber-200/80 border border-amber-300/50 h-10 px-3"
+              className="rounded-lg bg-amber-100/60 hover:bg-amber-200/80 border border-amber-300/50 h-8 px-2"
               title="Open monthly book"
             >
-              <Book className="h-4 w-4 text-amber-700" />
-              <span className="ml-1 text-sm font-medium text-amber-700">Book</span>
+              <Book className="h-3.5 w-3.5 text-amber-700" />
+              <span className="ml-0.5 text-xs font-medium text-amber-700">Book</span>
             </Button>
 
             {/* Clear Month */}
             <Button
               variant="ghost"
               onClick={onOpenClearDialog}
-              className="rounded-xl bg-red-50 hover:bg-red-100 border border-red-200/50 h-10 px-3"
+              className="rounded-lg bg-red-50 hover:bg-red-100 border border-red-200/50 h-8 px-2"
               title="Clear month"
             >
-              <Trash className="h-4 w-4 text-red-600" />
-              <span className="ml-1 text-sm font-medium text-red-600">Clear</span>
+              <Trash className="h-3.5 w-3.5 text-red-600" />
+              <span className="ml-0.5 text-xs font-medium text-red-600">Clear</span>
             </Button>
           </div>
         </div>
 
-        {/* Section B: Starting Cash */}
-        <SummaryCard
-          title="Starting cash"
-          value={budget}
-          titleTooltip="Your monthly budget amount. This is the total money you have allocated for this month."
-        />
+        {/* Section B: Budget Card (Redesigned) */}
+        <div className="rounded-2xl border-2 border-amber-200 shadow-sm bg-gradient-to-br from-amber-50/80 to-white/80 overflow-hidden">
+          <div className="flex h-full">
+            {/* Left: Wallet Button */}
+            <button
+              onClick={onOpenBudgetSetup}
+              className={cn(
+                "flex flex-col items-center justify-center px-3 py-2",
+                "bg-amber-100/60 hover:bg-amber-200/80 transition-colors cursor-pointer",
+                "border-r border-amber-200/50"
+              )}
+              title="Setup budget sources"
+            >
+              <Wallet className="w-5 h-5 text-amber-700" />
+              <span className="text-[10px] text-amber-700 font-medium mt-0.5">Setup</span>
+            </button>
+
+            {/* Right: Budget Info */}
+            <div className="flex-1 flex flex-col justify-center px-3 py-1.5">
+              {/* Budget Amount Row */}
+              <div className="flex items-center justify-center gap-0.5">
+                <span
+                  className="text-xl font-bold tracking-wide text-stone-700"
+                  style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+                >
+                  $
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={budgetInput}
+                  onChange={(e) => onBudgetInputChange(e.target.value)}
+                  className={cn(
+                    "w-20 text-xl font-bold tracking-wide bg-transparent border-none outline-none text-center text-stone-800",
+                    "focus:bg-white/50 rounded transition-colors"
+                  )}
+                  style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+                  placeholder="0"
+                />
+              </div>
+
+              {/* Metrics Row */}
+              <div className="flex items-center justify-center gap-3 mt-1">
+                {linkedAccountsCount > 0 ? (
+                  <>
+                    <div className="flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span className="text-[10px] text-stone-500">
+                        {linkedAccountsCount} source{linkedAccountsCount !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    {totalAllocated !== undefined && totalAllocated > 0 && (
+                      <div className="text-[10px] text-stone-500">
+                        {formatCurrency(totalAllocated)} funded
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-[10px] text-amber-600 font-medium">
+                    Tap wallet to link accounts
+                  </span>
+                )}
+              </div>
+
+              {/* Funding Status Bar */}
+              {budget > 0 && totalAllocated !== undefined && (
+                <div className="mt-1.5">
+                  <div className="h-1 bg-stone-200 rounded-full overflow-hidden">
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all",
+                        totalAllocated >= budget ? "bg-emerald-500" : "bg-amber-400"
+                      )}
+                      style={{ width: `${Math.min(100, (totalAllocated / budget) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
         {/* Section C: Spent so far */}
         <SummaryCard
