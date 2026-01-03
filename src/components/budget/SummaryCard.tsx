@@ -23,11 +23,12 @@ export function SummaryCard({ title, value, highlight = false, red = false, blue
   return (
     <div className={cn(
       summaryCardStyles.base,
-      variant(cardVariant, summaryCardStyles.variants)
+      variant(cardVariant, summaryCardStyles.variants),
+      "flex items-center justify-center"
     )}>
-      <div className="grid grid-cols-2 gap-1">
+      <div className="grid grid-cols-2 gap-1 place-items-center">
         {/* Left section */}
-        <div className="flex flex-col">
+        <div className="flex flex-col items-center text-center">
           {/* Upper left: Main label */}
           <div className="flex items-center gap-1 mb-0.5">
             <div className={summaryCardStyles.title}>{title}</div>
@@ -59,7 +60,7 @@ export function SummaryCard({ title, value, highlight = false, red = false, blue
 
         {/* Right section */}
         {leftAmount !== undefined && leftLabel && (
-          <div className="flex flex-col hidden lg:flex">
+          <div className="flex flex-col items-center text-center hidden lg:flex">
             {/* Upper right: Right label */}
             <div className="flex items-center gap-1 mb-0.5">
               <div className="text-xs opacity-60 font-medium">{leftLabel}</div>

@@ -16,8 +16,8 @@ import {
   type Expense,
   type PlanItem,
 } from "@/lib/data-service";
-import { formatNumber } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
+import { formatNumber } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
 
 // Import our new components

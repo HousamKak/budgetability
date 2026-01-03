@@ -255,7 +255,7 @@ export function ExpenseDialog({
         }}
       >
         <DialogContent
-          className={cn("sm:max-w-md", bookMode && "sm:max-w-4xl")}
+          className={cn("sm:max-w-md p-0 gap-0", bookMode && "sm:max-w-4xl")}
         >
           <DialogHeader className="sr-only">
             <DialogTitle>
@@ -788,7 +788,8 @@ export function ExpenseDialog({
                                             <div className="flex-1">
                                               <div className="handwriting text-red-600 text-base leading-relaxed">
                                                 <span className="font-bold">
-                                                  ${formatNumber(expense.amount)}
+                                                  $
+                                                  {formatNumber(expense.amount)}
                                                 </span>
                                                 {expense.category && (
                                                   <span className="text-sm opacity-75">
