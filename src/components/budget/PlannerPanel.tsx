@@ -5,6 +5,7 @@ import { DraftView } from "./DraftView";
 import { WeekView } from "./WeekView";
 import { MonthView } from "./MonthView";
 import { dataService, type Expense, type PlanItem, type DraftItem } from "@/lib/data-service";
+import { formatNumber } from "@/lib/utils";
 
 interface PlannerPanelProps {
   year: number;
@@ -64,7 +65,7 @@ export function PlannerPanel({
       ...item,
       monthKey: monthKeyStr,
       weekIndex: wk,
-      amount: Number(item.amount.toFixed(2))
+      amount: Math.round(item.amount * 100) / 100
     });
 
     // Trigger animation for the target date

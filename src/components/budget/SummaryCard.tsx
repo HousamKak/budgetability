@@ -1,5 +1,6 @@
 import { summaryCardStyles } from "@/styles/components/summary-card";
 import { cn, variant, conditional } from "@/styles";
+import { formatNumber } from "@/lib/utils";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { Info } from "./Icons";
 
@@ -52,7 +53,7 @@ export function SummaryCard({ title, value, highlight = false, red = false, blue
             )}
             style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
           >
-            ${Number(value || 0).toFixed(2)}
+            ${formatNumber(value || 0)}
           </div>
         </div>
 
@@ -83,7 +84,7 @@ export function SummaryCard({ title, value, highlight = false, red = false, blue
               )}
               style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
             >
-              ${Number(leftAmount || 0).toFixed(2)}
+              ${formatNumber(leftAmount || 0)}
             </div>
           </div>
         )}

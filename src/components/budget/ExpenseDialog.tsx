@@ -9,6 +9,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Expense, type PlanItem } from "@/lib/data-service";
+import { formatNumber } from "@/lib/utils";
 import { cn, dialogStyles } from "@/styles";
 import { Check, Pencil, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -787,7 +788,7 @@ export function ExpenseDialog({
                                             <div className="flex-1">
                                               <div className="handwriting text-red-600 text-base leading-relaxed">
                                                 <span className="font-bold">
-                                                  ${expense.amount.toFixed(2)}
+                                                  ${formatNumber(expense.amount)}
                                                 </span>
                                                 {expense.category && (
                                                   <span className="text-sm opacity-75">
@@ -946,7 +947,7 @@ export function ExpenseDialog({
                                             <div className="flex-1">
                                               <div className="handwriting text-blue-600 text-base leading-relaxed">
                                                 <span className="font-bold">
-                                                  ${plan.amount.toFixed(2)}
+                                                  ${formatNumber(plan.amount)}
                                                 </span>
                                                 {plan.category && (
                                                   <span className="text-sm opacity-75">

@@ -8,6 +8,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Expense, PlanItem } from "@/lib/data-service";
+import { formatNumber } from "@/lib/utils";
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Trash } from "./Icons";
 import { daysInMonth, monStartOffset } from "./utils";
@@ -120,13 +121,13 @@ export function WeekView({
           <div className="text-center">
             <div className="opacity-60">Spent</div>
             <div className="font-bold text-red-600">
-              ${currentSummary.spent.toFixed(2)}
+              ${formatNumber(currentSummary.spent)}
             </div>
           </div>
           <div className="text-center">
             <div className="opacity-60">Planned</div>
             <div className="font-bold text-blue-600">
-              ${currentSummary.planned.toFixed(2)}
+              ${formatNumber(currentSummary.planned)}
             </div>
           </div>
         </div>
@@ -227,7 +228,7 @@ function WeekList({
             <div className="flex items-center justify-between gap-2 mb-1">
               <div className="flex items-center gap-3">
                 <div className="font-bold text-stone-900">
-                  ${p.amount.toFixed(2)}
+                  ${formatNumber(p.amount)}
                 </div>
                 <div className="text-stone-600">{p.category}</div>
                 {p.note && (

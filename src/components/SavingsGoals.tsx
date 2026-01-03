@@ -5,7 +5,7 @@ import { SavingsGoalCard } from "./savings/SavingsGoalCard";
 import { SavingsGoalForm } from "./savings/SavingsGoalForm";
 import { ContributeDialog } from "./savings/ContributeDialog";
 import { paperTheme } from "@/styles";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { dataService } from "@/lib/data-service";
 import type { SavingsGoal } from "@/lib/data-service";
 
@@ -108,15 +108,6 @@ export default function SavingsGoals() {
   const totalTarget = goals.reduce((sum, g) => sum + g.targetAmount, 0);
   const totalSaved = goals.reduce((sum, g) => sum + g.currentAmount, 0);
   const overallProgress = totalTarget > 0 ? (totalSaved / totalTarget) * 100 : 0;
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
-  };
 
   return (
     <div

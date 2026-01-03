@@ -1314,6 +1314,226 @@ export class DataService {
     return allocations.reduce((sum, a) => sum + a.amount, 0);
   }
 
+  async updateBudgetAllocation(
+    accountId: string,
+    monthKey: string,
+    newAmount: number
+  ): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser();
+        if (!user) throw new Error("Not authenticated");
+
+        // Get the current allocation to calculate the difference
+        const allocations = await this.getBudgetAllocations(monthKey);
+        const currentAllocation = allocations.find(
+          (a) => a.accountId === accountId
+        );
+        const currentAmount = currentAllocation?.amount ?? 0;
+        const amountDifference = newAmount - currentAmount;
+
+        // Update the allocation
+        const { error: allocError } = await supabase
+          .from("budget_allocations")
+          .update({ amount: newAmount })
+          .eq("account_id", accountId)
+          .eq("month_key", monthKey);
+
+        if (allocError) throw allocError;
+
+        // Create a transaction for the difference (if any)
+        if (amountDifference !== 0) {
+          const transactionId = crypto.randomUUID();
+          const { error: txError } = await supabase
+            .from("account_transactions")
+            .insert({
+              id: transactionId,
+              user_id: user.id,
+              from_account_id: amountDifference > 0 ? accountId : null,
+              to_account_id: amountDifference < 0 ? accountId : null,
+              amount: Math.abs(amountDifference),
+              transaction_type: "budget_allocation",
+              month_key: monthKey,
+              note: amountDifference > 0 ? "Allocation increased" : "Allocation decreased",
+            });
+
+          if (txError) throw txError;
+        }
+
+        return;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    // Local storage fallback
+    const allocations = this.localStore.budgetAllocations[monthKey] ?? [];
+    const existingIdx = allocations.findIndex((a) => a.accountId === accountId);
+    if (existingIdx >= 0) {
+      const currentAmount = allocations[existingIdx].amount;
+      const amountDifference = newAmount - currentAmount;
+
+      // Update allocation
+      allocations[existingIdx] = {
+        ...allocations[existingIdx],
+        amount: newAmount,
+      };
+      this.localStore.budgetAllocations[monthKey] = allocations;
+
+      // Update account balance
+      this.localStore.accounts = this.localStore.accounts.map((a) =>
+        a.id === accountId
+          ? { ...a, currentBalance: a.currentBalance - amountDifference }
+          : a
+      );
+
+      // Add transaction
+      if (amountDifference !== 0) {
+        this.localStore.accountTransactions = [
+          ...this.localStore.accountTransactions,
+          {
+            id: crypto.randomUUID(),
+            fromAccountId: amountDifference > 0 ? accountId : undefined,
+            toAccountId: amountDifference < 0 ? accountId : undefined,
+            amount: Math.abs(amountDifference),
+            transactionType: "budget_allocation",
+            monthKey,
+            note: amountDifference > 0 ? "Allocation increased" : "Allocation decreased",
+            createdAt: new Date().toISOString(),
+          },
+        ];
+      }
+
+      saveStoreToLocalStorage(this.localStore);
+    }
+  }
+
+  async removeBudgetAllocation(
+    accountId: string,
+    monthKey: string
+  ): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser();
+        if (!user) throw new Error("Not authenticated");
+
+        // Get the current allocation amount to refund
+        const allocations = await this.getBudgetAllocations(monthKey);
+        const allocation = allocations.find((a) => a.accountId === accountId);
+        if (!allocation) return;
+
+        // Delete the allocation
+        const { error: allocError } = await supabase
+          .from("budget_allocations")
+          .delete()
+          .eq("account_id", accountId)
+          .eq("month_key", monthKey);
+
+        if (allocError) throw allocError;
+
+        // Create a transaction to refund the amount back to the account
+        const transactionId = crypto.randomUUID();
+        const { error: txError } = await supabase
+          .from("account_transactions")
+          .insert({
+            id: transactionId,
+            user_id: user.id,
+            to_account_id: accountId,
+            amount: allocation.amount,
+            transaction_type: "budget_allocation",
+            month_key: monthKey,
+            note: "Allocation removed - refunded to account",
+          });
+
+        if (txError) throw txError;
+
+        return;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    // Local storage fallback
+    const allocations = this.localStore.budgetAllocations[monthKey] ?? [];
+    const allocation = allocations.find((a) => a.accountId === accountId);
+    if (!allocation) return;
+
+    // Remove allocation
+    this.localStore.budgetAllocations[monthKey] = allocations.filter(
+      (a) => a.accountId !== accountId
+    );
+
+    // Refund to account
+    this.localStore.accounts = this.localStore.accounts.map((a) =>
+      a.id === accountId
+        ? { ...a, currentBalance: a.currentBalance + allocation.amount }
+        : a
+    );
+
+    // Add refund transaction
+    this.localStore.accountTransactions = [
+      ...this.localStore.accountTransactions,
+      {
+        id: crypto.randomUUID(),
+        toAccountId: accountId,
+        amount: allocation.amount,
+        transactionType: "budget_allocation",
+        monthKey,
+        note: "Allocation removed - refunded to account",
+        createdAt: new Date().toISOString(),
+      },
+    ];
+
+    saveStoreToLocalStorage(this.localStore);
+  }
+
+  async getAllocationTransactions(
+    accountId: string,
+    monthKey: string
+  ): Promise<AccountTransaction[]> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("account_transactions")
+          .select("*")
+          .eq("month_key", monthKey)
+          .or(`from_account_id.eq.${accountId},to_account_id.eq.${accountId}`)
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        return (
+          data?.map((row) => ({
+            id: row.id,
+            fromAccountId: row.from_account_id || undefined,
+            toAccountId: row.to_account_id || undefined,
+            amount: Number(row.amount),
+            transactionType:
+              row.transaction_type as AccountTransaction["transactionType"],
+            monthKey: row.month_key || undefined,
+            savingsGoalId: row.savings_goal_id || undefined,
+            note: row.note || undefined,
+            createdAt: row.created_at,
+          })) || []
+        );
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    const transactions = this.localStore.accountTransactions ?? [];
+    return transactions
+      .filter(
+        (t) =>
+          t.monthKey === monthKey &&
+          (t.fromAccountId === accountId || t.toAccountId === accountId)
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
   async getAccountTransactions(
     accountId?: string
   ): Promise<AccountTransaction[]> {

@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import type { Account, SavingsGoal } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import { ArrowRight, PiggyBank, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -80,14 +80,6 @@ export function ContributeDialog({
     selectedAccount &&
     amountNum > 0 &&
     amountNum <= selectedAccount.currentBalance;
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-    }).format(value);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

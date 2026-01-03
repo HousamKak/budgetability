@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { cn, formatCurrency, formatNumber } from "@/lib/utils";
+import { paperTheme } from "@/styles";
 import { Book, ChevronLeft, ChevronRight, Plus, Trash, Wallet } from "./Icons";
 import { SummaryCard } from "./SummaryCard";
 
@@ -11,12 +12,14 @@ interface DashboardHeaderProps {
   budgetInput: string;
   totalSpent: number;
   totalPlanned: number;
+  totalAllocated?: number;
   onBudgetInputChange: (value: string) => void;
   onGotoPrev: () => void;
   onGotoNext: () => void;
   onOpenMonthlyBook: () => void;
   onOpenClearDialog: () => void;
   onOpenQuickAdd: () => void;
+  onOpenBudgetSetup?: () => void;
 }
 
 export function DashboardHeader({
@@ -25,12 +28,14 @@ export function DashboardHeader({
   budgetInput,
   totalSpent,
   totalPlanned,
+  totalAllocated,
   onBudgetInputChange,
   onGotoPrev,
   onGotoNext,
   onOpenMonthlyBook,
   onOpenClearDialog,
   onOpenQuickAdd,
+  onOpenBudgetSetup,
 }: DashboardHeaderProps) {
   const leftNow = Math.max(0, budget - totalSpent);
   const leftAfterPlanned = budget - totalSpent - totalPlanned;
@@ -39,21 +44,34 @@ export function DashboardHeader({
     <div className="mx-auto max-w-7xl px-2 sm:px-4 pt-4 pb-4">
       {/* Top Row: Quick Actions */}
       <div className="flex items-center justify-end gap-2 flex-wrap mb-4">
-        {/* Budget Input */}
-        <div className="flex items-center gap-2 bg-white/80 rounded-xl px-3 py-2 shadow-sm border border-amber-200">
-          <Wallet className="w-4 h-4 text-stone-500" />
-          <Input
-            type="number"
-            min={0}
-            step="0.01"
-            value={budgetInput}
-            onChange={(e) => onBudgetInputChange(e.target.value)}
-            placeholder="0.00"
-            inputMode="decimal"
-            aria-label="Monthly budget"
-            className="h-7 w-24 bg-transparent border-none focus-visible:ring-0 p-0 text-right font-semibold text-sm"
-          />
-        </div>
+        {/* Budget Button - Opens Budget Setup Dialog */}
+        <button
+          onClick={onOpenBudgetSetup}
+          className={cn(
+            "flex items-center gap-2 rounded-xl px-3 py-2 shadow-sm cursor-pointer",
+            "bg-white/80 border border-amber-200 hover:bg-amber-50/80 hover:border-amber-300",
+            "transition-all duration-150"
+          )}
+          title="Click to setup budget and link accounts"
+        >
+          <Wallet className="w-4 h-4 text-amber-600" />
+          <div className="text-right">
+            <p
+              className={cn(
+                "text-sm font-semibold leading-none",
+                paperTheme.fonts.handwriting,
+                budget > 0 ? "text-stone-800" : "text-stone-400"
+              )}
+            >
+              {budget > 0 ? formatCurrency(budget) : "Set Budget"}
+            </p>
+            {totalAllocated !== undefined && totalAllocated > 0 && (
+              <p className="text-xs text-stone-400 mt-0.5">
+                {formatCurrency(totalAllocated)} allocated
+              </p>
+            )}
+          </div>
+        </button>
 
         {/* Quick Add Button */}
         <Button
@@ -136,9 +154,7 @@ export function DashboardHeader({
             leftAmount={leftNow}
             leftLabel="left now"
             titleTooltip="Total amount you have already spent this month. Calculated by summing all your recorded expenses."
-            leftLabelTooltip={`Money remaining right now. Calculated as: Starting cash - Spent so far = $${budget.toFixed(
-              2
-            )} - $${totalSpent.toFixed(2)} = $${leftNow.toFixed(2)}`}
+            leftLabelTooltip={`Money remaining right now. Calculated as: Starting cash - Spent so far = $${formatNumber(budget)} - $${formatNumber(totalSpent)} = $${formatNumber(leftNow)}`}
           />
           <SummaryCard
             title="Planned so far"
@@ -152,11 +168,7 @@ export function DashboardHeader({
               leftAfterPlanned < 0
                 ? "Negative means you have overplanned beyond your remaining budget."
                 : ""
-            } Calculated as: Starting cash - Spent so far - Planned so far = $${budget.toFixed(
-              2
-            )} - $${totalSpent.toFixed(2)} - $${totalPlanned.toFixed(
-              2
-            )} = $${leftAfterPlanned.toFixed(2)}`}
+            } Calculated as: Starting cash - Spent so far - Planned so far = $${formatNumber(budget)} - $${formatNumber(totalSpent)} - $${formatNumber(totalPlanned)} = $${formatNumber(leftAfterPlanned)}`}
           />
         </div>
       </div>

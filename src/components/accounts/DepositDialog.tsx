@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import type { Account } from "@/lib/data-service";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import { ArrowUpRight } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -49,13 +49,6 @@ export function DepositDialog({
       onDeposit(account.id, depositAmount, note || undefined);
       onOpenChange(false);
     }
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(amount);
   };
 
   if (!account) return null;

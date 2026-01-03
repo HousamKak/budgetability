@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/hover-card";
 import { ProgressRing, ProgressBar } from "./ProgressRing";
 import { paperTheme } from "@/styles";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import type { SavingsGoal } from "@/lib/data-service";
 
 interface SavingsGoalCardProps {
@@ -29,15 +29,6 @@ export function SavingsGoalCard({
   const progress = goal.targetAmount > 0
     ? (goal.currentAmount / goal.targetAmount) * 100
     : 0;
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);

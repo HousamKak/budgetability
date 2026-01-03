@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/hover-card";
 import { Input } from "@/components/ui/input";
 import type { Expense, PlanItem } from "@/lib/data-service";
+import { formatNumber } from "@/lib/utils";
 import { calendarStyles, cn, conditional } from "@/styles";
 import { Check, Pencil, X } from "lucide-react";
 import { useState } from "react";
@@ -230,7 +231,7 @@ export function Calendar({
                             spent
                           </div>
                           <div className="text-[7px] xs:text-[8px] sm:text-[9px] md:text-[10px] font-bold mt-0.5 text-red-600">
-                            ${spentOn(d).toFixed(2)}
+                            ${formatNumber(spentOn(d))}
                           </div>
                         </div>
                         <div>
@@ -238,7 +239,7 @@ export function Calendar({
                             rem
                           </div>
                           <div className="text-[7px] xs:text-[8px] sm:text-[9px] md:text-[10px] font-bold mt-0.5 text-emerald-600">
-                            ${leftAfter(d).toFixed(2)}
+                            ${formatNumber(leftAfter(d))}
                           </div>
                         </div>
                       </div>
@@ -247,7 +248,7 @@ export function Calendar({
                           planned
                         </div>
                         <div className="text-[7px] xs:text-[8px] sm:text-[9px] md:text-[10px] font-bold mt-0.5 text-blue-600">
-                          ${plannedAmountOn(d).toFixed(2)}
+                          ${formatNumber(plannedAmountOn(d))}
                         </div>
                       </div>
                     </div>
@@ -270,7 +271,7 @@ export function Calendar({
                     <div className="text-xs text-stone-500">
                       budget:{" "}
                       <span className="font-bold text-stone-800">
-                        ${budget.toFixed(2)}
+                        ${formatNumber(budget)}
                       </span>
                     </div>
                   </div>
@@ -280,19 +281,19 @@ export function Calendar({
                     <div className="text-center">
                       <div className="opacity-60">Planned</div>
                       <div className="font-bold text-blue-600">
-                        ${plannedAmountOn(d).toFixed(2)}
+                        ${formatNumber(plannedAmountOn(d))}
                       </div>
                     </div>
                     <div className="text-center">
                       <div className="opacity-60">Spent</div>
                       <div className="font-bold text-red-600">
-                        ${spentOn(d).toFixed(2)}
+                        ${formatNumber(spentOn(d))}
                       </div>
                     </div>
                     <div className="text-center">
                       <div className="opacity-60">Remaining</div>
                       <div className="font-bold text-emerald-600">
-                        ${leftAfter(d).toFixed(2)}
+                        ${formatNumber(leftAfter(d))}
                       </div>
                     </div>
                   </div>
@@ -379,7 +380,7 @@ export function Calendar({
                           <div className="flex items-center justify-between">
                             <div className="min-w-0 flex-1">
                               <div className="text-sm font-semibold">
-                                ${p.amount.toFixed(2)}{" "}
+                                ${formatNumber(p.amount)}{" "}
                                 <span className="ml-1 text-xs text-stone-500">
                                   {p.category}
                                 </span>
@@ -507,7 +508,7 @@ export function Calendar({
                           <div className="flex items-center justify-between">
                             <div className="min-w-0 flex-1">
                               <div className="text-sm font-semibold">
-                                ${e.amount.toFixed(2)}{" "}
+                                ${formatNumber(e.amount)}{" "}
                                 <span className="ml-1 text-xs text-stone-500">
                                   {e.category}
                                 </span>

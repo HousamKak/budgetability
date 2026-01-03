@@ -5,14 +5,13 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import type { Account } from "@/lib/data-service";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import {
   ArrowRightLeft,
   ArrowUpRight,
   MoreVertical,
   Pencil,
-  PiggyBank,
   Star,
   Trash2,
 } from "lucide-react";
@@ -24,7 +23,6 @@ interface AccountCardProps {
   onDelete?: (account: Account) => void;
   onTransfer?: (account: Account) => void;
   onDeposit?: (account: Account) => void;
-  onAllocateToBudget?: (account: Account) => void;
   onSetDefault?: (account: Account) => void;
 }
 
@@ -37,16 +35,8 @@ export function AccountCard({
   onDelete,
   onTransfer,
   onDeposit,
-  onAllocateToBudget,
   onSetDefault,
 }: AccountCardProps) {
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(amount);
-  };
-
   const balanceChange = account.currentBalance - account.initialBalance;
   const isPositiveChange = balanceChange >= 0;
 
@@ -207,21 +197,6 @@ export function AccountCard({
             >
               <ArrowRightLeft className="w-3 h-3 mr-1" />
               Transfer
-            </Button>
-          )}
-          {onAllocateToBudget && (
-            <Button
-              variant="outline"
-              size="sm"
-              className={cn(
-                "h-7 text-xs",
-                paperTheme.colors.borders.amber,
-                "hover:bg-amber-50"
-              )}
-              onClick={() => onAllocateToBudget(account)}
-            >
-              <PiggyBank className="w-3 h-3 mr-1" />
-              To Budget
             </Button>
           )}
         </div>

@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { Account } from "@/lib/data-service";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import { ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -76,13 +76,6 @@ export function TransferDialog({
       onTransfer(fromAccountId, toAccountId, transferAmount, note || undefined);
       onOpenChange(false);
     }
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(amount);
   };
 
   return (

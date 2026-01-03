@@ -1,13 +1,12 @@
 import { Button } from "@/components/ui/button";
 import type { Account } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import { ArrowRightLeft, Plus, RefreshCw, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AccountCard } from "./accounts/AccountCard";
 import { AccountForm } from "./accounts/AccountForm";
-import { AllocateToBudgetDialog } from "./accounts/AllocateToBudgetDialog";
 import { DepositDialog } from "./accounts/DepositDialog";
 import { TransferDialog } from "./accounts/TransferDialog";
 
@@ -18,7 +17,6 @@ import { TransferDialog } from "./accounts/TransferDialog";
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentBudget, setCurrentBudget] = useState(0);
 
   // Dialog states
   const [showAccountForm, setShowAccountForm] = useState(false);
@@ -29,14 +27,6 @@ export default function AccountsPage() {
   >();
   const [showDepositDialog, setShowDepositDialog] = useState(false);
   const [depositAccount, setDepositAccount] = useState<Account | null>(null);
-  const [showAllocateDialog, setShowAllocateDialog] = useState(false);
-  const [allocateAccount, setAllocateAccount] = useState<Account | null>(null);
-
-  // Get current month key
-  const today = new Date();
-  const currentMonthKey = `${today.getFullYear()}-${String(
-    today.getMonth() + 1
-  ).padStart(2, "0")}`;
 
   useEffect(() => {
     loadData();
@@ -45,12 +35,8 @@ export default function AccountsPage() {
   async function loadData() {
     try {
       setLoading(true);
-      const [accts, budget] = await Promise.all([
-        dataService.getAccounts(),
-        dataService.getBudget(currentMonthKey),
-      ]);
+      const accts = await dataService.getAccounts();
       setAccounts(accts);
-      setCurrentBudget(budget);
     } catch (error) {
       console.error("Failed to load accounts:", error);
     } finally {
@@ -127,29 +113,6 @@ export default function AccountsPage() {
     } catch (error) {
       console.error("Failed to deposit:", error);
     }
-  };
-
-  const handleAllocate = async (
-    accountId: string,
-    monthKey: string,
-    amount: number
-  ) => {
-    try {
-      await dataService.allocateToBudget(accountId, monthKey, amount);
-      // Also update the budget amount
-      const newBudget = currentBudget + amount;
-      await dataService.setBudget(monthKey, newBudget);
-      await loadData();
-    } catch (error) {
-      console.error("Failed to allocate:", error);
-    }
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(amount);
   };
 
   const totalBalance = accounts.reduce((sum, a) => sum + a.currentBalance, 0);
@@ -263,18 +226,6 @@ export default function AccountsPage() {
                   {accounts.length}
                 </p>
               </div>
-              <div>
-                <p className="text-sm text-stone-500">Current Month Budget</p>
-                <p
-                  className={cn(
-                    "text-2xl font-bold",
-                    paperTheme.fonts.handwriting,
-                    "text-amber-600"
-                  )}
-                >
-                  {formatCurrency(currentBudget)}
-                </p>
-              </div>
             </div>
 
             {/* Quick transfer button */}
@@ -364,10 +315,6 @@ export default function AccountsPage() {
                   setDepositAccount(a);
                   setShowDepositDialog(true);
                 }}
-                onAllocateToBudget={(a) => {
-                  setAllocateAccount(a);
-                  setShowAllocateDialog(true);
-                }}
                 onSetDefault={handleSetDefault}
               />
             ))}
@@ -398,15 +345,6 @@ export default function AccountsPage() {
           onOpenChange={setShowDepositDialog}
           account={depositAccount}
           onDeposit={handleDeposit}
-        />
-
-        <AllocateToBudgetDialog
-          open={showAllocateDialog}
-          onOpenChange={setShowAllocateDialog}
-          account={allocateAccount}
-          currentMonthKey={currentMonthKey}
-          currentBudget={currentBudget}
-          onAllocate={handleAllocate}
         />
       </div>
     </div>

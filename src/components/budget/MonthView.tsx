@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { formatNumber } from "@/lib/utils";
 import { ChevronRight, Trash } from "./Icons";
 import { monStartOffset, daysInMonth } from "./utils";
 import type { Expense, PlanItem } from "@/lib/data-service";
@@ -97,15 +98,15 @@ export function MonthView({
         <div className="grid grid-cols-3 gap-4 text-sm mb-3">
           <div className="text-center">
             <div className="opacity-60">Budget</div>
-            <div className="font-bold text-stone-700 text-lg">${monthSummary.budget.toFixed(2)}</div>
+            <div className="font-bold text-stone-700 text-lg">${formatNumber(monthSummary.budget)}</div>
           </div>
           <div className="text-center">
             <div className="opacity-60">Spent</div>
-            <div className="font-bold text-red-600 text-lg">${monthSummary.totalSpent.toFixed(2)}</div>
+            <div className="font-bold text-red-600 text-lg">${formatNumber(monthSummary.totalSpent)}</div>
           </div>
           <div className="text-center">
             <div className="opacity-60">Remaining</div>
-            <div className="font-bold text-emerald-600 text-lg">${monthSummary.remaining.toFixed(2)}</div>
+            <div className="font-bold text-emerald-600 text-lg">${formatNumber(monthSummary.remaining)}</div>
           </div>
         </div>
 
@@ -156,7 +157,7 @@ export function MonthView({
                     </div>
                   </div>
                   <div className="text-xs opacity-60">
-                    Spent: ${weekSummary.spent.toFixed(2)} | Planned: ${weekSummary.planned.toFixed(2)}
+                    Spent: ${formatNumber(weekSummary.spent)} | Planned: ${formatNumber(weekSummary.planned)}
                   </div>
                 </div>
               </div>
@@ -174,7 +175,7 @@ export function MonthView({
                         <div key={item.id} className="bg-stone-50 rounded px-3 py-2 text-sm">
                           <div className="flex items-center justify-between gap-2 mb-1">
                             <div className="flex items-center gap-3">
-                              <div className="font-bold text-stone-900">${item.amount.toFixed(2)}</div>
+                              <div className="font-bold text-stone-900">${formatNumber(item.amount)}</div>
                               <div className="text-stone-600">{item.category}</div>
                               {item.note && (
                                 <div className="text-xs text-stone-500 truncate max-w-32">• {item.note}</div>

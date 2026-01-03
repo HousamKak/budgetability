@@ -8,12 +8,21 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
-import { dataService, type Expense, type PlanItem } from "@/lib/data-service";
+import {
+  dataService,
+  type Account,
+  type AccountTransaction,
+  type BudgetAllocation,
+  type Expense,
+  type PlanItem,
+} from "@/lib/data-service";
+import { formatNumber } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useEffect, useMemo, useState } from "react";
 
 // Import our new components
 import { layoutStyles } from "@/styles";
+import { BudgetSetupDialog } from "./budget/BudgetSetupDialog";
 import { Calendar } from "./budget/Calendar";
 import { DashboardHeader } from "./budget/DashboardHeader";
 import { ExpenseDialog } from "./budget/ExpenseDialog";
@@ -64,6 +73,14 @@ export default function PaperBudget() {
     new Set()
   );
 
+  // Budget setup dialog state
+  const [showBudgetSetup, setShowBudgetSetup] = useState(false);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [allocations, setAllocations] = useState<BudgetAllocation[]>([]);
+  const [accountTransactions, setAccountTransactions] = useState<
+    AccountTransaction[]
+  >([]);
+
   // Debounce the budget input to avoid excessive API calls
   const debouncedBudgetInput = useDebounce(budgetInput, 800);
 
@@ -72,16 +89,29 @@ export default function PaperBudget() {
     setHasLoadedData(false); // Reset flag when month changes
     const loadData = async () => {
       try {
-        const [budgetData, expensesData, plansData] = await Promise.all([
+        const [
+          budgetData,
+          expensesData,
+          plansData,
+          accountsData,
+          allocationsData,
+          transactionsData,
+        ] = await Promise.all([
           dataService.getBudget(key),
           dataService.getExpenses(key),
           dataService.getPlans(key),
+          dataService.getAccounts(),
+          dataService.getBudgetAllocations(key),
+          dataService.getAccountTransactions(),
         ]);
         setBudgetState(budgetData);
         setBudgetInput(budgetData ? budgetData.toString() : "");
         setHasLoadedData(true);
         setExpenses(expensesData);
         setPlans(plansData);
+        setAccounts(accountsData);
+        setAllocations(allocationsData);
+        setAccountTransactions(transactionsData);
       } catch (error) {
         console.error("Failed to load data:", error);
         // Still set the input and flag even on error to prevent stale values
@@ -181,6 +211,64 @@ export default function PaperBudget() {
       console.error("Failed to clear month:", error);
     }
   }
+
+  // Budget allocation ops
+  async function handleLinkAccount(accountId: string, amount: number) {
+    try {
+      await dataService.allocateToBudget(accountId, key, amount);
+      // Reload accounts and allocations
+      const [accountsData, allocationsData, transactionsData] =
+        await Promise.all([
+          dataService.getAccounts(),
+          dataService.getBudgetAllocations(key),
+          dataService.getAccountTransactions(),
+        ]);
+      setAccounts(accountsData);
+      setAllocations(allocationsData);
+      setAccountTransactions(transactionsData);
+    } catch (error) {
+      console.error("Failed to link account:", error);
+    }
+  }
+
+  async function handleAdjustAllocation(accountId: string, newAmount: number) {
+    try {
+      await dataService.updateBudgetAllocation(accountId, key, newAmount);
+      // Reload accounts and allocations
+      const [accountsData, allocationsData, transactionsData] =
+        await Promise.all([
+          dataService.getAccounts(),
+          dataService.getBudgetAllocations(key),
+          dataService.getAccountTransactions(),
+        ]);
+      setAccounts(accountsData);
+      setAllocations(allocationsData);
+      setAccountTransactions(transactionsData);
+    } catch (error) {
+      console.error("Failed to adjust allocation:", error);
+    }
+  }
+
+  async function handleRemoveAllocation(accountId: string) {
+    try {
+      await dataService.removeBudgetAllocation(accountId, key);
+      // Reload accounts and allocations
+      const [accountsData, allocationsData, transactionsData] =
+        await Promise.all([
+          dataService.getAccounts(),
+          dataService.getBudgetAllocations(key),
+          dataService.getAccountTransactions(),
+        ]);
+      setAccounts(accountsData);
+      setAllocations(allocationsData);
+      setAccountTransactions(transactionsData);
+    } catch (error) {
+      console.error("Failed to remove allocation:", error);
+    }
+  }
+
+  // Calculate total allocated for display
+  const totalAllocated = allocations.reduce((sum, a) => sum + a.amount, 0);
 
   // plans ops
   async function addPlan(p: Omit<PlanItem, "id">) {
@@ -436,12 +524,14 @@ export default function PaperBudget() {
         budgetInput={budgetInput}
         totalSpent={totalSpent}
         totalPlanned={totalPlanned}
+        totalAllocated={totalAllocated}
         onBudgetInputChange={setBudgetInput}
         onGotoPrev={gotoPrev}
         onGotoNext={gotoNext}
         onOpenMonthlyBook={() => setMonthlyBookOpen(true)}
         onOpenClearDialog={() => setClearDialogOpen(true)}
         onOpenQuickAdd={() => setOpen(true)}
+        onOpenBudgetSetup={() => setShowBudgetSetup(true)}
       />
 
       {/* Profile Panel at bottom left */}
@@ -490,6 +580,22 @@ export default function PaperBudget() {
         onUpdatePlan={updatePlan}
       />
 
+      {/* Budget Setup Dialog */}
+      <BudgetSetupDialog
+        open={showBudgetSetup}
+        onOpenChange={setShowBudgetSetup}
+        monthKey={key}
+        budget={budget}
+        budgetInput={budgetInput}
+        accounts={accounts}
+        allocations={allocations}
+        transactions={accountTransactions}
+        onBudgetInputChange={setBudgetInput}
+        onLinkAccount={handleLinkAccount}
+        onAdjustAllocation={handleAdjustAllocation}
+        onRemoveAllocation={handleRemoveAllocation}
+      />
+
       {/* Clear Month Confirmation Dialog */}
       <Dialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
         <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
@@ -516,12 +622,12 @@ export default function PaperBudget() {
                 </p>
                 <ul className="text-sm text-stone-600 space-y-1 ml-4">
                   <li>
-                    • Budget amount: <strong>${budget.toFixed(2)}</strong>
+                    • Budget amount: <strong>${formatNumber(budget)}</strong>
                   </li>
                   <li>
                     • All expenses:{" "}
                     <strong>
-                      {expenses.length} items (${totalSpent.toFixed(2)})
+                      {expenses.length} items (${formatNumber(totalSpent)})
                     </strong>
                   </li>
                   <li>
