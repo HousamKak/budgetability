@@ -1,9 +1,14 @@
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { type Expense, type PlanItem } from "@/lib/data-service";
 import { cn, dialogStyles } from "@/styles";
-import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { Check, Pencil, X } from "lucide-react";
 import { useState } from "react";
 
@@ -31,8 +36,8 @@ export function MonthlyBookDialog({
   onMarkPlanPaid,
   onRemovePlan,
   onRemoveExpense,
-  onEditExpense,
-  onEditPlan,
+  onEditExpense: _onEditExpense,
+  onEditPlan: _onEditPlan,
   onUpdateExpense,
   onUpdatePlan,
 }: MonthlyBookDialogProps) {
@@ -112,10 +117,13 @@ export function MonthlyBookDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-6xl" aria-describedby={undefined}>
-        <VisuallyHidden.Root>
+      <DialogContent className="sm:max-w-6xl">
+        <DialogHeader className="sr-only">
           <DialogTitle>{monthLabel} Monthly Ledger</DialogTitle>
-        </VisuallyHidden.Root>
+          <DialogDescription>
+            View and manage all your expenses and plans for {monthLabel}.
+          </DialogDescription>
+        </DialogHeader>
         <div className={cn(dialogStyles.paperDialog)}>
           {/* Paper texture overlay */}
           <div className={dialogStyles.paperTexture}></div>

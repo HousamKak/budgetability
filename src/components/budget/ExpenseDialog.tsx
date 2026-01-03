@@ -1,10 +1,15 @@
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Expense, type PlanItem } from "@/lib/data-service";
 import { cn, dialogStyles } from "@/styles";
-import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { Check, Pencil, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CategoryPicker } from "./CategoryPicker";
@@ -75,8 +80,8 @@ export function ExpenseDialog({
   onUpdatePlan,
   onInlineUpdateExpense,
   onInlineUpdatePlan,
-  onEditExpense,
-  onEditPlan,
+  onEditExpense: _onEditExpense,
+  onEditPlan: _onEditPlan,
 }: ExpenseDialogProps) {
   const [mode, setMode] = useState<DialogMode>("expense");
   const [bookMode, setBookMode] = useState(false);
@@ -154,7 +159,6 @@ export function ExpenseDialog({
 
   // Determine if we're in edit mode
   const isEditing = !!(editingExpense || editingPlan);
-  const editingItem = editingExpense || editingPlan;
 
   // Set mode based on what we're editing
   useEffect(() => {
@@ -180,7 +184,7 @@ export function ExpenseDialog({
         });
       } else if (editingPlan && onUpdatePlan) {
         onUpdatePlan(editingPlan.id, {
-          date: formDate,
+          targetDate: formDate,
           amount: Number(a.toFixed(2)),
           category,
           note,
@@ -251,9 +255,8 @@ export function ExpenseDialog({
       >
         <DialogContent
           className={cn("sm:max-w-md", bookMode && "sm:max-w-4xl")}
-          aria-describedby={undefined}
         >
-          <VisuallyHidden.Root>
+          <DialogHeader className="sr-only">
             <DialogTitle>
               {isEditing
                 ? `Edit ${editingExpense ? "Expense" : "Plan"}`
@@ -261,7 +264,16 @@ export function ExpenseDialog({
                 ? "Budget Book"
                 : `Add ${mode === "expense" ? "Expense" : "Plan"}`}
             </DialogTitle>
-          </VisuallyHidden.Root>
+            <DialogDescription>
+              {isEditing
+                ? "Update the details of your expense or plan."
+                : bookMode
+                ? "View and manage your budget entries."
+                : mode === "expense"
+                ? "Record a new expense."
+                : "Create a new budget plan."}
+            </DialogDescription>
+          </DialogHeader>
           <div
             className={cn(
               dialogStyles.paperDialog,

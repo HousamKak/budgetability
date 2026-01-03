@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -67,11 +68,10 @@ export function DepositDialog({
           paperTheme.colors.background.cardGradient,
           paperTheme.colors.borders.paper
         )}
-        aria-describedby={undefined}
       >
         <div
           className={cn(
-            "absolute inset-0 opacity-15 pointer-events-none rounded-lg",
+            "absolute inset-0 opacity-15 pointer-events-none rounded-2xl",
             paperTheme.effects.paperTexture
           )}
         />
@@ -87,6 +87,9 @@ export function DepositDialog({
             <ArrowUpRight className="w-5 h-5 text-green-600" />
             Deposit to {account.name}
           </DialogTitle>
+          <DialogDescription className="text-sm text-stone-500">
+            Add money to this account.
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="relative space-y-4 pt-2">

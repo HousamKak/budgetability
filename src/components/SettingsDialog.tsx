@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -132,23 +133,21 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         className={cn(
           "sm:max-w-2xl max-h-[80vh] overflow-y-auto",
           paperTheme.colors.background.cardGradient,
-          paperTheme.colors.borders.paper,
-          paperTheme.radius.lg
+          paperTheme.colors.borders.paper
         )}
       >
         {/* Paper texture */}
         <div
           className={cn(
-            "absolute inset-0 opacity-15 pointer-events-none",
-            paperTheme.effects.paperTexture,
-            paperTheme.radius.lg
+            "absolute inset-0 opacity-15 pointer-events-none rounded-2xl",
+            paperTheme.effects.paperTexture
           )}
         />
 
         {/* Yellow tape effect at top */}
         <div
           className={cn(
-            "absolute -top-2 left-1/2 -translate-x-1/2 w-16 h-4",
+            "absolute -top-2 left-1/2 -translate-x-1/2 w-16 h-4 z-20",
             paperTheme.effects.yellowTape
           )}
         />
@@ -157,6 +156,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <DialogTitle className="text-2xl font-bold handwriting text-stone-800">
             Settings
           </DialogTitle>
+          <DialogDescription className="text-sm text-stone-500">
+            Manage your budget categories and preferences.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 mt-4 relative z-10">

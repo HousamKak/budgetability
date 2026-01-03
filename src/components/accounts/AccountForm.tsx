@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -86,22 +87,21 @@ export function AccountForm({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          "sm:max-w-md rounded-3xl border-4",
+          "sm:max-w-md",
           paperTheme.colors.background.cardGradient,
           paperTheme.colors.borders.paper,
           paperTheme.effects.shadow
         )}
-        aria-describedby={undefined}
       >
         {/* Paper texture */}
         <div
           className={cn(
-            "absolute inset-0 opacity-15 pointer-events-none rounded-3xl",
+            "absolute inset-0 opacity-15 pointer-events-none rounded-2xl",
             paperTheme.effects.paperTexture
           )}
         />
 
-        <DialogHeader className="relative pb-4">
+        <DialogHeader className="relative pb-2">
           <DialogTitle
             className={cn(
               "text-2xl",
@@ -111,12 +111,20 @@ export function AccountForm({
           >
             {isEditing ? "Edit Account" : "New Account"}
           </DialogTitle>
+          <DialogDescription className="text-sm text-stone-500">
+            {isEditing
+              ? "Update your account details below."
+              : "Create a new account to track your money."}
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="relative space-y-5 pt-2">
           {/* Account Name */}
           <div className="space-y-2">
-            <Label htmlFor="name" className={cn("text-base", paperTheme.fonts.handwriting)}>
+            <Label
+              htmlFor="name"
+              className={cn("text-base", paperTheme.fonts.handwriting)}
+            >
               Account Name
             </Label>
             <input
@@ -137,7 +145,9 @@ export function AccountForm({
 
           {/* Account Type */}
           <div className="space-y-2">
-            <Label className={cn("text-base", paperTheme.fonts.handwriting)}>Account Type</Label>
+            <Label className={cn("text-base", paperTheme.fonts.handwriting)}>
+              Account Type
+            </Label>
             <Select
               value={accountType}
               onValueChange={(v) => setAccountType(v as Account["accountType"])}
@@ -165,7 +175,10 @@ export function AccountForm({
 
           {/* Initial Balance */}
           <div className="space-y-2">
-            <Label htmlFor="balance" className={cn("text-base", paperTheme.fonts.handwriting)}>
+            <Label
+              htmlFor="balance"
+              className={cn("text-base", paperTheme.fonts.handwriting)}
+            >
               {isEditing ? "Initial Balance" : "Starting Balance"}
             </Label>
             <div className="relative">

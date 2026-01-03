@@ -46,8 +46,8 @@ export function Calendar({
   onRemoveExpense,
   onRemovePlan,
   onMarkPlanPaid,
-  onEditExpense,
-  onEditPlan,
+  onEditExpense: _onEditExpense,
+  onEditPlan: _onEditPlan,
   onUpdateExpense,
   onUpdatePlan,
 }: CalendarProps) {

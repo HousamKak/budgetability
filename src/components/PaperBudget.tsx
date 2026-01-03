@@ -350,8 +350,8 @@ export default function PaperBudget() {
 
   function handleUpdatePlan(id: string, updates: Partial<PlanItem>) {
     // Also update targetDate if date changed
-    if (updates.date) {
-      const targetDate = new Date(updates.date);
+    if (updates.targetDate) {
+      const targetDate = new Date(updates.targetDate);
       const weekIdx = weekIndexOf(
         targetDate.getFullYear(),
         targetDate.getMonth(),
@@ -359,7 +359,6 @@ export default function PaperBudget() {
       );
       updatePlan(id, {
         ...updates,
-        targetDate: updates.date,
         weekIndex: weekIdx,
       });
     } else {
@@ -475,7 +474,6 @@ export default function PaperBudget() {
         onInlineUpdatePlan={updatePlan}
         onEditExpense={handleEditExpense}
         onEditPlan={handleEditPlan}
-        hideTrigger
       />
       <MonthlyBookDialog
         open={monthlyBookOpen}

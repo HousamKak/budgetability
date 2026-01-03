@@ -1,14 +1,22 @@
-import { Star, MoreVertical, ArrowRightLeft, PiggyBank, ArrowUpRight, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import { AccountTypeBadge, getAccountTypeConfig } from "./AccountTypeBadge";
-import { paperTheme } from "@/styles";
-import { cn } from "@/lib/utils";
 import type { Account } from "@/lib/data-service";
+import { cn } from "@/lib/utils";
+import { paperTheme } from "@/styles";
+import {
+  ArrowRightLeft,
+  ArrowUpRight,
+  MoreVertical,
+  Pencil,
+  PiggyBank,
+  Star,
+  Trash2,
+} from "lucide-react";
+import { AccountTypeBadge } from "./AccountTypeBadge";
 
 interface AccountCardProps {
   account: Account;
@@ -32,8 +40,6 @@ export function AccountCard({
   onAllocateToBudget,
   onSetDefault,
 }: AccountCardProps) {
-  const typeConfig = getAccountTypeConfig(account.accountType);
-
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -152,9 +158,7 @@ export function AccountCard({
             className={cn(
               "text-2xl font-bold",
               paperTheme.fonts.handwriting,
-              account.currentBalance >= 0
-                ? "text-green-700"
-                : "text-red-600"
+              account.currentBalance >= 0 ? "text-green-700" : "text-red-600"
             )}
           >
             {formatCurrency(account.currentBalance)}

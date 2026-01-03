@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -90,11 +91,10 @@ export function AllocateToBudgetDialog({
           paperTheme.colors.background.cardGradient,
           paperTheme.colors.borders.paper
         )}
-        aria-describedby={undefined}
       >
         <div
           className={cn(
-            "absolute inset-0 opacity-15 pointer-events-none rounded-lg",
+            "absolute inset-0 opacity-15 pointer-events-none rounded-2xl",
             paperTheme.effects.paperTexture
           )}
         />
@@ -110,6 +110,9 @@ export function AllocateToBudgetDialog({
             <PiggyBank className="w-5 h-5 text-amber-600" />
             Allocate to Budget
           </DialogTitle>
+          <DialogDescription className="text-sm text-stone-500">
+            Transfer money from your account to your monthly budget.
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="relative space-y-4 pt-2">

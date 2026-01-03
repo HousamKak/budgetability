@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -120,11 +121,10 @@ export function ContributeDialog({
           paperTheme.colors.background.cardGradient,
           paperTheme.colors.borders.paper
         )}
-        aria-describedby={undefined}
       >
         <div
           className={cn(
-            "absolute inset-0 opacity-15 pointer-events-none rounded-lg",
+            "absolute inset-0 opacity-15 pointer-events-none rounded-2xl",
             paperTheme.effects.paperTexture
           )}
         />
@@ -140,12 +140,15 @@ export function ContributeDialog({
             <PiggyBank className="w-5 h-5" />
             Contribute to "{goal.name}"
           </DialogTitle>
+          <DialogDescription className="text-sm text-stone-500">
+            Add money from an account to your savings goal.
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="relative space-y-4 pt-2">
           {/* Goal Progress */}
           <div
-            className={cn("p-3 rounded-lg", paperTheme.colors.background.cream)}
+            className={cn("p-3 rounded-lg", paperTheme.colors.background.white)}
           >
             <div className="flex justify-between text-sm mb-1">
               <span className="text-stone-500">Current Progress</span>
@@ -293,7 +296,7 @@ export function ContributeDialog({
               className={cn(
                 "p-3 rounded-lg border",
                 paperTheme.colors.borders.amber,
-                paperTheme.colors.background.cream
+                paperTheme.colors.background.white
               )}
             >
               <div className="flex items-center gap-2 text-sm text-stone-600">
