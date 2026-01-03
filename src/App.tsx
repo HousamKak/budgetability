@@ -3,6 +3,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import PaperBudget from './components/PaperBudget'
 import Analytics from './components/Analytics'
 import SavingsGoals from './components/SavingsGoals'
+import AccountsPage from './components/AccountsPage'
 import { NavigationPanel } from './components/NavigationPanel'
 import { EmailConfirmation } from './components/EmailConfirmation'
 import { EmailVerificationWaiting } from './components/EmailVerificationWaiting'
@@ -35,6 +36,7 @@ function App() {
           <NavigationPanel />
           <Routes>
             <Route path="/" element={<PaperBudget />} />
+            <Route path="/accounts" element={<AccountsPage />} />
             <Route path="/savings" element={<SavingsGoals />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/auth/confirm" element={<EmailConfirmation />} />

@@ -1,11 +1,16 @@
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ChevronLeft, ChevronRight, Trash } from "./Icons";
-import { monStartOffset, daysInMonth } from "./utils";
 import type { Expense, PlanItem } from "@/lib/data-service";
+import { useState } from "react";
+import { ChevronLeft, ChevronRight, Trash } from "./Icons";
+import { daysInMonth, monStartOffset } from "./utils";
 
 interface WeekViewProps {
   year: number;
@@ -59,8 +64,12 @@ export function WeekView({
       const expenseDay = expenseDate.getDate();
       const expenseMonth = expenseDate.getMonth();
       const expenseYear = expenseDate.getFullYear();
-      return expenseYear === year && expenseMonth === month &&
-             expenseDay >= startDay && expenseDay <= endDay;
+      return (
+        expenseYear === year &&
+        expenseMonth === month &&
+        expenseDay >= startDay &&
+        expenseDay <= endDay
+      );
     });
   }
 
@@ -71,7 +80,6 @@ export function WeekView({
     const planned = weekPlans.reduce((sum, p) => sum + p.amount, 0);
     return { spent, planned, weekExpenses, weekPlans };
   }
-
 
   const currentSummary = getWeekSummary(weekIndex);
 
@@ -91,7 +99,9 @@ export function WeekView({
           </Button>
 
           <div className="text-center flex-1">
-            <div className="text-lg font-medium text-stone-700">{labelForWeek(weekIndex)}</div>
+            <div className="text-lg font-medium text-stone-700">
+              {labelForWeek(weekIndex)}
+            </div>
           </div>
 
           <Button
@@ -109,11 +119,15 @@ export function WeekView({
         <div className="flex justify-center gap-6 text-sm">
           <div className="text-center">
             <div className="opacity-60">Spent</div>
-            <div className="font-bold text-red-600">${currentSummary.spent.toFixed(2)}</div>
+            <div className="font-bold text-red-600">
+              ${currentSummary.spent.toFixed(2)}
+            </div>
           </div>
           <div className="text-center">
             <div className="opacity-60">Planned</div>
-            <div className="font-bold text-blue-600">${currentSummary.planned.toFixed(2)}</div>
+            <div className="font-bold text-blue-600">
+              ${currentSummary.planned.toFixed(2)}
+            </div>
           </div>
         </div>
       </div>
@@ -121,7 +135,9 @@ export function WeekView({
       {/* Week Items */}
       <div className="bg-white rounded-lg border border-stone-200 p-4">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-medium text-stone-700">Week Items ({thisWeekItems.length})</h3>
+          <h3 className="text-sm font-medium text-stone-700">
+            Week Items ({thisWeekItems.length})
+          </h3>
           <div className="flex items-center gap-2">
             {thisWeekItems.length > 5 && (
               <Button
@@ -139,7 +155,11 @@ export function WeekView({
               onClick={() => setItemsExpanded(!itemsExpanded)}
               className="h-6 w-6 p-0 cursor-pointer"
             >
-              <ChevronRight className={`h-4 w-4 transition-transform ${itemsExpanded ? 'rotate-90' : ''}`} />
+              <ChevronRight
+                className={`h-4 w-4 transition-transform ${
+                  itemsExpanded ? "rotate-90" : ""
+                }`}
+              />
             </Button>
           </div>
         </div>
@@ -158,7 +178,10 @@ export function WeekView({
 
       {/* All Items Modal */}
       <Dialog open={showAllItemsModal} onOpenChange={setShowAllItemsModal}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent
+          className="max-w-2xl max-h-[80vh] overflow-y-auto"
+          aria-describedby={undefined}
+        >
           <DialogHeader>
             <DialogTitle>All Week Items ({thisWeekItems.length})</DialogTitle>
           </DialogHeader>
@@ -189,16 +212,29 @@ function WeekList({
 }) {
   return (
     <div>
-      {items.length === 0 && <div className="text-sm text-stone-500 text-center py-4">No items planned for this week.</div>}
+      {items.length === 0 && (
+        <div className="text-sm text-stone-500 text-center py-4">
+          No items planned for this week.
+        </div>
+      )}
       <div className="space-y-2">
         {items.map((p) => (
-          <div key={p.id} className="rounded-lg border border-stone-200 bg-white p-2.5 text-sm">
+          <div
+            key={p.id}
+            className="rounded-lg border border-stone-200 bg-white p-2.5 text-sm"
+          >
             {/* First line: Amount, Category, Action buttons */}
             <div className="flex items-center justify-between gap-2 mb-1">
               <div className="flex items-center gap-3">
-                <div className="font-bold text-stone-900">${p.amount.toFixed(2)}</div>
+                <div className="font-bold text-stone-900">
+                  ${p.amount.toFixed(2)}
+                </div>
                 <div className="text-stone-600">{p.category}</div>
-                {p.note && <div className="text-xs text-stone-500 truncate max-w-24">• {p.note}</div>}
+                {p.note && (
+                  <div className="text-xs text-stone-500 truncate max-w-24">
+                    • {p.note}
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-1">
                 <button

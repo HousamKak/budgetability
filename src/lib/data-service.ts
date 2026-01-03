@@ -1,20 +1,94 @@
 import { supabase } from './supabase'
 
-// Data types
+// ============================================
+// DATA TYPES
+// ============================================
+
+// Category type - user-defined categories with colors and icons
+export type Category = {
+  id: string
+  name: string
+  color: string      // Hex code: "#ef4444"
+  icon: string       // Lucide icon name: "shopping-cart"
+  sortOrder: number
+  isDefault: boolean
+}
+
+// Account type - for envelope budgeting
+export type Account = {
+  id: string
+  name: string
+  accountType: 'checking' | 'savings' | 'credit' | 'cash' | 'other'
+  initialBalance: number
+  currentBalance: number
+  isDefault: boolean
+  color?: string
+  icon?: string
+  sortOrder: number
+}
+
+// Account Transaction type - tracks money movement
+export type AccountTransaction = {
+  id: string
+  fromAccountId?: string
+  toAccountId?: string
+  amount: number
+  transactionType: 'transfer' | 'budget_allocation' | 'savings_contribution' | 'overdraft_coverage' | 'deposit'
+  monthKey?: string
+  savingsGoalId?: string
+  note?: string
+  createdAt: string
+}
+
+// Budget Allocation type - links accounts to monthly budgets
+export type BudgetAllocation = {
+  id: string
+  accountId: string
+  monthKey: string
+  amount: number
+}
+
+// Savings Goal type - goals with images
+export type SavingsGoal = {
+  id: string
+  name: string
+  targetAmount: number
+  currentAmount: number
+  imageUrl?: string
+  deadline?: string
+  color?: string
+  isCompleted: boolean
+  completedAt?: string
+}
+
+// Savings Contribution type - tracks money added to goals
+export type SavingsContribution = {
+  id: string
+  savingsGoalId: string
+  accountId: string
+  amount: number
+  note?: string
+  createdAt: string
+}
+
+// Expense type - with optional categoryId for new system
 export type Expense = {
   id: string
   date: string // YYYY-MM-DD
   amount: number
-  category?: string
+  category?: string      // Legacy TEXT field
+  categoryId?: string    // NEW: Reference to categories table
   note?: string
 }
 
+// Plan type - with optional categoryId for new system
 export type PlanItem = {
   id: string
   monthKey: string
   weekIndex: number
   amount: number
-  category?: string
+  category?: string      // Legacy TEXT field
+  categoryId?: string    // NEW: Reference to categories table
   note?: string
   targetDate?: string
 }
@@ -24,31 +98,89 @@ export type DraftItem = {
   note: string
   amount?: number
   category?: string
+  categoryId?: string
   date?: string
 }
 
+// Store type - localStorage structure
 export type Store = {
   budgets: Record<string, number>
   expenses: Record<string, Expense[]>
   plans: Record<string, PlanItem[]>
   drafts: DraftItem[]
+  categories: Category[]
+  accounts: Account[]
+  accountTransactions: AccountTransaction[]
+  budgetAllocations: Record<string, BudgetAllocation[]>
+  savingsGoals: SavingsGoal[]
+  savingsContributions: SavingsContribution[]
 }
 
-// LocalStorage fallback
-const STORAGE_KEY = "paper-budget-cartoon-v1"
+// Default categories seed data
+export const DEFAULT_CATEGORIES: Omit<Category, 'id'>[] = [
+  { name: 'Groceries', color: '#22c55e', icon: 'shopping-cart', sortOrder: 0, isDefault: true },
+  { name: 'Household', color: '#8b5cf6', icon: 'home', sortOrder: 1, isDefault: true },
+  { name: 'Transport', color: '#3b82f6', icon: 'car', sortOrder: 2, isDefault: true },
+  { name: 'Eating Out', color: '#f97316', icon: 'utensils', sortOrder: 3, isDefault: true },
+  { name: 'Health', color: '#ef4444', icon: 'heart-pulse', sortOrder: 4, isDefault: true },
+  { name: 'Gifts', color: '#ec4899', icon: 'gift', sortOrder: 5, isDefault: true },
+  { name: 'Bills', color: '#eab308', icon: 'receipt', sortOrder: 6, isDefault: true },
+  { name: 'Other', color: '#6b7280', icon: 'more-horizontal', sortOrder: 7, isDefault: true },
+]
 
-const defaultStore: Store = { budgets: {}, expenses: {}, plans: {}, drafts: [] }
+// LocalStorage fallback
+const STORAGE_KEY = "paper-budget-cartoon-v2" // Bumped version for new schema
+
+const defaultStore: Store = {
+  budgets: {},
+  expenses: {},
+  plans: {},
+  drafts: [],
+  categories: [],
+  accounts: [],
+  accountTransactions: [],
+  budgetAllocations: {},
+  savingsGoals: [],
+  savingsContributions: [],
+}
 
 function loadStoreFromLocalStorage(): Store {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { ...defaultStore }
-    const parsed = JSON.parse(raw) as Store
+    if (!raw) {
+      // Try to migrate from old storage key
+      const oldRaw = localStorage.getItem("paper-budget-cartoon-v1")
+      if (oldRaw) {
+        const oldParsed = JSON.parse(oldRaw)
+        const migrated: Store = {
+          budgets: oldParsed.budgets ?? {},
+          expenses: oldParsed.expenses ?? {},
+          plans: oldParsed.plans ?? {},
+          drafts: oldParsed.drafts ?? [],
+          categories: [],
+          accounts: [],
+          accountTransactions: [],
+          budgetAllocations: {},
+          savingsGoals: [],
+          savingsContributions: [],
+        }
+        saveStoreToLocalStorage(migrated)
+        return migrated
+      }
+      return { ...defaultStore }
+    }
+    const parsed = JSON.parse(raw) as Partial<Store>
     return {
       budgets: parsed.budgets ?? {},
       expenses: parsed.expenses ?? {},
       plans: parsed.plans ?? {},
       drafts: parsed.drafts ?? [],
+      categories: parsed.categories ?? [],
+      accounts: parsed.accounts ?? [],
+      accountTransactions: parsed.accountTransactions ?? [],
+      budgetAllocations: parsed.budgetAllocations ?? {},
+      savingsGoals: parsed.savingsGoals ?? [],
+      savingsContributions: parsed.savingsContributions ?? [],
     }
   } catch {
     return { ...defaultStore }
@@ -536,6 +668,872 @@ export class DataService {
 
     this.localStore.drafts = []
     saveStoreToLocalStorage(this.localStore)
+  }
+
+  // ============================================
+  // EXPENSE UPDATE (Previously missing)
+  // ============================================
+  async updateExpense(monthKey: string, id: string, updates: Partial<Expense>): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const dbUpdates: Record<string, unknown> = {}
+        if (updates.amount !== undefined) dbUpdates.amount = updates.amount
+        if (updates.category !== undefined) dbUpdates.category = updates.category
+        if (updates.categoryId !== undefined) dbUpdates.category_id = updates.categoryId
+        if (updates.note !== undefined) dbUpdates.note = updates.note
+        if (updates.date !== undefined) dbUpdates.date = updates.date
+
+        const { error } = await supabase
+          .from('expenses')
+          .update(dbUpdates)
+          .eq('id', id)
+
+        if (error) throw error
+        return
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    const list = (this.localStore.expenses[monthKey] ?? []).map((x) =>
+      x.id === id ? { ...x, ...updates } : x
+    )
+    this.localStore.expenses[monthKey] = list
+    saveStoreToLocalStorage(this.localStore)
+  }
+
+  // ============================================
+  // CATEGORY OPERATIONS
+  // ============================================
+  async getCategories(): Promise<Category[]> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('categories')
+          .select('*')
+          .order('sort_order', { ascending: true })
+
+        if (error) throw error
+
+        const categories = data?.map(row => ({
+          id: row.id,
+          name: row.name,
+          color: row.color,
+          icon: row.icon,
+          sortOrder: row.sort_order,
+          isDefault: row.is_default,
+        })) || []
+
+        // Update local store
+        this.localStore.categories = categories
+        saveStoreToLocalStorage(this.localStore)
+
+        return categories
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    return this.localStore.categories ?? []
+  }
+
+  async addCategory(category: Omit<Category, 'id'>): Promise<Category> {
+    const id = crypto.randomUUID()
+    const newCategory: Category = { id, ...category }
+
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser()
+        if (!user) {
+          console.warn('User not authenticated, falling back to localStorage')
+          this.useSupabase = false
+        } else {
+          const { error } = await supabase
+            .from('categories')
+            .insert({
+              id,
+              user_id: user.id,
+              name: category.name,
+              color: category.color,
+              icon: category.icon,
+              sort_order: category.sortOrder,
+              is_default: category.isDefault,
+            })
+
+          if (error) throw error
+          return newCategory
+        }
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    this.localStore.categories = [...this.localStore.categories, newCategory]
+    saveStoreToLocalStorage(this.localStore)
+    return newCategory
+  }
+
+  async updateCategory(id: string, updates: Partial<Category>): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const dbUpdates: Record<string, unknown> = {}
+        if (updates.name !== undefined) dbUpdates.name = updates.name
+        if (updates.color !== undefined) dbUpdates.color = updates.color
+        if (updates.icon !== undefined) dbUpdates.icon = updates.icon
+        if (updates.sortOrder !== undefined) dbUpdates.sort_order = updates.sortOrder
+
+        const { error } = await supabase
+          .from('categories')
+          .update(dbUpdates)
+          .eq('id', id)
+
+        if (error) throw error
+        return
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    this.localStore.categories = this.localStore.categories.map((c) =>
+      c.id === id ? { ...c, ...updates } : c
+    )
+    saveStoreToLocalStorage(this.localStore)
+  }
+
+  async removeCategory(id: string): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { error } = await supabase
+          .from('categories')
+          .delete()
+          .eq('id', id)
+
+        if (error) throw error
+        return
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    this.localStore.categories = this.localStore.categories.filter((c) => c.id !== id)
+    saveStoreToLocalStorage(this.localStore)
+  }
+
+  async seedDefaultCategories(): Promise<void> {
+    const existing = await this.getCategories()
+    if (existing.length > 0) return // Already seeded
+
+    for (const cat of DEFAULT_CATEGORIES) {
+      await this.addCategory(cat)
+    }
+  }
+
+  // ============================================
+  // ACCOUNT OPERATIONS
+  // ============================================
+  async getAccounts(): Promise<Account[]> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('accounts')
+          .select('*')
+          .order('sort_order', { ascending: true })
+
+        if (error) throw error
+
+        const accounts = data?.map(row => ({
+          id: row.id,
+          name: row.name,
+          accountType: row.account_type as Account['accountType'],
+          initialBalance: Number(row.initial_balance),
+          currentBalance: Number(row.current_balance),
+          isDefault: row.is_default,
+          color: row.color || undefined,
+          icon: row.icon || undefined,
+          sortOrder: row.sort_order,
+        })) || []
+
+        this.localStore.accounts = accounts
+        saveStoreToLocalStorage(this.localStore)
+
+        return accounts
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    return this.localStore.accounts ?? []
+  }
+
+  async addAccount(account: Omit<Account, 'id' | 'currentBalance'>): Promise<Account> {
+    const id = crypto.randomUUID()
+    const newAccount: Account = {
+      id,
+      ...account,
+      currentBalance: account.initialBalance, // Start with initial balance
+    }
+
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser()
+        if (!user) {
+          console.warn('User not authenticated, falling back to localStorage')
+          this.useSupabase = false
+        } else {
+          const { error } = await supabase
+            .from('accounts')
+            .insert({
+              id,
+              user_id: user.id,
+              name: account.name,
+              account_type: account.accountType,
+              initial_balance: account.initialBalance,
+              current_balance: account.initialBalance,
+              is_default: account.isDefault,
+              color: account.color,
+              icon: account.icon,
+              sort_order: account.sortOrder,
+            })
+
+          if (error) throw error
+          return newAccount
+        }
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    this.localStore.accounts = [...this.localStore.accounts, newAccount]
+    saveStoreToLocalStorage(this.localStore)
+    return newAccount
+  }
+
+  async updateAccount(id: string, updates: Partial<Account>): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const dbUpdates: Record<string, unknown> = {}
+        if (updates.name !== undefined) dbUpdates.name = updates.name
+        if (updates.accountType !== undefined) dbUpdates.account_type = updates.accountType
+        if (updates.initialBalance !== undefined) dbUpdates.initial_balance = updates.initialBalance
+        if (updates.currentBalance !== undefined) dbUpdates.current_balance = updates.currentBalance
+        if (updates.isDefault !== undefined) dbUpdates.is_default = updates.isDefault
+        if (updates.color !== undefined) dbUpdates.color = updates.color
+        if (updates.icon !== undefined) dbUpdates.icon = updates.icon
+        if (updates.sortOrder !== undefined) dbUpdates.sort_order = updates.sortOrder
+
+        const { error } = await supabase
+          .from('accounts')
+          .update(dbUpdates)
+          .eq('id', id)
+
+        if (error) throw error
+        return
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    this.localStore.accounts = this.localStore.accounts.map((a) =>
+      a.id === id ? { ...a, ...updates } : a
+    )
+    saveStoreToLocalStorage(this.localStore)
+  }
+
+  async removeAccount(id: string): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { error } = await supabase
+          .from('accounts')
+          .delete()
+          .eq('id', id)
+
+        if (error) throw error
+        return
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    this.localStore.accounts = this.localStore.accounts.filter((a) => a.id !== id)
+    saveStoreToLocalStorage(this.localStore)
+  }
+
+  async setDefaultAccount(id: string): Promise<void> {
+    // Unset all defaults first, then set the new one
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser()
+        if (!user) throw new Error('Not authenticated')
+
+        // The database trigger handles unsetting other defaults
+        const { error } = await supabase
+          .from('accounts')
+          .update({ is_default: true })
+          .eq('id', id)
+
+        if (error) throw error
+        return
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    this.localStore.accounts = this.localStore.accounts.map((a) => ({
+      ...a,
+      isDefault: a.id === id,
+    }))
+    saveStoreToLocalStorage(this.localStore)
+  }
+
+  async getDefaultAccount(): Promise<Account | null> {
+    const accounts = await this.getAccounts()
+    return accounts.find(a => a.isDefault) || accounts[0] || null
+  }
+
+  async depositToAccount(accountId: string, amount: number, note?: string): Promise<void> {
+    const id = crypto.randomUUID()
+    const transaction: AccountTransaction = {
+      id,
+      toAccountId: accountId,
+      amount,
+      transactionType: 'deposit',
+      note,
+      createdAt: new Date().toISOString(),
+    }
+
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser()
+        if (!user) throw new Error('Not authenticated')
+
+        // Insert transaction (trigger will update balance)
+        const { error } = await supabase
+          .from('account_transactions')
+          .insert({
+            id,
+            user_id: user.id,
+            to_account_id: accountId,
+            amount,
+            transaction_type: 'deposit',
+            note,
+          })
+
+        if (error) throw error
+        return
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    // Update local balance
+    this.localStore.accounts = this.localStore.accounts.map((a) =>
+      a.id === accountId ? { ...a, currentBalance: a.currentBalance + amount } : a
+    )
+    this.localStore.accountTransactions = [...this.localStore.accountTransactions, transaction]
+    saveStoreToLocalStorage(this.localStore)
+  }
+
+  // ============================================
+  // TRANSACTION OPERATIONS
+  // ============================================
+  async transferBetweenAccounts(fromId: string, toId: string, amount: number, note?: string): Promise<void> {
+    const id = crypto.randomUUID()
+    const transaction: AccountTransaction = {
+      id,
+      fromAccountId: fromId,
+      toAccountId: toId,
+      amount,
+      transactionType: 'transfer',
+      note,
+      createdAt: new Date().toISOString(),
+    }
+
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser()
+        if (!user) throw new Error('Not authenticated')
+
+        // Insert transaction (trigger will update balances)
+        const { error } = await supabase
+          .from('account_transactions')
+          .insert({
+            id,
+            user_id: user.id,
+            from_account_id: fromId,
+            to_account_id: toId,
+            amount,
+            transaction_type: 'transfer',
+            note,
+          })
+
+        if (error) throw error
+        return
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    // Update local balances
+    this.localStore.accounts = this.localStore.accounts.map((a) => {
+      if (a.id === fromId) return { ...a, currentBalance: a.currentBalance - amount }
+      if (a.id === toId) return { ...a, currentBalance: a.currentBalance + amount }
+      return a
+    })
+    this.localStore.accountTransactions = [...this.localStore.accountTransactions, transaction]
+    saveStoreToLocalStorage(this.localStore)
+  }
+
+  async allocateToBudget(accountId: string, monthKey: string, amount: number): Promise<void> {
+    const transactionId = crypto.randomUUID()
+    const allocationId = crypto.randomUUID()
+
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser()
+        if (!user) throw new Error('Not authenticated')
+
+        // Create transaction
+        const { error: txError } = await supabase
+          .from('account_transactions')
+          .insert({
+            id: transactionId,
+            user_id: user.id,
+            from_account_id: accountId,
+            amount,
+            transaction_type: 'budget_allocation',
+            month_key: monthKey,
+          })
+
+        if (txError) throw txError
+
+        // Create or update allocation
+        const { error: allocError } = await supabase
+          .from('budget_allocations')
+          .upsert({
+            id: allocationId,
+            user_id: user.id,
+            account_id: accountId,
+            month_key: monthKey,
+            amount,
+          }, {
+            onConflict: 'user_id,account_id,month_key'
+          })
+
+        if (allocError) throw allocError
+        return
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    // Update local
+    this.localStore.accounts = this.localStore.accounts.map((a) =>
+      a.id === accountId ? { ...a, currentBalance: a.currentBalance - amount } : a
+    )
+
+    const allocations = this.localStore.budgetAllocations[monthKey] ?? []
+    const existingIdx = allocations.findIndex(a => a.accountId === accountId)
+    if (existingIdx >= 0) {
+      allocations[existingIdx] = { ...allocations[existingIdx], amount: allocations[existingIdx].amount + amount }
+    } else {
+      allocations.push({ id: allocationId, accountId, monthKey, amount })
+    }
+    this.localStore.budgetAllocations[monthKey] = allocations
+
+    this.localStore.accountTransactions = [...this.localStore.accountTransactions, {
+      id: transactionId,
+      fromAccountId: accountId,
+      amount,
+      transactionType: 'budget_allocation',
+      monthKey,
+      createdAt: new Date().toISOString(),
+    }]
+
+    saveStoreToLocalStorage(this.localStore)
+  }
+
+  async getBudgetAllocations(monthKey: string): Promise<BudgetAllocation[]> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('budget_allocations')
+          .select('*')
+          .eq('month_key', monthKey)
+
+        if (error) throw error
+
+        return data?.map(row => ({
+          id: row.id,
+          accountId: row.account_id,
+          monthKey: row.month_key,
+          amount: Number(row.amount),
+        })) || []
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    return this.localStore.budgetAllocations[monthKey] ?? []
+  }
+
+  async getTotalAllocatedBudget(monthKey: string): Promise<number> {
+    const allocations = await this.getBudgetAllocations(monthKey)
+    return allocations.reduce((sum, a) => sum + a.amount, 0)
+  }
+
+  async getAccountTransactions(accountId?: string): Promise<AccountTransaction[]> {
+    if (this.useSupabase && supabase) {
+      try {
+        let query = supabase
+          .from('account_transactions')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (accountId) {
+          query = query.or(`from_account_id.eq.${accountId},to_account_id.eq.${accountId}`)
+        }
+
+        const { data, error } = await query
+
+        if (error) throw error
+
+        return data?.map(row => ({
+          id: row.id,
+          fromAccountId: row.from_account_id || undefined,
+          toAccountId: row.to_account_id || undefined,
+          amount: Number(row.amount),
+          transactionType: row.transaction_type as AccountTransaction['transactionType'],
+          monthKey: row.month_key || undefined,
+          savingsGoalId: row.savings_goal_id || undefined,
+          note: row.note || undefined,
+          createdAt: row.created_at,
+        })) || []
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    let transactions = this.localStore.accountTransactions ?? []
+    if (accountId) {
+      transactions = transactions.filter(
+        t => t.fromAccountId === accountId || t.toAccountId === accountId
+      )
+    }
+    return transactions.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  }
+
+  // ============================================
+  // SAVINGS GOAL OPERATIONS
+  // ============================================
+  async getSavingsGoals(): Promise<SavingsGoal[]> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('savings_goals')
+          .select('*')
+          .order('created_at', { ascending: true })
+
+        if (error) throw error
+
+        const goals = data?.map(row => ({
+          id: row.id,
+          name: row.name,
+          targetAmount: Number(row.target_amount),
+          currentAmount: Number(row.current_amount),
+          imageUrl: row.image_url || undefined,
+          deadline: row.deadline || undefined,
+          color: row.color || undefined,
+          isCompleted: row.is_completed,
+          completedAt: row.completed_at || undefined,
+        })) || []
+
+        this.localStore.savingsGoals = goals
+        saveStoreToLocalStorage(this.localStore)
+
+        return goals
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    return this.localStore.savingsGoals ?? []
+  }
+
+  async addSavingsGoal(goal: Omit<SavingsGoal, 'id' | 'currentAmount' | 'isCompleted' | 'completedAt'>): Promise<SavingsGoal> {
+    const id = crypto.randomUUID()
+    const newGoal: SavingsGoal = {
+      id,
+      ...goal,
+      currentAmount: 0,
+      isCompleted: false,
+    }
+
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser()
+        if (!user) throw new Error('Not authenticated')
+
+        const { error } = await supabase
+          .from('savings_goals')
+          .insert({
+            id,
+            user_id: user.id,
+            name: goal.name,
+            target_amount: goal.targetAmount,
+            current_amount: 0,
+            image_url: goal.imageUrl,
+            deadline: goal.deadline,
+            color: goal.color,
+            is_completed: false,
+          })
+
+        if (error) throw error
+        return newGoal
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    this.localStore.savingsGoals = [...this.localStore.savingsGoals, newGoal]
+    saveStoreToLocalStorage(this.localStore)
+    return newGoal
+  }
+
+  async updateSavingsGoal(id: string, updates: Partial<SavingsGoal>): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const dbUpdates: Record<string, unknown> = {}
+        if (updates.name !== undefined) dbUpdates.name = updates.name
+        if (updates.targetAmount !== undefined) dbUpdates.target_amount = updates.targetAmount
+        if (updates.imageUrl !== undefined) dbUpdates.image_url = updates.imageUrl
+        if (updates.deadline !== undefined) dbUpdates.deadline = updates.deadline
+        if (updates.color !== undefined) dbUpdates.color = updates.color
+
+        const { error } = await supabase
+          .from('savings_goals')
+          .update(dbUpdates)
+          .eq('id', id)
+
+        if (error) throw error
+        return
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    this.localStore.savingsGoals = this.localStore.savingsGoals.map((g) =>
+      g.id === id ? { ...g, ...updates } : g
+    )
+    saveStoreToLocalStorage(this.localStore)
+  }
+
+  async removeSavingsGoal(id: string): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { error } = await supabase
+          .from('savings_goals')
+          .delete()
+          .eq('id', id)
+
+        if (error) throw error
+        return
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    this.localStore.savingsGoals = this.localStore.savingsGoals.filter((g) => g.id !== id)
+    saveStoreToLocalStorage(this.localStore)
+  }
+
+  async contributeToSavingsGoal(goalId: string, accountId: string, amount: number, note?: string): Promise<void> {
+    const contributionId = crypto.randomUUID()
+    const transactionId = crypto.randomUUID()
+
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser()
+        if (!user) throw new Error('Not authenticated')
+
+        // Create transaction (trigger will update account balance)
+        const { error: txError } = await supabase
+          .from('account_transactions')
+          .insert({
+            id: transactionId,
+            user_id: user.id,
+            from_account_id: accountId,
+            amount,
+            transaction_type: 'savings_contribution',
+            savings_goal_id: goalId,
+            note,
+          })
+
+        if (txError) throw txError
+
+        // Create contribution (trigger will update goal current_amount)
+        const { error: contribError } = await supabase
+          .from('savings_contributions')
+          .insert({
+            id: contributionId,
+            user_id: user.id,
+            savings_goal_id: goalId,
+            account_id: accountId,
+            amount,
+            note,
+          })
+
+        if (contribError) throw contribError
+        return
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    // Update local
+    this.localStore.accounts = this.localStore.accounts.map((a) =>
+      a.id === accountId ? { ...a, currentBalance: a.currentBalance - amount } : a
+    )
+
+    this.localStore.savingsGoals = this.localStore.savingsGoals.map((g) => {
+      if (g.id !== goalId) return g
+      const newAmount = g.currentAmount + amount
+      const isCompleted = newAmount >= g.targetAmount
+      return {
+        ...g,
+        currentAmount: newAmount,
+        isCompleted,
+        completedAt: isCompleted && !g.isCompleted ? new Date().toISOString() : g.completedAt,
+      }
+    })
+
+    this.localStore.savingsContributions = [...this.localStore.savingsContributions, {
+      id: contributionId,
+      savingsGoalId: goalId,
+      accountId,
+      amount,
+      note,
+      createdAt: new Date().toISOString(),
+    }]
+
+    this.localStore.accountTransactions = [...this.localStore.accountTransactions, {
+      id: transactionId,
+      fromAccountId: accountId,
+      amount,
+      transactionType: 'savings_contribution',
+      savingsGoalId: goalId,
+      note,
+      createdAt: new Date().toISOString(),
+    }]
+
+    saveStoreToLocalStorage(this.localStore)
+  }
+
+  async getSavingsContributions(goalId: string): Promise<SavingsContribution[]> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('savings_contributions')
+          .select('*')
+          .eq('savings_goal_id', goalId)
+          .order('created_at', { ascending: false })
+
+        if (error) throw error
+
+        return data?.map(row => ({
+          id: row.id,
+          savingsGoalId: row.savings_goal_id,
+          accountId: row.account_id,
+          amount: Number(row.amount),
+          note: row.note || undefined,
+          createdAt: row.created_at,
+        })) || []
+      } catch (error) {
+        console.warn('Supabase error, falling back to localStorage:', error)
+        this.useSupabase = false
+      }
+    }
+
+    return (this.localStore.savingsContributions ?? [])
+      .filter(c => c.savingsGoalId === goalId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  }
+
+  // ============================================
+  // IMAGE UPLOAD OPERATIONS
+  // ============================================
+  async uploadSavingsGoalImage(file: File): Promise<string> {
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser()
+        if (!user) throw new Error('Not authenticated')
+
+        const fileExt = file.name.split('.').pop()
+        const fileName = `${user.id}/${crypto.randomUUID()}.${fileExt}`
+
+        const { error: uploadError } = await supabase.storage
+          .from('savings-goal-images')
+          .upload(fileName, file)
+
+        if (uploadError) throw uploadError
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('savings-goal-images')
+          .getPublicUrl(fileName)
+
+        return publicUrl
+      } catch (error) {
+        console.warn('Supabase storage error:', error)
+        throw error
+      }
+    }
+
+    // For localStorage mode, convert to base64 data URL
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+  }
+
+  async deleteSavingsGoalImage(imagePath: string): Promise<void> {
+    if (this.useSupabase && supabase && !imagePath.startsWith('data:')) {
+      try {
+        // Extract path from full URL
+        const url = new URL(imagePath)
+        const pathParts = url.pathname.split('/savings-goal-images/')
+        if (pathParts.length > 1) {
+          const { error } = await supabase.storage
+            .from('savings-goal-images')
+            .remove([pathParts[1]])
+
+          if (error) throw error
+        }
+      } catch (error) {
+        console.warn('Supabase storage delete error:', error)
+      }
+    }
+    // For localStorage mode with data URLs, nothing to delete
   }
 }
 

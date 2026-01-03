@@ -1,4 +1,4 @@
-import { Home, BarChart3, PiggyBank } from "lucide-react";
+import { Home, BarChart3, PiggyBank, Wallet } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
@@ -13,6 +13,7 @@ export function NavigationPanel() {
   const navigate = useNavigate();
 
   const isHome = location.pathname === "/";
+  const isAccounts = location.pathname === "/accounts";
   const isSavings = location.pathname === "/savings";
   const isAnalytics = location.pathname === "/analytics";
 
@@ -51,6 +52,32 @@ export function NavigationPanel() {
             </HoverCardTrigger>
             <HoverCardContent side="right" className="w-auto text-xs">
               Home
+            </HoverCardContent>
+          </HoverCard>
+
+          {/* Accounts Button */}
+          <HoverCard>
+            <HoverCardTrigger asChild>
+              <Button
+                onClick={() => navigate("/accounts")}
+                variant="ghost"
+                size="sm"
+                className={`
+                  relative w-10 h-10 ${paperTheme.radius.md} transition-all duration-200 cursor-pointer flex items-center justify-center
+                  ${isAccounts
+                    ? `${paperTheme.colors.background.white} ${paperTheme.effects.shadow.sm} ${paperTheme.colors.borders.amberStrong} ${paperTheme.colors.text.accent}`
+                    : `${paperTheme.colors.background.whiteTransparent} hover:${paperTheme.colors.background.white} ${paperTheme.colors.borders.amber} ${paperTheme.colors.text.muted} hover:${paperTheme.colors.text.accent}`
+                  }
+                `}
+                aria-label="Accounts"
+              >
+                {/* Subtle paper texture for button */}
+                <div className={`absolute inset-0 opacity-10 ${paperTheme.effects.paperTextureSmall} ${paperTheme.radius.md}`}></div>
+                <Wallet className="w-4 h-4 relative z-10" />
+              </Button>
+            </HoverCardTrigger>
+            <HoverCardContent side="right" className="w-auto text-xs">
+              Accounts
             </HoverCardContent>
           </HoverCard>
 

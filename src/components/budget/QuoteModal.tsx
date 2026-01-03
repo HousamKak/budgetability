@@ -1,5 +1,10 @@
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { dialogStyles } from "@/styles";
 
 interface QuoteModalProps {
@@ -11,7 +16,10 @@ interface QuoteModalProps {
 export function QuoteModal({ open, onOpenChange, quote }: QuoteModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md mx-2 sm:mx-auto">
+      <DialogContent
+        className="sm:max-w-md mx-2 sm:mx-auto"
+        aria-describedby={undefined}
+      >
         <div className={dialogStyles.paperDialog}>
           {/* Paper texture overlay */}
           <div className={dialogStyles.paperTexture}></div>
@@ -26,13 +34,23 @@ export function QuoteModal({ open, onOpenChange, quote }: QuoteModalProps) {
             <div className="text-4xl mb-4">✨</div>
 
             <DialogHeader className="mb-4">
-              <DialogTitle className="text-xl font-bold text-stone-700" style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}>
+              <DialogTitle
+                className="text-xl font-bold text-stone-700"
+                style={{
+                  fontFamily: '"Patrick Hand", "Comic Sans MS", cursive',
+                }}
+              >
                 Quote of the Day
               </DialogTitle>
             </DialogHeader>
 
             <div className={dialogStyles.formSection}>
-              <p className="text-stone-700 text-lg leading-relaxed font-medium" style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}>
+              <p
+                className="text-stone-700 text-lg leading-relaxed font-medium"
+                style={{
+                  fontFamily: '"Patrick Hand", "Comic Sans MS", cursive',
+                }}
+              >
                 {quote}
               </p>
             </div>

@@ -31,6 +31,12 @@ export const supabase = hasSupabaseCredentials
       auth: {
         persistSession: true,
         detectSessionInUrl: true
+      },
+      global: {
+        headers: {
+          'Accept-Profile': 'public',
+          'Content-Profile': 'public'
+        }
       }
     })
   : null
