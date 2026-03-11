@@ -1,3 +1,4 @@
+import type { ManualEntry } from "@/types/spreadsheet.types";
 import { supabase } from "./supabase";
 
 // ============================================
@@ -119,6 +120,7 @@ export type Store = {
   budgetAllocations: Record<string, BudgetAllocation[]>;
   savingsGoals: SavingsGoal[];
   savingsContributions: SavingsContribution[];
+  spreadsheetEntries: ManualEntry[];
 };
 
 // Default categories seed data
@@ -195,6 +197,7 @@ const defaultStore: Store = {
   budgetAllocations: {},
   savingsGoals: [],
   savingsContributions: [],
+  spreadsheetEntries: [],
 };
 
 function loadStoreFromLocalStorage(): Store {
@@ -216,6 +219,7 @@ function loadStoreFromLocalStorage(): Store {
           budgetAllocations: {},
           savingsGoals: [],
           savingsContributions: [],
+          spreadsheetEntries: [],
         };
         saveStoreToLocalStorage(migrated);
         return migrated;
@@ -234,6 +238,7 @@ function loadStoreFromLocalStorage(): Store {
       budgetAllocations: parsed.budgetAllocations ?? {},
       savingsGoals: parsed.savingsGoals ?? [],
       savingsContributions: parsed.savingsContributions ?? [],
+      spreadsheetEntries: parsed.spreadsheetEntries ?? [],
     };
   } catch {
     return { ...defaultStore };
@@ -327,7 +332,7 @@ export class DataService {
             },
             {
               onConflict: "user_id,month_key",
-            }
+            },
           );
 
           if (error) {
@@ -337,7 +342,7 @@ export class DataService {
           console.log(
             "Budget successfully saved to Supabase:",
             monthKey,
-            amount
+            amount,
           );
 
           // Update local store to stay in sync with Supabase
@@ -441,7 +446,7 @@ export class DataService {
     }
 
     const list = (this.localStore.expenses[monthKey] ?? []).filter(
-      (x) => x.id !== id
+      (x) => x.id !== id,
     );
     this.localStore.expenses[monthKey] = list;
     saveStoreToLocalStorage(this.localStore);
@@ -526,7 +531,7 @@ export class DataService {
   async updatePlan(
     monthKey: string,
     id: string,
-    updates: Partial<PlanItem>
+    updates: Partial<PlanItem>,
   ): Promise<void> {
     if (this.useSupabase && supabase) {
       try {
@@ -554,7 +559,7 @@ export class DataService {
     }
 
     const list = (this.localStore.plans[monthKey] ?? []).map((x) =>
-      x.id === id ? { ...x, ...updates } : x
+      x.id === id ? { ...x, ...updates } : x,
     );
     this.localStore.plans[monthKey] = list;
     saveStoreToLocalStorage(this.localStore);
@@ -574,16 +579,42 @@ export class DataService {
     }
 
     const list = (this.localStore.plans[monthKey] ?? []).filter(
-      (x) => x.id !== id
+      (x) => x.id !== id,
     );
     this.localStore.plans[monthKey] = list;
     saveStoreToLocalStorage(this.localStore);
   }
 
   async clearMonth(monthKey: string): Promise<void> {
+    // First, refund all budget allocations for this month back to accounts
+    const allocations = await this.getBudgetAllocations(monthKey);
+
     if (this.useSupabase && supabase) {
       try {
+        const user = await this.getCurrentUser();
+
+        // Refund each allocation back to its account
+        for (const alloc of allocations) {
+          if (alloc.amount > 0 && user) {
+            const refundTxId = crypto.randomUUID();
+            await supabase.from("account_transactions").insert({
+              id: refundTxId,
+              user_id: user.id,
+              to_account_id: alloc.accountId,
+              amount: alloc.amount,
+              transaction_type: "budget_allocation",
+              month_key: monthKey,
+              note: "Month cleared - allocation refunded",
+            });
+          }
+        }
+
+        // Delete allocations, budgets, expenses, plans for this month
         await Promise.all([
+          supabase
+            .from("budget_allocations")
+            .delete()
+            .eq("month_key", monthKey),
           supabase.from("budgets").delete().eq("month_key", monthKey),
           supabase.from("expenses").delete().eq("month_key", monthKey),
           supabase.from("plans").delete().eq("month_key", monthKey),
@@ -595,6 +626,33 @@ export class DataService {
       }
     }
 
+    // Local: refund allocations back to accounts
+    for (const alloc of allocations) {
+      if (alloc.amount > 0) {
+        this.localStore.accounts = this.localStore.accounts.map((a) =>
+          a.id === alloc.accountId
+            ? { ...a, currentBalance: a.currentBalance + alloc.amount }
+            : a,
+        );
+
+        // Record refund transaction
+        this.localStore.accountTransactions = [
+          ...this.localStore.accountTransactions,
+          {
+            id: crypto.randomUUID(),
+            toAccountId: alloc.accountId,
+            amount: alloc.amount,
+            transactionType: "budget_allocation",
+            monthKey,
+            note: "Month cleared - allocation refunded",
+            createdAt: new Date().toISOString(),
+          },
+        ];
+      }
+    }
+
+    // Clear allocations, budget, expenses, plans
+    delete this.localStore.budgetAllocations[monthKey];
     this.localStore.budgets[monthKey] = 0;
     this.localStore.expenses[monthKey] = [];
     this.localStore.plans[monthKey] = [];
@@ -694,7 +752,7 @@ export class DataService {
     }
 
     const list = this.localStore.drafts.map((x) =>
-      x.id === id ? { ...x, ...updates } : x
+      x.id === id ? { ...x, ...updates } : x,
     );
     this.localStore.drafts = list;
     saveStoreToLocalStorage(this.localStore);
@@ -744,7 +802,7 @@ export class DataService {
   async updateExpense(
     monthKey: string,
     id: string,
-    updates: Partial<Expense>
+    updates: Partial<Expense>,
   ): Promise<void> {
     if (this.useSupabase && supabase) {
       try {
@@ -771,7 +829,7 @@ export class DataService {
     }
 
     const list = (this.localStore.expenses[monthKey] ?? []).map((x) =>
-      x.id === id ? { ...x, ...updates } : x
+      x.id === id ? { ...x, ...updates } : x,
     );
     this.localStore.expenses[monthKey] = list;
     saveStoreToLocalStorage(this.localStore);
@@ -873,7 +931,7 @@ export class DataService {
     }
 
     this.localStore.categories = this.localStore.categories.map((c) =>
-      c.id === id ? { ...c, ...updates } : c
+      c.id === id ? { ...c, ...updates } : c,
     );
     saveStoreToLocalStorage(this.localStore);
   }
@@ -895,7 +953,7 @@ export class DataService {
     }
 
     this.localStore.categories = this.localStore.categories.filter(
-      (c) => c.id !== id
+      (c) => c.id !== id,
     );
     saveStoreToLocalStorage(this.localStore);
   }
@@ -906,7 +964,7 @@ export class DataService {
     // Check which default categories are missing
     const existingNames = new Set(existing.map((c) => c.name.toLowerCase()));
     const missingCategories = DEFAULT_CATEGORIES.filter(
-      (cat) => !existingNames.has(cat.name.toLowerCase())
+      (cat) => !existingNames.has(cat.name.toLowerCase()),
     );
 
     // Add only missing categories
@@ -955,7 +1013,7 @@ export class DataService {
   }
 
   async addAccount(
-    account: Omit<Account, "id" | "currentBalance">
+    account: Omit<Account, "id" | "currentBalance">,
   ): Promise<Account> {
     const id = crypto.randomUUID();
     const newAccount: Account = {
@@ -1030,14 +1088,26 @@ export class DataService {
     }
 
     this.localStore.accounts = this.localStore.accounts.map((a) =>
-      a.id === id ? { ...a, ...updates } : a
+      a.id === id ? { ...a, ...updates } : a,
     );
     saveStoreToLocalStorage(this.localStore);
   }
 
   async removeAccount(id: string): Promise<void> {
+    // First, refund all budget allocations that reference this account
+    const allAccountAllocations =
+      await this.getAllBudgetAllocationsForAccount(id);
+    for (const alloc of allAccountAllocations) {
+      try {
+        await this.removeBudgetAllocation(alloc.accountId, alloc.monthKey);
+      } catch (e) {
+        console.warn("Failed to remove allocation during account deletion:", e);
+      }
+    }
+
     if (this.useSupabase && supabase) {
       try {
+        // CASCADE will remove budget_allocations, but we already refunded above
         const { error } = await supabase.from("accounts").delete().eq("id", id);
 
         if (error) throw error;
@@ -1048,9 +1118,18 @@ export class DataService {
       }
     }
 
+    // Remove the account
     this.localStore.accounts = this.localStore.accounts.filter(
-      (a) => a.id !== id
+      (a) => a.id !== id,
     );
+
+    // Clean up any remaining orphaned allocations in all months
+    for (const monthKey of Object.keys(this.localStore.budgetAllocations)) {
+      this.localStore.budgetAllocations[monthKey] = (
+        this.localStore.budgetAllocations[monthKey] ?? []
+      ).filter((a) => a.accountId !== id);
+    }
+
     saveStoreToLocalStorage(this.localStore);
   }
 
@@ -1090,7 +1169,7 @@ export class DataService {
   async depositToAccount(
     accountId: string,
     amount: number,
-    note?: string
+    note?: string,
   ): Promise<void> {
     const id = crypto.randomUUID();
     const transaction: AccountTransaction = {
@@ -1129,7 +1208,7 @@ export class DataService {
     this.localStore.accounts = this.localStore.accounts.map((a) =>
       a.id === accountId
         ? { ...a, currentBalance: a.currentBalance + amount }
-        : a
+        : a,
     );
     this.localStore.accountTransactions = [
       ...this.localStore.accountTransactions,
@@ -1145,7 +1224,7 @@ export class DataService {
     fromId: string,
     toId: string,
     amount: number,
-    note?: string
+    note?: string,
   ): Promise<void> {
     const id = crypto.randomUUID();
     const transaction: AccountTransaction = {
@@ -1200,8 +1279,22 @@ export class DataService {
   async allocateToBudget(
     accountId: string,
     monthKey: string,
-    amount: number
+    amount: number,
   ): Promise<void> {
+    if (amount <= 0) throw new Error("Allocation amount must be positive");
+
+    // Validate sufficient balance
+    const accounts = this.useSupabase
+      ? await this.getAccounts()
+      : this.localStore.accounts;
+    const account = accounts.find((a) => a.id === accountId);
+    if (!account) throw new Error("Account not found");
+    if (amount > account.currentBalance) {
+      throw new Error(
+        `Insufficient balance: ${account.name} has $${account.currentBalance.toFixed(2)} but tried to allocate $${amount.toFixed(2)}`,
+      );
+    }
+
     const transactionId = crypto.randomUUID();
     const allocationId = crypto.randomUUID();
 
@@ -1210,7 +1303,24 @@ export class DataService {
         const user = await this.getCurrentUser();
         if (!user) throw new Error("Not authenticated");
 
-        // Create transaction
+        // Check for existing allocation for this account+month
+        const existingAllocations = await this.getBudgetAllocations(monthKey);
+        const existing = existingAllocations.find(
+          (a) => a.accountId === accountId,
+        );
+
+        if (existing) {
+          // Already has allocation - delegate to updateBudgetAllocation
+          // which correctly handles the difference
+          await this.updateBudgetAllocation(
+            accountId,
+            monthKey,
+            existing.amount + amount,
+          );
+          return;
+        }
+
+        // Create transaction (trigger will update account balance)
         const { error: txError } = await supabase
           .from("account_transactions")
           .insert({
@@ -1224,21 +1334,16 @@ export class DataService {
 
         if (txError) throw txError;
 
-        // Create or update allocation
+        // Create new allocation (INSERT not UPSERT to avoid replacing)
         const { error: allocError } = await supabase
           .from("budget_allocations")
-          .upsert(
-            {
-              id: allocationId,
-              user_id: user.id,
-              account_id: accountId,
-              month_key: monthKey,
-              amount,
-            },
-            {
-              onConflict: "user_id,account_id,month_key",
-            }
-          );
+          .insert({
+            id: allocationId,
+            user_id: user.id,
+            account_id: accountId,
+            month_key: monthKey,
+            amount,
+          });
 
         if (allocError) throw allocError;
         return;
@@ -1248,13 +1353,14 @@ export class DataService {
       }
     }
 
-    // Update local
+    // Deduct from account balance
     this.localStore.accounts = this.localStore.accounts.map((a) =>
       a.id === accountId
         ? { ...a, currentBalance: a.currentBalance - amount }
-        : a
+        : a,
     );
 
+    // Update or create allocation
     const allocations = this.localStore.budgetAllocations[monthKey] ?? [];
     const existingIdx = allocations.findIndex((a) => a.accountId === accountId);
     if (existingIdx >= 0) {
@@ -1267,6 +1373,7 @@ export class DataService {
     }
     this.localStore.budgetAllocations[monthKey] = allocations;
 
+    // Record transaction
     this.localStore.accountTransactions = [
       ...this.localStore.accountTransactions,
       {
@@ -1314,10 +1421,90 @@ export class DataService {
     return allocations.reduce((sum, a) => sum + a.amount, 0);
   }
 
+  /**
+   * Get all budget allocations for a specific account across all months.
+   * Used to show on AccountCard how much is committed from this account.
+   */
+  async getAllBudgetAllocationsForAccount(
+    accountId: string,
+  ): Promise<BudgetAllocation[]> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("budget_allocations")
+          .select("*")
+          .eq("account_id", accountId);
+
+        if (error) throw error;
+
+        return (
+          data?.map((row) => ({
+            id: row.id,
+            accountId: row.account_id,
+            monthKey: row.month_key,
+            amount: Number(row.amount),
+          })) || []
+        );
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    // Local: scan all months for allocations from this account
+    const results: BudgetAllocation[] = [];
+    for (const [, allocations] of Object.entries(
+      this.localStore.budgetAllocations,
+    )) {
+      for (const alloc of allocations) {
+        if (alloc.accountId === accountId) {
+          results.push(alloc);
+        }
+      }
+    }
+    return results;
+  }
+
+  /**
+   * Get all budget allocations across all months (for all accounts).
+   * Used on Accounts page to show allocated amounts per account.
+   */
+  async getAllBudgetAllocations(): Promise<BudgetAllocation[]> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("budget_allocations")
+          .select("*");
+
+        if (error) throw error;
+
+        return (
+          data?.map((row) => ({
+            id: row.id,
+            accountId: row.account_id,
+            monthKey: row.month_key,
+            amount: Number(row.amount),
+          })) || []
+        );
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    const results: BudgetAllocation[] = [];
+    for (const [, allocations] of Object.entries(
+      this.localStore.budgetAllocations,
+    )) {
+      results.push(...allocations);
+    }
+    return results;
+  }
+
   async updateBudgetAllocation(
     accountId: string,
     monthKey: string,
-    newAmount: number
+    newAmount: number,
   ): Promise<void> {
     if (this.useSupabase && supabase) {
       try {
@@ -1327,7 +1514,7 @@ export class DataService {
         // Get the current allocation to calculate the difference
         const allocations = await this.getBudgetAllocations(monthKey);
         const currentAllocation = allocations.find(
-          (a) => a.accountId === accountId
+          (a) => a.accountId === accountId,
         );
         const currentAmount = currentAllocation?.amount ?? 0;
         const amountDifference = newAmount - currentAmount;
@@ -1354,7 +1541,10 @@ export class DataService {
               amount: Math.abs(amountDifference),
               transaction_type: "budget_allocation",
               month_key: monthKey,
-              note: amountDifference > 0 ? "Allocation increased" : "Allocation decreased",
+              note:
+                amountDifference > 0
+                  ? "Allocation increased"
+                  : "Allocation decreased",
             });
 
           if (txError) throw txError;
@@ -1385,7 +1575,7 @@ export class DataService {
       this.localStore.accounts = this.localStore.accounts.map((a) =>
         a.id === accountId
           ? { ...a, currentBalance: a.currentBalance - amountDifference }
-          : a
+          : a,
       );
 
       // Add transaction
@@ -1399,7 +1589,10 @@ export class DataService {
             amount: Math.abs(amountDifference),
             transactionType: "budget_allocation",
             monthKey,
-            note: amountDifference > 0 ? "Allocation increased" : "Allocation decreased",
+            note:
+              amountDifference > 0
+                ? "Allocation increased"
+                : "Allocation decreased",
             createdAt: new Date().toISOString(),
           },
         ];
@@ -1411,7 +1604,7 @@ export class DataService {
 
   async removeBudgetAllocation(
     accountId: string,
-    monthKey: string
+    monthKey: string,
   ): Promise<void> {
     if (this.useSupabase && supabase) {
       try {
@@ -1462,14 +1655,14 @@ export class DataService {
 
     // Remove allocation
     this.localStore.budgetAllocations[monthKey] = allocations.filter(
-      (a) => a.accountId !== accountId
+      (a) => a.accountId !== accountId,
     );
 
     // Refund to account
     this.localStore.accounts = this.localStore.accounts.map((a) =>
       a.id === accountId
         ? { ...a, currentBalance: a.currentBalance + allocation.amount }
-        : a
+        : a,
     );
 
     // Add refund transaction
@@ -1491,7 +1684,7 @@ export class DataService {
 
   async getAllocationTransactions(
     accountId: string,
-    monthKey: string
+    monthKey: string,
   ): Promise<AccountTransaction[]> {
     if (this.useSupabase && supabase) {
       try {
@@ -1529,13 +1722,13 @@ export class DataService {
       .filter(
         (t) =>
           t.monthKey === monthKey &&
-          (t.fromAccountId === accountId || t.toAccountId === accountId)
+          (t.fromAccountId === accountId || t.toAccountId === accountId),
       )
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   async getAccountTransactions(
-    accountId?: string
+    accountId?: string,
   ): Promise<AccountTransaction[]> {
     if (this.useSupabase && supabase) {
       try {
@@ -1546,7 +1739,7 @@ export class DataService {
 
         if (accountId) {
           query = query.or(
-            `from_account_id.eq.${accountId},to_account_id.eq.${accountId}`
+            `from_account_id.eq.${accountId},to_account_id.eq.${accountId}`,
           );
         }
 
@@ -1577,7 +1770,7 @@ export class DataService {
     let transactions = this.localStore.accountTransactions ?? [];
     if (accountId) {
       transactions = transactions.filter(
-        (t) => t.fromAccountId === accountId || t.toAccountId === accountId
+        (t) => t.fromAccountId === accountId || t.toAccountId === accountId,
       );
     }
     return transactions.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -1626,7 +1819,7 @@ export class DataService {
     goal: Omit<
       SavingsGoal,
       "id" | "currentAmount" | "isCompleted" | "completedAt"
-    >
+    >,
   ): Promise<SavingsGoal> {
     const id = crypto.randomUUID();
     const newGoal: SavingsGoal = {
@@ -1668,7 +1861,7 @@ export class DataService {
 
   async updateSavingsGoal(
     id: string,
-    updates: Partial<SavingsGoal>
+    updates: Partial<SavingsGoal>,
   ): Promise<void> {
     if (this.useSupabase && supabase) {
       try {
@@ -1696,7 +1889,7 @@ export class DataService {
     }
 
     this.localStore.savingsGoals = this.localStore.savingsGoals.map((g) =>
-      g.id === id ? { ...g, ...updates } : g
+      g.id === id ? { ...g, ...updates } : g,
     );
     saveStoreToLocalStorage(this.localStore);
   }
@@ -1718,7 +1911,7 @@ export class DataService {
     }
 
     this.localStore.savingsGoals = this.localStore.savingsGoals.filter(
-      (g) => g.id !== id
+      (g) => g.id !== id,
     );
     saveStoreToLocalStorage(this.localStore);
   }
@@ -1727,7 +1920,7 @@ export class DataService {
     goalId: string,
     accountId: string,
     amount: number,
-    note?: string
+    note?: string,
   ): Promise<void> {
     const contributionId = crypto.randomUUID();
     const transactionId = crypto.randomUUID();
@@ -1776,7 +1969,7 @@ export class DataService {
     this.localStore.accounts = this.localStore.accounts.map((a) =>
       a.id === accountId
         ? { ...a, currentBalance: a.currentBalance - amount }
-        : a
+        : a,
     );
 
     this.localStore.savingsGoals = this.localStore.savingsGoals.map((g) => {
@@ -1823,7 +2016,7 @@ export class DataService {
   }
 
   async getSavingsContributions(
-    goalId: string
+    goalId: string,
   ): Promise<SavingsContribution[]> {
     if (this.useSupabase && supabase) {
       try {
@@ -1912,6 +2105,225 @@ export class DataService {
       }
     }
     // For localStorage mode with data URLs, nothing to delete
+  }
+
+  // ============================================
+  // SPREADSHEET BATCH QUERIES
+  // ============================================
+
+  async getExpensesForMonthRange(
+    startMonthKey: string,
+    endMonthKey: string,
+  ): Promise<Record<string, Expense[]>> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("expenses")
+          .select("*")
+          .gte("month_key", startMonthKey)
+          .lte("month_key", endMonthKey)
+          .order("date", { ascending: true });
+
+        if (error) throw error;
+
+        const result: Record<string, Expense[]> = {};
+        for (const row of data ?? []) {
+          const mk = row.month_key;
+          if (!result[mk]) result[mk] = [];
+          result[mk].push({
+            id: row.id,
+            date: row.date,
+            amount: Number(row.amount),
+            category: row.category || undefined,
+            note: row.note || undefined,
+          });
+        }
+        return result;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    const result: Record<string, Expense[]> = {};
+    for (const [mk, expenses] of Object.entries(this.localStore.expenses)) {
+      if (mk >= startMonthKey && mk <= endMonthKey) {
+        result[mk] = expenses.slice().sort((a, b) => a.date.localeCompare(b.date));
+      }
+    }
+    return result;
+  }
+
+  async getBudgetsForMonthRange(
+    startMonthKey: string,
+    endMonthKey: string,
+  ): Promise<Record<string, number>> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("budgets")
+          .select("month_key, amount")
+          .gte("month_key", startMonthKey)
+          .lte("month_key", endMonthKey);
+
+        if (error) throw error;
+
+        const result: Record<string, number> = {};
+        for (const row of data ?? []) {
+          result[row.month_key] = Number(row.amount);
+        }
+        return result;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    const result: Record<string, number> = {};
+    for (const [mk, amount] of Object.entries(this.localStore.budgets)) {
+      if (mk >= startMonthKey && mk <= endMonthKey) {
+        result[mk] = amount;
+      }
+    }
+    return result;
+  }
+
+  async getAllSavingsContributions(): Promise<SavingsContribution[]> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("savings_contributions")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        return (
+          data?.map((row) => ({
+            id: row.id,
+            savingsGoalId: row.savings_goal_id,
+            accountId: row.account_id,
+            amount: Number(row.amount),
+            note: row.note || undefined,
+            createdAt: row.created_at,
+          })) || []
+        );
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    return (this.localStore.savingsContributions ?? [])
+      .slice()
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  // ============================================
+  // SPREADSHEET MANUAL ENTRIES
+  // ============================================
+
+  async getSpreadsheetEntries(): Promise<ManualEntry[]> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("spreadsheet_entries")
+          .select("*");
+
+        if (error) throw error;
+
+        return (
+          data?.map((row) => ({
+            id: row.id,
+            monthKey: row.month_key,
+            columnKey: row.column_key,
+            value: Number(row.value),
+          })) || []
+        );
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    return this.localStore.spreadsheetEntries ?? [];
+  }
+
+  async setSpreadsheetEntry(
+    monthKey: string,
+    columnKey: string,
+    value: number,
+  ): Promise<void> {
+    const existing = (this.localStore.spreadsheetEntries ?? []).find(
+      (e) => e.monthKey === monthKey && e.columnKey === columnKey,
+    );
+    const id = existing?.id ?? crypto.randomUUID();
+
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser();
+        if (!user) {
+          this.useSupabase = false;
+        } else {
+          const { error } = await supabase.from("spreadsheet_entries").upsert(
+            {
+              id,
+              user_id: user.id,
+              month_key: monthKey,
+              column_key: columnKey,
+              value,
+            },
+            { onConflict: "user_id,month_key,column_key" },
+          );
+
+          if (error) throw error;
+        }
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    if (existing) {
+      this.localStore.spreadsheetEntries = this.localStore.spreadsheetEntries.map(
+        (e) => (e.id === existing.id ? { ...e, value } : e),
+      );
+    } else {
+      this.localStore.spreadsheetEntries = [
+        ...this.localStore.spreadsheetEntries,
+        { id, monthKey, columnKey, value },
+      ];
+    }
+    saveStoreToLocalStorage(this.localStore);
+  }
+
+  async removeSpreadsheetEntry(
+    monthKey: string,
+    columnKey: string,
+  ): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser();
+        if (user) {
+          const { error } = await supabase
+            .from("spreadsheet_entries")
+            .delete()
+            .eq("user_id", user.id)
+            .eq("month_key", monthKey)
+            .eq("column_key", columnKey);
+
+          if (error) throw error;
+        }
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    this.localStore.spreadsheetEntries = (
+      this.localStore.spreadsheetEntries ?? []
+    ).filter((e) => !(e.monthKey === monthKey && e.columnKey === columnKey));
+    saveStoreToLocalStorage(this.localStore);
   }
 }
 

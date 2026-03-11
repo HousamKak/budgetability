@@ -1,4 +1,4 @@
-import { Home, BarChart3, PiggyBank, Wallet } from "lucide-react";
+import { Home, BarChart3, PiggyBank, Wallet, Table2 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
@@ -16,6 +16,7 @@ export function NavigationPanel() {
   const isAccounts = location.pathname === "/accounts";
   const isSavings = location.pathname === "/savings";
   const isAnalytics = location.pathname === "/analytics";
+  const isSpreadsheet = location.pathname === "/spreadsheet";
 
   return (
     <div className="fixed left-1 top-1/2 -translate-y-1/2 z-40">
@@ -130,6 +131,31 @@ export function NavigationPanel() {
             </HoverCardTrigger>
             <HoverCardContent side="right" className="w-auto text-xs">
               Analytics
+            </HoverCardContent>
+          </HoverCard>
+
+          {/* Spreadsheet Button */}
+          <HoverCard>
+            <HoverCardTrigger asChild>
+              <Button
+                onClick={() => navigate("/spreadsheet")}
+                variant="ghost"
+                size="sm"
+                className={`
+                  relative w-10 h-10 ${paperTheme.radius.md} transition-all duration-200 cursor-pointer flex items-center justify-center
+                  ${isSpreadsheet
+                    ? `${paperTheme.colors.background.white} ${paperTheme.effects.shadow.sm} ${paperTheme.colors.borders.amberStrong} ${paperTheme.colors.text.accent}`
+                    : `${paperTheme.colors.background.whiteTransparent} hover:${paperTheme.colors.background.white} ${paperTheme.colors.borders.amber} ${paperTheme.colors.text.muted} hover:${paperTheme.colors.text.accent}`
+                  }
+                `}
+                aria-label="Spreadsheet"
+              >
+                <div className={`absolute inset-0 opacity-10 ${paperTheme.effects.paperTextureSmall} ${paperTheme.radius.md}`}></div>
+                <Table2 className="w-4 h-4 relative z-10" />
+              </Button>
+            </HoverCardTrigger>
+            <HoverCardContent side="right" className="w-auto text-xs">
+              Spreadsheet
             </HoverCardContent>
           </HoverCard>
         </div>
