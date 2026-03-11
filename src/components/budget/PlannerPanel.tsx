@@ -5,7 +5,6 @@ import { DraftView } from "./DraftView";
 import { WeekView } from "./WeekView";
 import { MonthView } from "./MonthView";
 import { dataService, type Expense, type PlanItem, type DraftItem } from "@/lib/data-service";
-import { formatNumber } from "@/lib/utils";
 
 interface PlannerPanelProps {
   year: number;

@@ -1,6 +1,5 @@
 import { Button } from "@/components/ui/button";
 import { cn, formatCurrency, formatNumber } from "@/lib/utils";
-import { paperTheme } from "@/styles";
 import { Book, ChevronLeft, ChevronRight, Plus, Trash, Wallet } from "./Icons";
 import { SummaryCard } from "./SummaryCard";
 

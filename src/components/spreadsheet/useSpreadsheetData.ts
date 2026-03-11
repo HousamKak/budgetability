@@ -1,6 +1,6 @@
 import { dataService } from "@/lib/data-service";
 import type { Category, Expense } from "@/lib/data-service";
-import type { ManualEntry, SpreadsheetRow } from "@/types/spreadsheet.types";
+import type { SpreadsheetRow } from "@/types/spreadsheet.types";
 import { useCallback, useEffect, useState } from "react";
 import { buildColumnGroups, INCOME_SUBCOLUMN_KEYS } from "./column-config";
 
@@ -70,7 +70,7 @@ export function useSpreadsheetData(
         const startKey = mk(startYear, startMonth);
         const endKey = mk(endYear, endMonth);
 
-        const [expensesByMonth, budgetsByMonth, manualEntries, cats] =
+        const [expensesByMonth, , manualEntries, cats] =
           await Promise.all([
             dataService.getExpensesForMonthRange(startKey, endKey),
             dataService.getBudgetsForMonthRange(startKey, endKey),
