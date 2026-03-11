@@ -4,7 +4,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import type { Account } from "@/lib/data-service";
+import type { Account, BudgetAllocation } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import {
@@ -12,6 +12,7 @@ import {
   ArrowUpRight,
   MoreVertical,
   Pencil,
+  PiggyBank,
   Star,
   Trash2,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import { AccountTypeBadge } from "./AccountTypeBadge";
 
 interface AccountCardProps {
   account: Account;
+  allocations?: BudgetAllocation[];
   onEdit?: (account: Account) => void;
   onDelete?: (account: Account) => void;
   onTransfer?: (account: Account) => void;
@@ -29,8 +31,15 @@ interface AccountCardProps {
 /**
  * Display a single account with balance and actions
  */
+const formatMonth = (key: string) => {
+  const [year, month] = key.split("-");
+  const date = new Date(parseInt(year), parseInt(month) - 1);
+  return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+};
+
 export function AccountCard({
   account,
+  allocations = [],
   onEdit,
   onDelete,
   onTransfer,
@@ -39,6 +48,8 @@ export function AccountCard({
 }: AccountCardProps) {
   const balanceChange = account.currentBalance - account.initialBalance;
   const isPositiveChange = balanceChange >= 0;
+  const totalAllocated = allocations.reduce((sum, a) => sum + a.amount, 0);
+  const availableBalance = account.currentBalance;
 
   return (
     <div
@@ -47,14 +58,14 @@ export function AccountCard({
         paperTheme.colors.background.cardGradient,
         paperTheme.colors.borders.paper,
         paperTheme.effects.shadow.md,
-        "overflow-hidden transition-transform duration-200 hover:scale-[1.02]"
+        "overflow-hidden transition-transform duration-200 hover:scale-[1.02]",
       )}
     >
       {/* Paper texture overlay */}
       <div
         className={cn(
           "absolute inset-0 opacity-15 pointer-events-none rounded-xl",
-          paperTheme.effects.paperTexture
+          paperTheme.effects.paperTexture,
         )}
       />
 
@@ -62,7 +73,7 @@ export function AccountCard({
       <div
         className={cn(
           "absolute -top-1 left-4 w-12 h-4",
-          paperTheme.effects.yellowTape
+          paperTheme.effects.yellowTape,
         )}
       />
 
@@ -82,7 +93,7 @@ export function AccountCard({
               className={cn(
                 "text-lg font-bold",
                 paperTheme.colors.text.accent,
-                paperTheme.fonts.handwriting
+                paperTheme.fonts.handwriting,
               )}
             >
               {account.name}
@@ -142,13 +153,13 @@ export function AccountCard({
         </div>
 
         {/* Balance */}
-        <div className="mb-4">
+        <div className="mb-3">
           <p className="text-xs text-stone-500 mb-0.5">Current Balance</p>
           <p
             className={cn(
               "text-2xl font-bold",
               paperTheme.fonts.handwriting,
-              account.currentBalance >= 0 ? "text-green-700" : "text-red-600"
+              account.currentBalance >= 0 ? "text-green-700" : "text-red-600",
             )}
           >
             {formatCurrency(account.currentBalance)}
@@ -158,7 +169,7 @@ export function AccountCard({
             <span
               className={cn(
                 "ml-2",
-                isPositiveChange ? "text-green-600" : "text-red-500"
+                isPositiveChange ? "text-green-600" : "text-red-500",
               )}
             >
               ({isPositiveChange ? "+" : ""}
@@ -166,6 +177,59 @@ export function AccountCard({
             </span>
           </p>
         </div>
+
+        {/* Budget Allocations */}
+        {allocations.length > 0 && (
+          <div
+            className={cn(
+              "mb-3 p-2.5 rounded-lg border",
+              paperTheme.colors.borders.amber,
+              "bg-amber-50/50",
+            )}
+          >
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <PiggyBank className="w-3.5 h-3.5 text-amber-600" />
+              <p className="text-xs font-medium text-stone-600">
+                Allocated to Budgets
+              </p>
+            </div>
+            <div className="space-y-1">
+              {allocations.map((alloc) => (
+                <div key={alloc.id} className="flex justify-between text-xs">
+                  <span className="text-stone-500">
+                    {formatMonth(alloc.monthKey)}
+                  </span>
+                  <span className="text-amber-700 font-medium">
+                    {formatCurrency(alloc.amount)}
+                  </span>
+                </div>
+              ))}
+              {allocations.length > 1 && (
+                <div className="flex justify-between text-xs pt-1 mt-1 border-t border-amber-200">
+                  <span className="text-stone-600 font-medium">
+                    Total committed
+                  </span>
+                  <span className="text-amber-800 font-bold">
+                    {formatCurrency(totalAllocated)}
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="mt-1.5 pt-1.5 border-t border-amber-200">
+              <div className="flex justify-between text-xs">
+                <span className="text-stone-500">Available (unallocated)</span>
+                <span
+                  className={cn(
+                    "font-medium",
+                    availableBalance >= 0 ? "text-green-600" : "text-red-500",
+                  )}
+                >
+                  {formatCurrency(availableBalance)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Action buttons */}
         <div className="flex gap-2 flex-wrap">
@@ -176,7 +240,7 @@ export function AccountCard({
               className={cn(
                 "h-7 text-xs",
                 paperTheme.colors.borders.amber,
-                "hover:bg-amber-50"
+                "hover:bg-amber-50",
               )}
               onClick={() => onDeposit(account)}
             >
@@ -191,7 +255,7 @@ export function AccountCard({
               className={cn(
                 "h-7 text-xs",
                 paperTheme.colors.borders.amber,
-                "hover:bg-amber-50"
+                "hover:bg-amber-50",
               )}
               onClick={() => onTransfer(account)}
             >

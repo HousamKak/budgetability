@@ -60,17 +60,17 @@ export default function PaperBudget() {
   const [plans, setPlans] = useState<PlanItem[]>([]);
   // Mobile: bottom tabs to switch between calendar/planner
   const [activeTab, setActiveTab] = useState<"calendar" | "planner">(
-    "calendar"
+    "calendar",
   );
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   // Plan animation state - tracks which dates should show animation (supports multiple simultaneous)
   const [animatedPlanDates, setAnimatedPlanDates] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
   // Expense animation state - tracks which dates should show red animation (supports multiple simultaneous)
   const [animatedExpenseDates, setAnimatedExpenseDates] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
 
   // Budget setup dialog state
@@ -145,11 +145,11 @@ export default function PaperBudget() {
   // totals
   const totalSpent = useMemo(
     () => expenses.reduce((s, e) => s + e.amount, 0),
-    [expenses]
+    [expenses],
   );
   const totalPlanned = useMemo(
     () => plans.reduce((s, p) => s + p.amount, 0),
-    [plans]
+    [plans],
   );
 
   // nav
@@ -169,7 +169,7 @@ export default function PaperBudget() {
     try {
       await dataService.addExpense(key, e);
       setExpenses((prev) =>
-        [...prev, e].sort((a, b) => a.date.localeCompare(b.date))
+        [...prev, e].sort((a, b) => a.date.localeCompare(b.date)),
       );
     } catch (error) {
       console.error("Failed to add expense:", error);
@@ -187,7 +187,7 @@ export default function PaperBudget() {
     try {
       await dataService.updateExpense(key, id, updates);
       setExpenses((prev) =>
-        prev.map((x) => (x.id === id ? { ...x, ...updates } : x))
+        prev.map((x) => (x.id === id ? { ...x, ...updates } : x)),
       );
     } catch (error) {
       console.error("Failed to update expense:", error);
@@ -205,8 +205,19 @@ export default function PaperBudget() {
     try {
       await dataService.clearMonth(key);
       setBudgetState(0);
+      setBudgetInput("");
       setExpenses([]);
       setPlans([]);
+      // Reload accounts and allocations since clearMonth now refunds them
+      const [accountsData, allocationsData, transactionsData] =
+        await Promise.all([
+          dataService.getAccounts(),
+          dataService.getBudgetAllocations(key),
+          dataService.getAccountTransactions(),
+        ]);
+      setAccounts(accountsData);
+      setAllocations(allocationsData);
+      setAccountTransactions(transactionsData);
     } catch (error) {
       console.error("Failed to clear month:", error);
     }
@@ -284,7 +295,7 @@ export default function PaperBudget() {
     try {
       await dataService.updatePlan(key, id, patch);
       setPlans((prev) =>
-        prev.map((x) => (x.id === id ? { ...x, ...patch } : x))
+        prev.map((x) => (x.id === id ? { ...x, ...patch } : x)),
       );
     } catch (error) {
       console.error("Failed to update plan:", error);
@@ -387,7 +398,7 @@ export default function PaperBudget() {
     const weekIdx = weekIndexOf(
       targetDate.getFullYear(),
       targetDate.getMonth(),
-      targetDate.getDate()
+      targetDate.getDate(),
     );
 
     addPlan({
@@ -443,7 +454,7 @@ export default function PaperBudget() {
       const weekIdx = weekIndexOf(
         targetDate.getFullYear(),
         targetDate.getMonth(),
-        targetDate.getDate()
+        targetDate.getDate(),
       );
       updatePlan(id, {
         ...updates,

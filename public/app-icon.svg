@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <!-- Background gradient - warm cream -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF8E7"/>
+      <stop offset="50%" stop-color="#FFECCC"/>
+      <stop offset="100%" stop-color="#FFE0B2"/>
+    </linearGradient>
+
+    <!-- Orange/Amber gradient for the B -->
+    <linearGradient id="bGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FBAB18"/>
+      <stop offset="40%" stop-color="#F59300"/>
+      <stop offset="100%" stop-color="#E67300"/>
+    </linearGradient>
+
+    <!-- Darker orange for the B outline -->
+    <linearGradient id="bOutline" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#D97B00"/>
+      <stop offset="100%" stop-color="#B85C00"/>
+    </linearGradient>
+
+    <!-- Green gradient for checkmark -->
+    <linearGradient id="checkGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#CDDC39"/>
+      <stop offset="40%" stop-color="#8BC34A"/>
+      <stop offset="100%" stop-color="#4CAF50"/>
+    </linearGradient>
+
+    <!-- Shadow filter -->
+    <filter id="dropShadow" x="-20%" y="-10%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="6" flood-color="#A55000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Rounded background for app icon -->
+  <rect x="0" y="0" width="512" height="512" rx="96" fill="url(#bgGrad)"/>
+
+  <!-- Main B letter -->
+  <g filter="url(#dropShadow)">
+    <path d="
+      M 144 72
+      C 144 72, 144 440, 144 440
+      L 292 440
+      C 368 440, 404 388, 404 328
+      C 404 276, 374 242, 330 234
+      C 368 222, 390 188, 390 148
+      C 390 82, 346 72, 278 72
+      L 144 72
+      Z
+
+      M 212 132
+      L 262 132
+      C 302 132, 324 154, 324 180
+      C 324 206, 306 228, 264 228
+      L 212 228
+      L 212 198
+      L 260 150
+      L 212 150
+      Z
+
+      M 212 284
+      L 276 284
+      C 324 284, 340 314, 340 344
+      C 340 382, 314 388, 272 388
+      L 212 388
+      Z
+    " fill="url(#bGradient)" stroke="url(#bOutline)" stroke-width="5" fill-rule="evenodd"/>
+  </g>
+
+  <!-- Checkmark with white border -->
+  <path d="
+    M 100 252
+    L 196 348
+    L 340 148
+  " fill="none" stroke="white" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Green checkmark -->
+  <path d="
+    M 100 252
+    L 196 348
+    L 340 148
+  " fill="none" stroke="url(#checkGradient)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

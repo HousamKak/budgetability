@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import type { Account } from "@/lib/data-service";
+import type { Account, BudgetAllocation } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
@@ -16,6 +16,7 @@ import { TransferDialog } from "./accounts/TransferDialog";
  */
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [allAllocations, setAllAllocations] = useState<BudgetAllocation[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Dialog states
@@ -35,8 +36,12 @@ export default function AccountsPage() {
   async function loadData() {
     try {
       setLoading(true);
-      const accts = await dataService.getAccounts();
+      const [accts, allocs] = await Promise.all([
+        dataService.getAccounts(),
+        dataService.getAllBudgetAllocations(),
+      ]);
       setAccounts(accts);
+      setAllAllocations(allocs);
     } catch (error) {
       console.error("Failed to load accounts:", error);
     } finally {
@@ -45,7 +50,7 @@ export default function AccountsPage() {
   }
 
   const handleCreateAccount = async (
-    account: Omit<Account, "id" | "currentBalance">
+    account: Omit<Account, "id" | "currentBalance">,
   ) => {
     try {
       await dataService.addAccount(account);
@@ -56,7 +61,7 @@ export default function AccountsPage() {
   };
 
   const handleUpdateAccount = async (
-    account: Omit<Account, "id" | "currentBalance">
+    account: Omit<Account, "id" | "currentBalance">,
   ) => {
     if (!editingAccount) return;
     try {
@@ -92,7 +97,7 @@ export default function AccountsPage() {
     fromId: string,
     toId: string,
     amount: number,
-    note?: string
+    note?: string,
   ) => {
     try {
       await dataService.transferBetweenAccounts(fromId, toId, amount, note);
@@ -105,7 +110,7 @@ export default function AccountsPage() {
   const handleDeposit = async (
     accountId: string,
     amount: number,
-    note?: string
+    note?: string,
   ) => {
     try {
       await dataService.depositToAccount(accountId, amount, note);
@@ -123,7 +128,7 @@ export default function AccountsPage() {
       <div
         className={cn(
           "fixed inset-0 opacity-5 pointer-events-none",
-          paperTheme.effects.paperTexture
+          paperTheme.effects.paperTexture,
         )}
       />
 
@@ -137,7 +142,7 @@ export default function AccountsPage() {
                   "p-3 rounded-xl",
                   paperTheme.colors.background.white,
                   paperTheme.colors.borders.amber,
-                  paperTheme.effects.shadow.md
+                  paperTheme.effects.shadow.md,
                 )}
               >
                 <Wallet className="w-8 h-8 text-amber-600" />
@@ -147,7 +152,7 @@ export default function AccountsPage() {
                   className={cn(
                     "text-3xl font-bold",
                     paperTheme.colors.text.accent,
-                    paperTheme.fonts.handwriting
+                    paperTheme.fonts.handwriting,
                   )}
                 >
                   Accounts
@@ -192,13 +197,13 @@ export default function AccountsPage() {
               paperTheme.colors.background.cardGradient,
               paperTheme.colors.borders.paper,
               paperTheme.effects.shadow.md,
-              "relative overflow-hidden"
+              "relative overflow-hidden",
             )}
           >
             <div
               className={cn(
                 "absolute inset-0 opacity-15 pointer-events-none",
-                paperTheme.effects.paperTexture
+                paperTheme.effects.paperTexture,
               )}
             />
             <div className="relative flex flex-wrap gap-6">
@@ -208,7 +213,7 @@ export default function AccountsPage() {
                   className={cn(
                     "text-2xl font-bold",
                     paperTheme.fonts.handwriting,
-                    totalBalance >= 0 ? "text-green-700" : "text-red-600"
+                    totalBalance >= 0 ? "text-green-700" : "text-red-600",
                   )}
                 >
                   {formatCurrency(totalBalance)}
@@ -220,7 +225,7 @@ export default function AccountsPage() {
                   className={cn(
                     "text-2xl font-bold",
                     paperTheme.fonts.handwriting,
-                    paperTheme.colors.text.accent
+                    paperTheme.colors.text.accent,
                   )}
                 >
                   {accounts.length}
@@ -235,7 +240,7 @@ export default function AccountsPage() {
                 size="sm"
                 className={cn(
                   "absolute top-4 right-4",
-                  paperTheme.colors.borders.amber
+                  paperTheme.colors.borders.amber,
                 )}
                 onClick={() => {
                   setTransferSourceAccount(undefined);
@@ -261,13 +266,13 @@ export default function AccountsPage() {
               paperTheme.colors.background.cardGradient,
               paperTheme.colors.borders.paper,
               paperTheme.effects.shadow.md,
-              "relative overflow-hidden"
+              "relative overflow-hidden",
             )}
           >
             <div
               className={cn(
                 "absolute inset-0 opacity-15 pointer-events-none",
-                paperTheme.effects.paperTexture
+                paperTheme.effects.paperTexture,
               )}
             />
             <div className="relative">
@@ -276,7 +281,7 @@ export default function AccountsPage() {
                 className={cn(
                   "text-xl font-bold mb-2",
                   paperTheme.colors.text.accent,
-                  paperTheme.fonts.handwriting
+                  paperTheme.fonts.handwriting,
                 )}
               >
                 No Accounts Yet
@@ -302,6 +307,9 @@ export default function AccountsPage() {
               <AccountCard
                 key={account.id}
                 account={account}
+                allocations={allAllocations.filter(
+                  (a) => a.accountId === account.id,
+                )}
                 onEdit={(a) => {
                   setEditingAccount(a);
                   setShowAccountForm(true);

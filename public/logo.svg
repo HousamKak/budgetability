@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <!-- Orange/Amber gradient for the B - matching the image -->
+    <linearGradient id="bGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FBAB18"/>
+      <stop offset="40%" stop-color="#F59300"/>
+      <stop offset="100%" stop-color="#E67300"/>
+    </linearGradient>
+
+    <!-- Darker orange for the B outline -->
+    <linearGradient id="bOutline" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#D97B00"/>
+      <stop offset="100%" stop-color="#B85C00"/>
+    </linearGradient>
+
+    <!-- Green gradient for checkmark - lime to green -->
+    <linearGradient id="checkGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#CDDC39"/>
+      <stop offset="40%" stop-color="#8BC34A"/>
+      <stop offset="100%" stop-color="#4CAF50"/>
+    </linearGradient>
+
+    <!-- Shadow filter -->
+    <filter id="dropShadow" x="-20%" y="-10%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="6" flood-color="#A55000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Main B letter with integrated arrow notch -->
+  <g filter="url(#dropShadow)">
+    <path d="
+      M 144 48
+      C 144 48, 144 464, 144 464
+      L 300 464
+      C 380 464, 420 408, 420 344
+      C 420 288, 388 252, 340 244
+      C 380 232, 404 196, 404 152
+      C 404 80, 356 48, 284 48
+      L 144 48
+      Z
+
+      M 216 116
+      L 268 116
+      C 312 116, 336 140, 336 168
+      C 336 196, 316 220, 272 220
+      L 216 220
+      L 216 188
+      L 268 136
+      L 216 136
+      Z
+
+      M 216 284
+      L 284 284
+      C 336 284, 352 316, 352 348
+      C 352 388, 324 400, 280 400
+      L 216 400
+      Z
+    " fill="url(#bGradient)" stroke="url(#bOutline)" stroke-width="6" fill-rule="evenodd"/>
+  </g>
+
+  <!-- Checkmark with white border -->
+  <path d="
+    M 96 256
+    L 200 360
+    L 352 144
+  " fill="none" stroke="white" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Green checkmark -->
+  <path d="
+    M 96 256
+    L 200 360
+    L 352 144
+  " fill="none" stroke="url(#checkGradient)" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

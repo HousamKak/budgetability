@@ -15,7 +15,7 @@ import type {
 } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
-import { Wallet, Plus, Info, AlertTriangle } from "lucide-react";
+import { AlertTriangle, Info, Plus, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AccountBudgetCard } from "./AccountBudgetCard";
 import { LinkAccountDialog } from "./LinkAccountDialog";
@@ -59,7 +59,7 @@ export function BudgetSetupDialog({
 }: BudgetSetupDialogProps) {
   const [showLinkDialog, setShowLinkDialog] = useState(false);
   const [adjustingAccountId, setAdjustingAccountId] = useState<string | null>(
-    null
+    null,
   );
   const [adjustAmount, setAdjustAmount] = useState<string>("");
 
@@ -92,7 +92,7 @@ export function BudgetSetupDialog({
       (t) =>
         (t.fromAccountId === allocation.accountId ||
           t.toAccountId === allocation.accountId) &&
-        t.monthKey === monthKey
+        t.monthKey === monthKey,
     );
     return { account, transactions: accountTransactions };
   };
@@ -122,13 +122,13 @@ export function BudgetSetupDialog({
           className={cn(
             "sm:max-w-lg max-h-[85vh] overflow-hidden flex flex-col",
             paperTheme.colors.background.cardGradient,
-            paperTheme.colors.borders.paper
+            paperTheme.colors.borders.paper,
           )}
         >
           <div
             className={cn(
               "absolute inset-0 opacity-15 pointer-events-none rounded-2xl",
-              paperTheme.effects.paperTexture
+              paperTheme.effects.paperTexture,
             )}
           />
 
@@ -137,7 +137,7 @@ export function BudgetSetupDialog({
               className={cn(
                 "text-xl flex items-center gap-2",
                 paperTheme.colors.text.accent,
-                paperTheme.fonts.handwriting
+                paperTheme.fonts.handwriting,
               )}
             >
               <Wallet className="w-5 h-5 text-amber-600" />
@@ -153,7 +153,10 @@ export function BudgetSetupDialog({
             <div className="space-y-2">
               <Label
                 htmlFor="budget-amount"
-                className={cn("text-sm font-medium", paperTheme.fonts.handwriting)}
+                className={cn(
+                  "text-sm font-medium",
+                  paperTheme.fonts.handwriting,
+                )}
               >
                 Monthly Budget
               </Label>
@@ -173,7 +176,7 @@ export function BudgetSetupDialog({
                     "pl-8 pr-3 py-3 text-xl font-semibold rounded-xl",
                     paperTheme.colors.borders.amber,
                     "bg-white/70 focus:bg-white",
-                    "focus:ring-2 focus:ring-amber-400/50"
+                    "focus:ring-2 focus:ring-amber-400/50",
                   )}
                 />
               </div>
@@ -184,16 +187,18 @@ export function BudgetSetupDialog({
               className={cn(
                 "p-3 rounded-lg border",
                 paperTheme.colors.borders.amber,
-                "bg-white/50"
+                "bg-white/50",
               )}
             >
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-stone-600">Total from Accounts</span>
+                <span className="text-sm text-stone-600">
+                  Total from Accounts
+                </span>
                 <span
                   className={cn(
                     "text-lg font-semibold",
                     paperTheme.fonts.handwriting,
-                    "text-amber-700"
+                    "text-amber-700",
                   )}
                 >
                   {formatCurrency(totalAllocated)}
@@ -204,22 +209,39 @@ export function BudgetSetupDialog({
               {budget > 0 && (isOverAllocated || isUnderAllocated) && (
                 <div
                   className={cn(
-                    "flex items-center gap-2 p-2 rounded-md text-xs",
+                    "flex items-center justify-between gap-2 p-2 rounded-md text-xs",
                     isOverAllocated
                       ? "bg-red-50 text-red-700"
-                      : "bg-blue-50 text-blue-700"
+                      : "bg-blue-50 text-blue-700",
                   )}
                 >
-                  {isOverAllocated ? (
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                  ) : (
-                    <Info className="w-3.5 h-3.5" />
-                  )}
-                  <span>
-                    {isOverAllocated
-                      ? `Over-allocated by ${formatCurrency(Math.abs(difference))}`
-                      : `Budget is ${formatCurrency(difference)} more than allocated sources`}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {isOverAllocated ? (
+                      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    ) : (
+                      <Info className="w-3.5 h-3.5 flex-shrink-0" />
+                    )}
+                    <span>
+                      {isOverAllocated
+                        ? `Over-allocated by ${formatCurrency(Math.abs(difference))}`
+                        : `Budget is ${formatCurrency(difference)} more than allocated sources`}
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      "h-6 text-[10px] px-2 flex-shrink-0",
+                      isOverAllocated
+                        ? "text-red-700 hover:bg-red-100"
+                        : "text-blue-700 hover:bg-blue-100",
+                    )}
+                    onClick={() =>
+                      onBudgetInputChange(totalAllocated.toString())
+                    }
+                  >
+                    Match budget
+                  </Button>
                 </div>
               )}
 
@@ -227,6 +249,29 @@ export function BudgetSetupDialog({
                 <div className="flex items-center gap-2 p-2 rounded-md text-xs bg-green-50 text-green-700">
                   <Info className="w-3.5 h-3.5" />
                   <span>Budget matches allocated sources</span>
+                </div>
+              )}
+
+              {/* Budget is 0 but accounts are allocated */}
+              {budget === 0 && totalAllocated > 0 && (
+                <div className="flex items-center justify-between gap-2 p-2 rounded-md text-xs bg-amber-50 text-amber-700">
+                  <div className="flex items-center gap-2">
+                    <Info className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>
+                      {formatCurrency(totalAllocated)} allocated but no budget
+                      set
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-[10px] px-2 flex-shrink-0 text-amber-700 hover:bg-amber-100"
+                    onClick={() =>
+                      onBudgetInputChange(totalAllocated.toString())
+                    }
+                  >
+                    Set budget
+                  </Button>
                 </div>
               )}
             </div>
@@ -237,7 +282,7 @@ export function BudgetSetupDialog({
                 <h3
                   className={cn(
                     "text-sm font-medium text-stone-700",
-                    paperTheme.fonts.handwriting
+                    paperTheme.fonts.handwriting,
                   )}
                 >
                   Funding Sources
@@ -248,7 +293,7 @@ export function BudgetSetupDialog({
                   className={cn(
                     "h-7 text-xs",
                     paperTheme.colors.borders.amber,
-                    "hover:bg-amber-50"
+                    "hover:bg-amber-50",
                   )}
                   onClick={() => setShowLinkDialog(true)}
                 >
@@ -263,7 +308,7 @@ export function BudgetSetupDialog({
                   className={cn(
                     "p-6 rounded-lg text-center",
                     paperTheme.colors.background.white,
-                    paperTheme.colors.borders.amber
+                    paperTheme.colors.borders.amber,
                   )}
                 >
                   <Wallet className="w-8 h-8 text-amber-300 mx-auto mb-2" />
@@ -276,7 +321,7 @@ export function BudgetSetupDialog({
                     className={cn(
                       "h-8 text-xs",
                       paperTheme.colors.borders.amber,
-                      "hover:bg-amber-50"
+                      "hover:bg-amber-50",
                     )}
                     onClick={() => setShowLinkDialog(true)}
                   >
@@ -299,7 +344,7 @@ export function BudgetSetupDialog({
                           className={cn(
                             "p-3 rounded-xl",
                             paperTheme.colors.background.white,
-                            paperTheme.colors.borders.amber
+                            paperTheme.colors.borders.amber,
                           )}
                         >
                           <div className="space-y-3">
@@ -328,7 +373,7 @@ export function BudgetSetupDialog({
                                   className={cn(
                                     "w-full pl-7 pr-3 py-2 rounded-lg border text-sm",
                                     paperTheme.colors.borders.amber,
-                                    "bg-white focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                                    "bg-white focus:outline-none focus:ring-2 focus:ring-amber-400/50",
                                   )}
                                 />
                               </div>
@@ -351,7 +396,10 @@ export function BudgetSetupDialog({
                               </Button>
                             </div>
                             <p className="text-xs text-stone-500">
-                              Available: {formatCurrency(account.currentBalance + allocation.amount)}
+                              Available:{" "}
+                              {formatCurrency(
+                                account.currentBalance + allocation.amount,
+                              )}
                             </p>
                           </div>
                         </div>
@@ -380,7 +428,7 @@ export function BudgetSetupDialog({
             <Button
               className={cn(
                 "w-full",
-                "bg-amber-500 hover:bg-amber-600 text-white"
+                "bg-amber-500 hover:bg-amber-600 text-white",
               )}
               onClick={() => onOpenChange(false)}
             >
