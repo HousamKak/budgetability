@@ -961,13 +961,28 @@ export class DataService {
   async seedDefaultCategories(): Promise<void> {
     const existing = await this.getCategories();
 
-    // Check which default categories are missing
-    const existingNames = new Set(existing.map((c) => c.name.toLowerCase()));
+    // Deduplicate: keep only the first occurrence of each name (case-insensitive)
+    const seen = new Set<string>();
+    const duplicateIds: string[] = [];
+    for (const cat of existing) {
+      const key = cat.name.toLowerCase();
+      if (seen.has(key)) {
+        duplicateIds.push(cat.id);
+      } else {
+        seen.add(key);
+      }
+    }
+    for (const id of duplicateIds) {
+      await this.removeCategory(id);
+    }
+
+    // Add any missing default categories
+    const existingNames = new Set(existing
+      .filter((c) => !duplicateIds.includes(c.id))
+      .map((c) => c.name.toLowerCase()));
     const missingCategories = DEFAULT_CATEGORIES.filter(
       (cat) => !existingNames.has(cat.name.toLowerCase()),
     );
-
-    // Add only missing categories
     for (const cat of missingCategories) {
       await this.addCategory(cat);
     }
