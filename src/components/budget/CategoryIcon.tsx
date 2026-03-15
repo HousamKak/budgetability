@@ -23,8 +23,10 @@ const aliases: Record<string, string> = {
   "trending-down": "trending-down",
 };
 
+const fallbackIcon = iconMap["circle-help"] || iconMap["help-circle"] || (Object.values(icons)[0] as LucideIcon);
+
 function resolve(name: string): LucideIcon {
-  return iconMap[name] || iconMap[aliases[name]] || (icons.CircleHelp as LucideIcon);
+  return iconMap[name] || iconMap[aliases[name]] || fallbackIcon;
 }
 
 // Export the list of available icon names for the picker
