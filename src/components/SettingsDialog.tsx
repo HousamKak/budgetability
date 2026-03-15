@@ -638,7 +638,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           )}
         />
 
-        <div className="flex h-full max-h-[85vh] relative z-10">
+        <div className="flex h-[70vh] relative z-10">
           {/* Sidebar */}
           <div className="w-44 shrink-0 border-r border-amber-200/60 p-4 flex flex-col gap-1">
             <DialogHeader className="mb-4">
