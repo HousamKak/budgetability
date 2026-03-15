@@ -46,13 +46,8 @@ export function CategoryPicker({
   async function loadCategories() {
     try {
       setLoading(true);
-      let cats = await dataService.getCategories();
-
-      // Seed default categories if none exist
-      if (cats.length === 0) {
-        await dataService.seedDefaultCategories();
-        cats = await dataService.getCategories();
-      }
+      await dataService.ensureDefaults();
+      const cats = await dataService.getCategories();
 
       setCategories(cats);
     } catch (error) {
@@ -153,12 +148,8 @@ export function useCategories() {
     try {
       setLoading(true);
       setError(null);
-      let cats = await dataService.getCategories();
-
-      if (cats.length === 0) {
-        await dataService.seedDefaultCategories();
-        cats = await dataService.getCategories();
-      }
+      await dataService.ensureDefaults();
+      const cats = await dataService.getCategories();
 
       setCategories(cats);
     } catch (err) {

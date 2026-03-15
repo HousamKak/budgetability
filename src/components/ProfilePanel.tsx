@@ -1,3 +1,4 @@
+import { AuthDialog } from "@/components/Auth";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { HelpCircle, LogOut, Settings, User } from "lucide-react";
@@ -5,13 +6,14 @@ import { useEffect, useRef, useState } from "react";
 import { SettingsDialog } from "./SettingsDialog";
 
 interface ProfilePanelProps {
-  onOpenAuthDialog: () => void;
+  onOpenAuthDialog?: () => void;
 }
 
 export function ProfilePanel({ onOpenAuthDialog }: ProfilePanelProps) {
   const { user, signOut } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const displayName = user?.email?.split("@")[0] || "";
@@ -44,7 +46,11 @@ export function ProfilePanel({ onOpenAuthDialog }: ProfilePanelProps) {
 
   const handleSignIn = () => {
     setIsMenuOpen(false);
-    onOpenAuthDialog();
+    if (onOpenAuthDialog) {
+      onOpenAuthDialog();
+    } else {
+      setIsAuthOpen(true);
+    }
   };
 
   return (
@@ -164,6 +170,9 @@ export function ProfilePanel({ onOpenAuthDialog }: ProfilePanelProps) {
 
       {/* Settings Dialog */}
       <SettingsDialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
+
+      {/* Auth Dialog (self-contained fallback) */}
+      <AuthDialog open={isAuthOpen} onOpenChange={setIsAuthOpen} />
     </div>
   );
 }

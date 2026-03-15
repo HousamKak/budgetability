@@ -253,10 +253,19 @@ function saveStoreToLocalStorage(store: Store) {
 export class DataService {
   private useSupabase: boolean;
   private localStore: Store;
+  private seedPromise: Promise<void> | null = null;
 
   constructor() {
     this.useSupabase = !!supabase;
     this.localStore = loadStoreFromLocalStorage();
+  }
+
+  /** Ensures default categories are seeded exactly once. Safe to call from anywhere. */
+  async ensureDefaults(): Promise<void> {
+    if (!this.seedPromise) {
+      this.seedPromise = this.seedDefaultCategories();
+    }
+    return this.seedPromise;
   }
 
   // Check if user is authenticated for Supabase operations
@@ -961,25 +970,8 @@ export class DataService {
   async seedDefaultCategories(): Promise<void> {
     const existing = await this.getCategories();
 
-    // Deduplicate: keep only the first occurrence of each name (case-insensitive)
-    const seen = new Set<string>();
-    const duplicateIds: string[] = [];
-    for (const cat of existing) {
-      const key = cat.name.toLowerCase();
-      if (seen.has(key)) {
-        duplicateIds.push(cat.id);
-      } else {
-        seen.add(key);
-      }
-    }
-    for (const id of duplicateIds) {
-      await this.removeCategory(id);
-    }
-
-    // Add any missing default categories
-    const existingNames = new Set(existing
-      .filter((c) => !duplicateIds.includes(c.id))
-      .map((c) => c.name.toLowerCase()));
+    // Only add default categories that don't already exist
+    const existingNames = new Set(existing.map((c) => c.name.toLowerCase()));
     const missingCategories = DEFAULT_CATEGORIES.filter(
       (cat) => !existingNames.has(cat.name.toLowerCase()),
     );

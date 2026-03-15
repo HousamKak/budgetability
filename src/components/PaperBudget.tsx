@@ -1,5 +1,4 @@
 import { AuthDialog } from "@/components/Auth";
-import { ProfilePanel } from "@/components/ProfilePanel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -545,9 +544,6 @@ export default function PaperBudget() {
         onOpenQuickAdd={() => setOpen(true)}
         onOpenBudgetSetup={() => setShowBudgetSetup(true)}
       />
-
-      {/* Profile Panel at bottom left */}
-      <ProfilePanel onOpenAuthDialog={() => setShowAuthDialog(true)} />
 
       {/* ExpenseDialog - moved outside header for cleaner structure */}
       <ExpenseDialog

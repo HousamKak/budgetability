@@ -1,142 +1,45 @@
-import type { LucideIcon } from "lucide-react";
-import * as LucideIcons from "lucide-react";
+import { icons, type LucideIcon } from "lucide-react";
 
-// Map of icon names to Lucide components
-const iconMap: Record<string, LucideIcon> = {
-  "shopping-cart": LucideIcons.ShoppingCart,
-  home: LucideIcons.Home,
-  car: LucideIcons.Car,
-  utensils: LucideIcons.Utensils,
-  "heart-pulse": LucideIcons.HeartPulse,
-  gift: LucideIcons.Gift,
-  receipt: LucideIcons.Receipt,
-  "more-horizontal": LucideIcons.MoreHorizontal,
-  // Additional commonly used icons
-  wallet: LucideIcons.Wallet,
-  "credit-card": LucideIcons.CreditCard,
-  banknote: LucideIcons.Banknote,
-  "piggy-bank": LucideIcons.PiggyBank,
-  coffee: LucideIcons.Coffee,
-  plane: LucideIcons.Plane,
-  train: LucideIcons.Train,
-  bus: LucideIcons.Bus,
-  fuel: LucideIcons.Fuel,
-  shirt: LucideIcons.Shirt,
-  smartphone: LucideIcons.Smartphone,
-  laptop: LucideIcons.Laptop,
-  "gamepad-2": LucideIcons.Gamepad2,
-  music: LucideIcons.Music,
-  film: LucideIcons.Film,
-  book: LucideIcons.Book,
-  "graduation-cap": LucideIcons.GraduationCap,
-  baby: LucideIcons.Baby,
-  dog: LucideIcons.Dog,
-  cat: LucideIcons.Cat,
-  pill: LucideIcons.Pill,
-  stethoscope: LucideIcons.Stethoscope,
-  dumbbell: LucideIcons.Dumbbell,
-  scissors: LucideIcons.Scissors,
-  paintbrush: LucideIcons.Paintbrush,
-  wrench: LucideIcons.Wrench,
-  hammer: LucideIcons.Hammer,
-  lightbulb: LucideIcons.Lightbulb,
-  droplets: LucideIcons.Droplets,
-  flame: LucideIcons.Flame,
-  wifi: LucideIcons.Wifi,
-  tv: LucideIcons.Tv,
-  beer: LucideIcons.Beer,
-  wine: LucideIcons.Wine,
-  cake: LucideIcons.Cake,
-  "ice-cream-cone": LucideIcons.IceCreamCone,
-  pizza: LucideIcons.Pizza,
-  apple: LucideIcons.Apple,
-  carrot: LucideIcons.Carrot,
-  egg: LucideIcons.Egg,
-  fish: LucideIcons.Fish,
-  beef: LucideIcons.Beef,
-  cookie: LucideIcons.Cookie,
-  sandwich: LucideIcons.Sandwich,
-  salad: LucideIcons.Salad,
-  soup: LucideIcons.Soup,
-  popcorn: LucideIcons.Popcorn,
-  leaf: LucideIcons.Leaf,
-  flower: LucideIcons.Flower,
-  sun: LucideIcons.Sun,
-  moon: LucideIcons.Moon,
-  star: LucideIcons.Star,
-  heart: LucideIcons.Heart,
-  sparkles: LucideIcons.Sparkles,
-  zap: LucideIcons.Zap,
-  umbrella: LucideIcons.Umbrella,
-  tent: LucideIcons.Tent,
-  mountain: LucideIcons.Mountain,
-  waves: LucideIcons.Waves,
-  "palm-tree": LucideIcons.Palmtree,
-  ticket: LucideIcons.Ticket,
-  trophy: LucideIcons.Trophy,
-  target: LucideIcons.Target,
-  flag: LucideIcons.Flag,
-  calendar: LucideIcons.Calendar,
-  clock: LucideIcons.Clock,
-  bell: LucideIcons.Bell,
-  mail: LucideIcons.Mail,
-  phone: LucideIcons.Phone,
-  "message-circle": LucideIcons.MessageCircle,
-  users: LucideIcons.Users,
-  user: LucideIcons.User,
-  briefcase: LucideIcons.Briefcase,
-  building: LucideIcons.Building,
-  store: LucideIcons.Store,
-  "shopping-bag": LucideIcons.ShoppingBag,
-  tag: LucideIcons.Tag,
-  percent: LucideIcons.Percent,
-  "dollar-sign": LucideIcons.DollarSign,
-  "trending-up": LucideIcons.TrendingUp,
-  "trending-down": LucideIcons.TrendingDown,
-  "bar-chart": LucideIcons.BarChart,
-  "pie-chart": LucideIcons.PieChart,
-  activity: LucideIcons.Activity,
-  "refresh-cw": LucideIcons.RefreshCw,
-  settings: LucideIcons.Settings,
-  tool: LucideIcons.Wrench,
-  key: LucideIcons.Key,
-  lock: LucideIcons.Lock,
-  shield: LucideIcons.Shield,
-  camera: LucideIcons.Camera,
-  image: LucideIcons.Image,
-  "map-pin": LucideIcons.MapPin,
-  navigation: LucideIcons.Navigation,
-  compass: LucideIcons.Compass,
-  globe: LucideIcons.Globe,
-  package: LucideIcons.Package,
-  box: LucideIcons.Box,
-  archive: LucideIcons.Archive,
-  trash: LucideIcons.Trash,
-  recycle: LucideIcons.Recycle,
-  printer: LucideIcons.Printer,
-  folder: LucideIcons.Folder,
-  file: LucideIcons.File,
-  clipboard: LucideIcons.Clipboard,
-  pen: LucideIcons.Pen,
-  pencil: LucideIcons.Pencil,
-  ruler: LucideIcons.Ruler,
-  eraser: LucideIcons.Eraser,
-  palette: LucideIcons.Palette,
+/** Convert PascalCase to kebab-case: "ShoppingCart" -> "shopping-cart" */
+function toKebab(str: string): string {
+  return str
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .toLowerCase();
+}
+
+// Build a full map of kebab-case name -> component from all lucide icons
+const iconMap: Record<string, LucideIcon> = {};
+for (const [pascalName, component] of Object.entries(icons)) {
+  iconMap[toKebab(pascalName)] = component as LucideIcon;
+}
+
+// Aliases for renamed icons (backward compat with existing stored values)
+const aliases: Record<string, string> = {
+  home: "house",
+  "more-horizontal": "ellipsis",
+  "bar-chart": "chart-bar",
+  "pie-chart": "chart-pie",
+  "trending-up": "trending-up",
+  "trending-down": "trending-down",
 };
 
-// Export the list of available icons for the picker
-export const AVAILABLE_ICONS = Object.keys(iconMap);
+function resolve(name: string): LucideIcon {
+  return iconMap[name] || iconMap[aliases[name]] || (icons.CircleHelp as LucideIcon);
+}
+
+// Export the list of available icon names for the picker
+export const AVAILABLE_ICONS = Object.keys(iconMap).sort();
 
 interface CategoryIconProps extends React.SVGProps<SVGSVGElement> {
   name: string;
 }
 
 /**
- * Renders a Lucide icon by name string
- * Falls back to MoreHorizontal if icon not found
+ * Renders a Lucide icon by kebab-case name string.
+ * Falls back to CircleHelp if icon not found.
  */
 export function CategoryIcon({ name, ...props }: CategoryIconProps) {
-  const IconComponent = iconMap[name] || LucideIcons.MoreHorizontal;
+  const IconComponent = resolve(name);
   return <IconComponent {...props} />;
 }
 
