@@ -10,8 +10,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   dataService,
   type Account,
-  type AccountTransaction,
-  type BudgetAllocation,
   type Expense,
   type PlanItem,
 } from "@/lib/data-service";
@@ -21,11 +19,11 @@ import { useEffect, useMemo, useState } from "react";
 
 // Import our new components
 import { layoutStyles } from "@/styles";
-import { BudgetSetupDialog } from "./budget/BudgetSetupDialog";
 import { Calendar } from "./budget/Calendar";
 import { DashboardHeader } from "./budget/DashboardHeader";
 import { ExpenseDialog } from "./budget/ExpenseDialog";
 import { CalendarIcon, Trash, Wallet } from "./budget/Icons";
+import { BudgetDetailsDialog } from "./budget/BudgetDetailsDialog";
 import { MonthlyBookDialog } from "./budget/MonthlyBookDialog";
 import { PlannerPanel } from "./budget/PlannerPanel";
 import { QuoteModal } from "./budget/QuoteModal";
@@ -72,13 +70,7 @@ export default function PaperBudget() {
     new Set(),
   );
 
-  // Budget setup dialog state
-  const [showBudgetSetup, setShowBudgetSetup] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [allocations, setAllocations] = useState<BudgetAllocation[]>([]);
-  const [accountTransactions, setAccountTransactions] = useState<
-    AccountTransaction[]
-  >([]);
 
   // Debounce the budget input to avoid excessive API calls
   const debouncedBudgetInput = useDebounce(budgetInput, 800);
@@ -93,15 +85,11 @@ export default function PaperBudget() {
           expensesData,
           plansData,
           accountsData,
-          allocationsData,
-          transactionsData,
         ] = await Promise.all([
           dataService.getBudget(key),
           dataService.getExpenses(key),
           dataService.getPlans(key),
           dataService.getAccounts(),
-          dataService.getBudgetAllocations(key),
-          dataService.getAccountTransactions(),
         ]);
         setBudgetState(budgetData);
         setBudgetInput(budgetData ? budgetData.toString() : "");
@@ -109,8 +97,9 @@ export default function PaperBudget() {
         setExpenses(expensesData);
         setPlans(plansData);
         setAccounts(accountsData);
-        setAllocations(allocationsData);
-        setAccountTransactions(transactionsData);
+        // Set default account for expense dialog
+        const defaultAcct = accountsData.find((a: Account) => a.isDefault) || accountsData[0];
+        if (defaultAcct) setExpenseAccountId(defaultAcct.id);
       } catch (error) {
         console.error("Failed to load data:", error);
         // Still set the input and flag even on error to prevent stale values
@@ -176,8 +165,15 @@ export default function PaperBudget() {
   }
   async function removeExpense(id: string) {
     try {
+      // Check if expense has an accountId before removing
+      const expense = expenses.find((x) => x.id === id);
       await dataService.removeExpense(key, id);
       setExpenses((prev) => prev.filter((x) => x.id !== id));
+      // Reload accounts to reflect refund
+      if (expense?.accountId) {
+        const accountsData = await dataService.getAccounts();
+        setAccounts(accountsData);
+      }
     } catch (error) {
       console.error("Failed to remove expense:", error);
     }
@@ -207,78 +203,24 @@ export default function PaperBudget() {
       setBudgetInput("");
       setExpenses([]);
       setPlans([]);
-      // Reload accounts and allocations since clearMonth now refunds them
-      const [accountsData, allocationsData, transactionsData] =
-        await Promise.all([
-          dataService.getAccounts(),
-          dataService.getBudgetAllocations(key),
-          dataService.getAccountTransactions(),
-        ]);
+      // Reload accounts since clearing expenses may refund account balances
+      const accountsData = await dataService.getAccounts();
       setAccounts(accountsData);
-      setAllocations(allocationsData);
-      setAccountTransactions(transactionsData);
     } catch (error) {
       console.error("Failed to clear month:", error);
     }
   }
 
-  // Budget allocation ops
-  async function handleLinkAccount(accountId: string, amount: number) {
-    try {
-      await dataService.allocateToBudget(accountId, key, amount);
-      // Reload accounts and allocations
-      const [accountsData, allocationsData, transactionsData] =
-        await Promise.all([
-          dataService.getAccounts(),
-          dataService.getBudgetAllocations(key),
-          dataService.getAccountTransactions(),
-        ]);
-      setAccounts(accountsData);
-      setAllocations(allocationsData);
-      setAccountTransactions(transactionsData);
-    } catch (error) {
-      console.error("Failed to link account:", error);
+  // Calculate spending per account from actual expenses
+  const spendingByAccount = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const exp of expenses) {
+      if (exp.accountId) {
+        map.set(exp.accountId, (map.get(exp.accountId) || 0) + exp.amount);
+      }
     }
-  }
-
-  async function handleAdjustAllocation(accountId: string, newAmount: number) {
-    try {
-      await dataService.updateBudgetAllocation(accountId, key, newAmount);
-      // Reload accounts and allocations
-      const [accountsData, allocationsData, transactionsData] =
-        await Promise.all([
-          dataService.getAccounts(),
-          dataService.getBudgetAllocations(key),
-          dataService.getAccountTransactions(),
-        ]);
-      setAccounts(accountsData);
-      setAllocations(allocationsData);
-      setAccountTransactions(transactionsData);
-    } catch (error) {
-      console.error("Failed to adjust allocation:", error);
-    }
-  }
-
-  async function handleRemoveAllocation(accountId: string) {
-    try {
-      await dataService.removeBudgetAllocation(accountId, key);
-      // Reload accounts and allocations
-      const [accountsData, allocationsData, transactionsData] =
-        await Promise.all([
-          dataService.getAccounts(),
-          dataService.getBudgetAllocations(key),
-          dataService.getAccountTransactions(),
-        ]);
-      setAccounts(accountsData);
-      setAllocations(allocationsData);
-      setAccountTransactions(transactionsData);
-    } catch (error) {
-      console.error("Failed to remove allocation:", error);
-    }
-  }
-
-  // Calculate total allocated for display
-  const totalAllocated = allocations.reduce((sum, a) => sum + a.amount, 0);
+    return map;
+  }, [expenses]);
 
   // plans ops
   async function addPlan(p: Omit<PlanItem, "id">) {
@@ -356,6 +298,7 @@ export default function PaperBudget() {
   const [amount, setAmount] = useState<string>("");
   const [category, setCategory] = useState<string>("groceries");
   const [note, setNote] = useState<string>("");
+  const [expenseAccountId, setExpenseAccountId] = useState<string>("");
 
   // editing state
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
@@ -366,6 +309,7 @@ export default function PaperBudget() {
 
   // clear month confirmation dialog
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [budgetDetailsOpen, setBudgetDetailsOpen] = useState(false);
 
   function submitExpense() {
     const a = Number(amount);
@@ -375,11 +319,17 @@ export default function PaperBudget() {
       date: formDate,
       amount: Number(a.toFixed(2)),
       category,
+      accountId: expenseAccountId || undefined,
       note,
     });
 
     // Trigger red animation on the target date
     handleExpenseAnimation(formDate);
+
+    // Reload accounts to reflect balance change
+    if (expenseAccountId) {
+      dataService.getAccounts().then(setAccounts);
+    }
 
     setAmount("");
     setNote("");
@@ -424,6 +374,7 @@ export default function PaperBudget() {
     setFormDate(expense.date);
     setAmount(expense.amount.toString());
     setCategory(expense.category || "groceries");
+    setExpenseAccountId(expense.accountId || "");
     setNote(expense.note || "");
     setOpen(true);
   }
@@ -440,6 +391,8 @@ export default function PaperBudget() {
 
   function handleUpdateExpense(id: string, updates: Partial<Expense>) {
     updateExpense(id, updates);
+    // Reload accounts to reflect balance changes
+    dataService.getAccounts().then(setAccounts);
     setEditingExpense(null);
     setAmount("");
     setNote("");
@@ -474,6 +427,9 @@ export default function PaperBudget() {
     if (!isOpen) {
       setEditingExpense(null);
       setEditingPlan(null);
+      // Reset to default account
+      const defaultAcct = accounts.find((a) => a.isDefault) || accounts[0];
+      setExpenseAccountId(defaultAcct?.id || "");
     }
   }
 
@@ -534,15 +490,24 @@ export default function PaperBudget() {
         budgetInput={budgetInput}
         totalSpent={totalSpent}
         totalPlanned={totalPlanned}
-        totalAllocated={totalAllocated}
-        linkedAccountsCount={allocations.length}
         onBudgetInputChange={setBudgetInput}
         onGotoPrev={gotoPrev}
         onGotoNext={gotoNext}
         onOpenMonthlyBook={() => setMonthlyBookOpen(true)}
         onOpenClearDialog={() => setClearDialogOpen(true)}
         onOpenQuickAdd={() => setOpen(true)}
-        onOpenBudgetSetup={() => setShowBudgetSetup(true)}
+        onOpenBudgetDetails={() => setBudgetDetailsOpen(true)}
+      />
+
+      <BudgetDetailsDialog
+        open={budgetDetailsOpen}
+        onOpenChange={setBudgetDetailsOpen}
+        monthLabel={monthLabel}
+        budget={budget}
+        totalSpent={totalSpent}
+        totalPlanned={totalPlanned}
+        accounts={accounts}
+        spendingByAccount={spendingByAccount}
       />
 
       {/* ExpenseDialog - moved outside header for cleaner structure */}
@@ -557,6 +522,9 @@ export default function PaperBudget() {
         onCategoryChange={setCategory}
         note={note}
         onNoteChange={setNote}
+        accountId={expenseAccountId}
+        onAccountIdChange={setExpenseAccountId}
+        accounts={accounts}
         onSubmit={submitExpense}
         onSubmitPlan={submitPlan}
         dayExpenses={expenses.filter((e) => e.date === formDate)}
@@ -586,22 +554,6 @@ export default function PaperBudget() {
         onEditPlan={handleEditPlan}
         onUpdateExpense={updateExpense}
         onUpdatePlan={updatePlan}
-      />
-
-      {/* Budget Setup Dialog */}
-      <BudgetSetupDialog
-        open={showBudgetSetup}
-        onOpenChange={setShowBudgetSetup}
-        monthKey={key}
-        budget={budget}
-        budgetInput={budgetInput}
-        accounts={accounts}
-        allocations={allocations}
-        transactions={accountTransactions}
-        onBudgetInputChange={setBudgetInput}
-        onLinkAccount={handleLinkAccount}
-        onAdjustAllocation={handleAdjustAllocation}
-        onRemoveAllocation={handleRemoveAllocation}
       />
 
       {/* Clear Month Confirmation Dialog */}

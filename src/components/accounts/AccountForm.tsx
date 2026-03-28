@@ -23,6 +23,20 @@ import {
   AccountTypeBadge,
   getAccountTypeConfig,
 } from "./AccountTypeBadge";
+import { IconPicker } from "@/components/budget/IconPicker";
+import { CategoryIcon } from "@/components/budget/CategoryIcon";
+
+const DEFAULT_ICONS: Record<Account["accountType"], string> = {
+  checking: "building-2",
+  savings: "piggy-bank",
+  credit: "credit-card",
+  cash: "banknote",
+  other: "wallet",
+};
+
+function getDefaultIconForType(type: Account["accountType"]): string {
+  return DEFAULT_ICONS[type] || "wallet";
+}
 
 interface AccountFormProps {
   open: boolean;
@@ -45,6 +59,7 @@ export function AccountForm({
     useState<Account["accountType"]>("checking");
   const [initialBalance, setInitialBalance] = useState("");
   const [isDefault, setIsDefault] = useState(false);
+  const [icon, setIcon] = useState("");
 
   const isEditing = !!editingAccount;
 
@@ -56,11 +71,13 @@ export function AccountForm({
         setAccountType(editingAccount.accountType);
         setInitialBalance(editingAccount.initialBalance.toString());
         setIsDefault(editingAccount.isDefault);
+        setIcon(editingAccount.icon || "");
       } else {
         setName("");
         setAccountType("checking");
         setInitialBalance("");
         setIsDefault(false);
+        setIcon("");
       }
     }
   }, [open, editingAccount]);
@@ -75,6 +92,7 @@ export function AccountForm({
       accountType,
       initialBalance: balance,
       isDefault,
+      icon: icon || undefined,
       sortOrder: 0,
     });
 
@@ -82,6 +100,7 @@ export function AccountForm({
   };
 
   const typeConfig = getAccountTypeConfig(accountType);
+  const displayIcon = icon || getDefaultIconForType(accountType);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -173,6 +192,18 @@ export function AccountForm({
             </Select>
           </div>
 
+          {/* Account Icon */}
+          <div className="space-y-2">
+            <Label className={cn("text-base", paperTheme.fonts.handwriting)}>
+              Icon
+            </Label>
+            <IconPicker
+              value={icon || getDefaultIconForType(accountType)}
+              onChange={setIcon}
+              color={typeConfig.color}
+            />
+          </div>
+
           {/* Initial Balance */}
           <div className="space-y-2">
             <Label
@@ -239,15 +270,11 @@ export function AccountForm({
                 className="w-8 h-8 rounded-full flex items-center justify-center"
                 style={{ backgroundColor: typeConfig.color + "20" }}
               >
-                {(() => {
-                  const Icon = getAccountTypeConfig(accountType).icon;
-                  return (
-                    <Icon
-                      className="w-4 h-4"
-                      style={{ color: typeConfig.color }}
-                    />
-                  );
-                })()}
+                <CategoryIcon
+                  name={displayIcon}
+                  className="w-4 h-4"
+                  style={{ color: typeConfig.color }}
+                />
               </div>
               <div>
                 <p className={cn("font-medium", paperTheme.fonts.handwriting)}>

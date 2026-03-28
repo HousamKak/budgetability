@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import type { Account, BudgetAllocation } from "@/lib/data-service";
+import type { Account } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
@@ -7,6 +7,7 @@ import { ArrowRightLeft, Plus, RefreshCw, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AccountCard } from "./accounts/AccountCard";
 import { AccountForm } from "./accounts/AccountForm";
+import { AccountTransactionsDialog } from "./accounts/AccountTransactionsDialog";
 import { DepositDialog } from "./accounts/DepositDialog";
 import { TransferDialog } from "./accounts/TransferDialog";
 
@@ -16,7 +17,6 @@ import { TransferDialog } from "./accounts/TransferDialog";
  */
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [allAllocations, setAllAllocations] = useState<BudgetAllocation[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Dialog states
@@ -28,6 +28,8 @@ export default function AccountsPage() {
   >();
   const [showDepositDialog, setShowDepositDialog] = useState(false);
   const [depositAccount, setDepositAccount] = useState<Account | null>(null);
+  const [showTransactionsDialog, setShowTransactionsDialog] = useState(false);
+  const [transactionsAccount, setTransactionsAccount] = useState<Account | null>(null);
 
   useEffect(() => {
     loadData();
@@ -36,12 +38,8 @@ export default function AccountsPage() {
   async function loadData() {
     try {
       setLoading(true);
-      const [accts, allocs] = await Promise.all([
-        dataService.getAccounts(),
-        dataService.getAllBudgetAllocations(),
-      ]);
+      const accts = await dataService.getAccounts();
       setAccounts(accts);
-      setAllAllocations(allocs);
     } catch (error) {
       console.error("Failed to load accounts:", error);
     } finally {
@@ -307,9 +305,10 @@ export default function AccountsPage() {
               <AccountCard
                 key={account.id}
                 account={account}
-                allocations={allAllocations.filter(
-                  (a) => a.accountId === account.id,
-                )}
+                onClick={(a) => {
+                  setTransactionsAccount(a);
+                  setShowTransactionsDialog(true);
+                }}
                 onEdit={(a) => {
                   setEditingAccount(a);
                   setShowAccountForm(true);
@@ -353,6 +352,27 @@ export default function AccountsPage() {
           onOpenChange={setShowDepositDialog}
           account={depositAccount}
           onDeposit={handleDeposit}
+        />
+
+        <AccountTransactionsDialog
+          open={showTransactionsDialog}
+          onOpenChange={(open) => {
+            setShowTransactionsDialog(open);
+            if (!open) {
+              setTransactionsAccount(null);
+              loadData();
+            }
+          }}
+          account={transactionsAccount}
+          accounts={accounts}
+          onDeposit={(a) => {
+            setDepositAccount(a);
+            setShowDepositDialog(true);
+          }}
+          onTransfer={(a) => {
+            setTransferSourceAccount(a);
+            setShowTransferDialog(true);
+          }}
         />
       </div>
     </div>

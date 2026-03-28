@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import type { Expense, PlanItem } from "@/lib/data-service";
 import { formatNumber } from "@/lib/utils";
 import { calendarStyles, cn, conditional } from "@/styles";
-import { Check, Pencil, X } from "lucide-react";
-import { useState } from "react";
+import { Check, GripVertical, Pencil, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CategoryPicker } from "./CategoryPicker";
 import { Plus, Trash } from "./Icons";
 import { daysInMonth, firstWeekday, pad2, ymd } from "./utils";
 
@@ -130,6 +131,68 @@ export function Calendar({
     setEditingPlanId(null);
   };
 
+  // Drag-and-drop state
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOverDay, setDragOverDay] = useState<string | null>(null);
+  const calendarRef = useRef<HTMLDivElement>(null);
+
+  // Fallback cleanup: if the source element unmounts during drag,
+  // its onDragEnd won't fire. Catch with document-level listeners.
+  useEffect(() => {
+    if (!isDragging) return;
+    function cleanup() {
+      setIsDragging(false);
+      setDragOverDay(null);
+    }
+    // dragend bubbles to document when source stays in DOM
+    document.addEventListener("dragend", cleanup);
+    // pointerdown fires on next user interaction if dragend was missed
+    document.addEventListener("pointerdown", cleanup);
+    return () => {
+      document.removeEventListener("dragend", cleanup);
+      document.removeEventListener("pointerdown", cleanup);
+    };
+  }, [isDragging]);
+
+  function handleDragStart(e: React.DragEvent, type: "expense" | "plan", id: string) {
+    e.dataTransfer.setData("text/plain", JSON.stringify({ type, id }));
+    e.dataTransfer.effectAllowed = "move";
+    // Wait one frame so the browser captures the drag ghost,
+    // then force-close all HoverCards via state
+    requestAnimationFrame(() => {
+      setIsDragging(true);
+    });
+  }
+
+  function handleDragEnd() {
+    setIsDragging(false);
+    setDragOverDay(null);
+  }
+
+  function handleDrop(e: React.DragEvent, targetDate: string) {
+    e.preventDefault();
+    setIsDragging(false);
+    setDragOverDay(null);
+    try {
+      const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+      if (data.type === "expense" && onUpdateExpense) {
+        onUpdateExpense(data.id, { date: targetDate });
+      } else if (data.type === "plan" && onUpdatePlan) {
+        onUpdatePlan(data.id, { targetDate });
+      }
+    } catch { /* ignore invalid drag data */ }
+  }
+
+  function handleDragOver(e: React.DragEvent, dayDate: string) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverDay !== dayDate) setDragOverDay(dayDate);
+  }
+
+  function handleDragLeave() {
+    setDragOverDay(null);
+  }
+
   // helpers per-day
   function spentOn(day: number) {
     const d = `${monthKey}-${pad2(day)}`;
@@ -164,6 +227,7 @@ export function Calendar({
 
   return (
     <div
+      ref={calendarRef}
       className="mobile-calendar-area lg:h-auto lg:flex lg:flex-col"
       data-mobile-view="calendar"
     >
@@ -185,8 +249,17 @@ export function Calendar({
           const isPlanAnimated = animatedPlanDates?.has(dayDate) ?? false;
           const isExpenseAnimated = animatedExpenseDates?.has(dayDate) ?? false;
 
+          const isEditing = listFor(d).some((e) => editingExpenseId === e.id) ||
+            plannedFor(d).some((p) => editingPlanId === p.id);
+
           return (
-            <HoverCard key={d} openDelay={200} closeDelay={200}>
+            <HoverCard
+              key={d}
+              openDelay={200}
+              closeDelay={200}
+              open={isDragging ? false : isEditing ? true : undefined}
+              onOpenChange={isDragging || isEditing ? () => {} : undefined}
+            >
               <HoverCardTrigger asChild>
                 <button
                   className={cn(
@@ -196,12 +269,16 @@ export function Calendar({
                       calendarStyles.todayHighlight
                     ),
                     conditional(isPlanAnimated, calendarStyles.planGlow),
-                    conditional(isExpenseAnimated, calendarStyles.expenseGlow)
+                    conditional(isExpenseAnimated, calendarStyles.expenseGlow),
+                    conditional(dragOverDay === dayDate, "ring-2 ring-amber-400 bg-amber-50/50")
                   )}
                   onClick={(e) => {
                     e.preventDefault();
                     onDayClick(dayDate);
                   }}
+                  onDragOver={(e) => handleDragOver(e, dayDate)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, dayDate)}
                 >
                   {/* torn paper top edge */}
                   <div className={calendarStyles.dayTornEdge} />
@@ -333,19 +410,15 @@ export function Calendar({
                                 autoFocus
                                 onClick={(e) => e.stopPropagation()}
                               />
-                              <Input
-                                type="text"
-                                value={editFormData.category}
-                                onChange={(e) =>
-                                  setEditFormData({
-                                    ...editFormData,
-                                    category: e.target.value,
-                                  })
-                                }
-                                className="h-7 text-sm flex-1"
-                                placeholder="Category"
-                                onClick={(e) => e.stopPropagation()}
-                              />
+                              <div className="flex-1" onClick={(e) => e.stopPropagation()}>
+                                <CategoryPicker
+                                  value={editFormData.category}
+                                  onChange={(val) => setEditFormData({ ...editFormData, category: val })}
+                                  useNameAsValue
+                                  triggerClassName="h-7 text-sm"
+                                  placeholder="Category"
+                                />
+                              </div>
                             </div>
                             <Input
                               type="text"
@@ -377,7 +450,13 @@ export function Calendar({
                           </div>
                         ) : (
                           // Display mode
-                          <div className="flex items-center justify-between">
+                          <div
+                            className="flex items-center justify-between"
+                            draggable
+                            onDragStart={(ev) => handleDragStart(ev, "plan", p.id)}
+                            onDragEnd={handleDragEnd}
+                          >
+                            <GripVertical className="w-3 h-3 text-stone-300 shrink-0 cursor-grab mr-1" />
                             <div className="min-w-0 flex-1">
                               <div className="text-sm font-semibold">
                                 ${formatNumber(p.amount)}{" "}
@@ -461,19 +540,15 @@ export function Calendar({
                                 autoFocus
                                 onClick={(ev) => ev.stopPropagation()}
                               />
-                              <Input
-                                type="text"
-                                value={editFormData.category}
-                                onChange={(ev) =>
-                                  setEditFormData({
-                                    ...editFormData,
-                                    category: ev.target.value,
-                                  })
-                                }
-                                className="h-7 text-sm flex-1"
-                                placeholder="Category"
-                                onClick={(ev) => ev.stopPropagation()}
-                              />
+                              <div className="flex-1" onClick={(ev) => ev.stopPropagation()}>
+                                <CategoryPicker
+                                  value={editFormData.category}
+                                  onChange={(val) => setEditFormData({ ...editFormData, category: val })}
+                                  useNameAsValue
+                                  triggerClassName="h-7 text-sm"
+                                  placeholder="Category"
+                                />
+                              </div>
                             </div>
                             <Input
                               type="text"
@@ -505,7 +580,13 @@ export function Calendar({
                           </div>
                         ) : (
                           // Display mode
-                          <div className="flex items-center justify-between">
+                          <div
+                            className="flex items-center justify-between"
+                            draggable
+                            onDragStart={(ev) => handleDragStart(ev, "expense", e.id)}
+                            onDragEnd={handleDragEnd}
+                          >
+                            <GripVertical className="w-3 h-3 text-stone-300 shrink-0 cursor-grab mr-1" />
                             <div className="min-w-0 flex-1">
                               <div className="text-sm font-semibold">
                                 ${formatNumber(e.amount)}{" "}

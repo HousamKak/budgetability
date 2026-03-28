@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
         "@": fileURLToPath(new URL("./src", import.meta.url)),
       },
     },
-    base: "/",
+    base: mode === 'production' ? '/budgetability/' : '/',
     build: {
       outDir: 'dist',
       assetsDir: 'assets'

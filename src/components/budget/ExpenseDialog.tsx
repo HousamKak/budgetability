@@ -8,12 +8,21 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { type Expense, type PlanItem } from "@/lib/data-service";
+import { type Account, type Expense, type PlanItem } from "@/lib/data-service";
 import { formatNumber } from "@/lib/utils";
 import { cn, dialogStyles } from "@/styles";
 import { Check, Pencil, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CategoryPicker } from "./CategoryPicker";
+import { CategoryIcon } from "./CategoryIcon";
+import { getAccountTypeConfig } from "@/components/accounts/AccountTypeBadge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type DialogMode = "expense" | "plan";
 
@@ -28,6 +37,9 @@ interface ExpenseDialogProps {
   onCategoryChange: (category: string) => void;
   note: string;
   onNoteChange: (note: string) => void;
+  accountId: string;
+  onAccountIdChange: (accountId: string) => void;
+  accounts: Account[];
   onSubmit: () => void;
   onSubmitPlan?: (planData: {
     date: string;
@@ -39,6 +51,7 @@ interface ExpenseDialogProps {
     id: string;
     amount: number;
     category?: string;
+    accountId?: string;
     note?: string;
     date?: string;
   }>;
@@ -68,6 +81,9 @@ export function ExpenseDialog({
   onCategoryChange,
   note,
   onNoteChange,
+  accountId,
+  onAccountIdChange,
+  accounts,
   onSubmit,
   onSubmitPlan,
   dayExpenses = [],
@@ -158,6 +174,22 @@ export function ExpenseDialog({
     setInlineEditingPlanId(null);
   };
 
+  // Clear selected account if amount exceeds its available balance
+  // When editing, the original amount is already deducted from the balance,
+  // so we only need to check if the *additional* cost is affordable
+  useEffect(() => {
+    if (!accountId) return;
+    const parsedAmount = parseFloat(amount) || 0;
+    if (parsedAmount <= 0) return;
+    const selectedAccount = accounts.find((a) => a.id === accountId);
+    if (!selectedAccount) return;
+    const originalAmount = editingExpense?.accountId === accountId ? editingExpense.amount : 0;
+    const effectiveBalance = selectedAccount.currentBalance + originalAmount;
+    if (effectiveBalance < parsedAmount) {
+      onAccountIdChange("");
+    }
+  }, [amount, accountId, accounts, onAccountIdChange, editingExpense]);
+
   // Determine if we're in edit mode
   const isEditing = !!(editingExpense || editingPlan);
 
@@ -181,6 +213,7 @@ export function ExpenseDialog({
           date: formDate,
           amount: Number(a.toFixed(2)),
           category,
+          accountId: accountId || undefined,
           note,
         });
       } else if (editingPlan && onUpdatePlan) {
@@ -417,6 +450,57 @@ export function ExpenseDialog({
                         placeholder="Pick one"
                       />
                     </div>
+                    {mode === "expense" && accounts.length > 0 && (
+                      <div className={dialogStyles.form.fieldContainer}>
+                        <Label className={dialogStyles.form.label}>
+                          Pay from
+                        </Label>
+                        <Select
+                          value={accountId || "__none__"}
+                          onValueChange={(v) => onAccountIdChange(v === "__none__" ? "" : v)}
+                        >
+                          <SelectTrigger className={cn(dialogStyles.form.input, "h-10")}>
+                            <SelectValue>
+                              {accountId ? (() => {
+                                const acc = accounts.find((a) => a.id === accountId);
+                                if (!acc) return "No account";
+                                const typeConfig = getAccountTypeConfig(acc.accountType);
+                                const iconName = acc.icon || ({ checking: "building-2", savings: "piggy-bank", credit: "credit-card", cash: "banknote", other: "wallet" }[acc.accountType]);
+                                return (
+                                  <span className="flex items-center gap-2">
+                                    <CategoryIcon name={iconName} className="w-4 h-4 shrink-0" style={{ color: typeConfig.color }} />
+                                    <span>{acc.name}{acc.isDefault ? " ★" : ""}</span>
+                                  </span>
+                                );
+                              })() : "No account"}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">No account</SelectItem>
+                            {accounts
+                              .slice()
+                              .sort((a, b) => (a.isDefault ? -1 : b.isDefault ? 1 : 0))
+                              .map((acc) => {
+                                const parsedAmount = parseFloat(amount) || 0;
+                                const originalAmount = editingExpense?.accountId === acc.id ? editingExpense.amount : 0;
+                                const effectiveBalance = acc.currentBalance + originalAmount;
+                                const insufficientFunds = parsedAmount > 0 && effectiveBalance < parsedAmount;
+                                const typeConfig = getAccountTypeConfig(acc.accountType);
+                                const iconName = acc.icon || ({ checking: "building-2", savings: "piggy-bank", credit: "credit-card", cash: "banknote", other: "wallet" }[acc.accountType]);
+                                return (
+                                  <SelectItem key={acc.id} value={acc.id} disabled={insufficientFunds}>
+                                    <span className={cn("flex items-center gap-2", insufficientFunds && "opacity-50")}>
+                                      <CategoryIcon name={iconName} className="w-4 h-4 shrink-0" style={{ color: typeConfig.color }} />
+                                      <span>{acc.name}{acc.isDefault ? " ★" : ""}</span>
+                                      {insufficientFunds && <span className="text-red-500 text-xs">(insufficient)</span>}
+                                    </span>
+                                  </SelectItem>
+                                );
+                              })}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                     <div className={dialogStyles.form.fieldContainer}>
                       <Label htmlFor="note" className={dialogStyles.form.label}>
                         {mode === "expense"
@@ -727,20 +811,15 @@ export function ExpenseDialog({
                                               placeholder="Amount"
                                               autoFocus
                                             />
-                                            <Input
-                                              type="text"
-                                              value={
-                                                inlineEditFormData.category
-                                              }
-                                              onChange={(e) =>
-                                                setInlineEditFormData({
-                                                  ...inlineEditFormData,
-                                                  category: e.target.value,
-                                                })
-                                              }
-                                              className="h-7 text-sm flex-1"
-                                              placeholder="Category"
-                                            />
+                                            <div className="flex-1">
+                                              <CategoryPicker
+                                                value={inlineEditFormData.category}
+                                                onChange={(val) => setInlineEditFormData({ ...inlineEditFormData, category: val })}
+                                                useNameAsValue
+                                                triggerClassName="h-7 text-sm"
+                                                placeholder="Category"
+                                              />
+                                            </div>
                                           </div>
                                           <Input
                                             type="text"
@@ -889,20 +968,15 @@ export function ExpenseDialog({
                                               placeholder="Amount"
                                               autoFocus
                                             />
-                                            <Input
-                                              type="text"
-                                              value={
-                                                inlineEditFormData.category
-                                              }
-                                              onChange={(e) =>
-                                                setInlineEditFormData({
-                                                  ...inlineEditFormData,
-                                                  category: e.target.value,
-                                                })
-                                              }
-                                              className="h-7 text-sm flex-1"
-                                              placeholder="Category"
-                                            />
+                                            <div className="flex-1">
+                                              <CategoryPicker
+                                                value={inlineEditFormData.category}
+                                                onChange={(val) => setInlineEditFormData({ ...inlineEditFormData, category: val })}
+                                                useNameAsValue
+                                                triggerClassName="h-7 text-sm"
+                                                placeholder="Category"
+                                              />
+                                            </div>
                                           </div>
                                           <Input
                                             type="text"

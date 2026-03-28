@@ -4,7 +4,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import type { Account, BudgetAllocation } from "@/lib/data-service";
+import type { Account } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import {
@@ -12,15 +12,15 @@ import {
   ArrowUpRight,
   MoreVertical,
   Pencil,
-  PiggyBank,
   Star,
   Trash2,
 } from "lucide-react";
-import { AccountTypeBadge } from "./AccountTypeBadge";
+import { AccountTypeBadge, getAccountTypeConfig } from "./AccountTypeBadge";
+import { CategoryIcon } from "@/components/budget/CategoryIcon";
 
 interface AccountCardProps {
   account: Account;
-  allocations?: BudgetAllocation[];
+  onClick?: (account: Account) => void;
   onEdit?: (account: Account) => void;
   onDelete?: (account: Account) => void;
   onTransfer?: (account: Account) => void;
@@ -29,36 +29,27 @@ interface AccountCardProps {
 }
 
 /**
- * Display a single account with balance and actions
+ * Display a single account with balance - click to view transactions
  */
-const formatMonth = (key: string) => {
-  const [year, month] = key.split("-");
-  const date = new Date(parseInt(year), parseInt(month) - 1);
-  return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
-};
-
 export function AccountCard({
   account,
-  allocations = [],
+  onClick,
   onEdit,
   onDelete,
   onTransfer,
   onDeposit,
   onSetDefault,
 }: AccountCardProps) {
-  const balanceChange = account.currentBalance - account.initialBalance;
-  const isPositiveChange = balanceChange >= 0;
-  const totalAllocated = allocations.reduce((sum, a) => sum + a.amount, 0);
-  const availableBalance = account.currentBalance;
-
   return (
     <div
+      onClick={() => onClick?.(account)}
       className={cn(
         "relative p-4 rounded-xl",
         paperTheme.colors.background.cardGradient,
         paperTheme.colors.borders.paper,
         paperTheme.effects.shadow.md,
         "overflow-hidden transition-transform duration-200 hover:scale-[1.02]",
+        onClick && "cursor-pointer",
       )}
     >
       {/* Paper texture overlay */}
@@ -79,7 +70,7 @@ export function AccountCard({
 
       {/* Default star indicator */}
       {account.isDefault && (
-        <div className="absolute top-2 right-2">
+        <div className="absolute top-2 right-10">
           <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
         </div>
       )}
@@ -88,17 +79,31 @@ export function AccountCard({
       <div className="relative z-10 pt-2">
         {/* Header */}
         <div className="flex items-start justify-between mb-3">
-          <div>
-            <h3
-              className={cn(
-                "text-lg font-bold",
-                paperTheme.colors.text.accent,
-                paperTheme.fonts.handwriting,
-              )}
-            >
-              {account.name}
-            </h3>
-            <AccountTypeBadge type={account.accountType} size="sm" />
+          <div className="flex items-center gap-2">
+            {account.icon ? (
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                style={{ backgroundColor: getAccountTypeConfig(account.accountType).color + "20" }}
+              >
+                <CategoryIcon
+                  name={account.icon}
+                  className="w-4 h-4"
+                  style={{ color: getAccountTypeConfig(account.accountType).color }}
+                />
+              </div>
+            ) : null}
+            <div>
+              <h3
+                className={cn(
+                  "text-lg font-bold",
+                  paperTheme.colors.text.accent,
+                  paperTheme.fonts.handwriting,
+                )}
+              >
+                {account.name}
+              </h3>
+              <AccountTypeBadge type={account.accountType} size="sm" />
+            </div>
           </div>
 
           {/* Actions menu */}
@@ -108,6 +113,7 @@ export function AccountCard({
                 variant="ghost"
                 size="sm"
                 className="h-8 w-8 p-0 hover:bg-amber-100"
+                onClick={(e) => e.stopPropagation()}
               >
                 <MoreVertical className="w-4 h-4 text-stone-500" />
               </Button>
@@ -154,7 +160,6 @@ export function AccountCard({
 
         {/* Balance */}
         <div className="mb-3">
-          <p className="text-xs text-stone-500 mb-0.5">Current Balance</p>
           <p
             className={cn(
               "text-2xl font-bold",
@@ -164,72 +169,7 @@ export function AccountCard({
           >
             {formatCurrency(account.currentBalance)}
           </p>
-          <p className="text-xs text-stone-400 mt-0.5">
-            Initial: {formatCurrency(account.initialBalance)}
-            <span
-              className={cn(
-                "ml-2",
-                isPositiveChange ? "text-green-600" : "text-red-500",
-              )}
-            >
-              ({isPositiveChange ? "+" : ""}
-              {formatCurrency(balanceChange)})
-            </span>
-          </p>
         </div>
-
-        {/* Budget Allocations */}
-        {allocations.length > 0 && (
-          <div
-            className={cn(
-              "mb-3 p-2.5 rounded-lg border",
-              paperTheme.colors.borders.amber,
-              "bg-amber-50/50",
-            )}
-          >
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <PiggyBank className="w-3.5 h-3.5 text-amber-600" />
-              <p className="text-xs font-medium text-stone-600">
-                Allocated to Budgets
-              </p>
-            </div>
-            <div className="space-y-1">
-              {allocations.map((alloc) => (
-                <div key={alloc.id} className="flex justify-between text-xs">
-                  <span className="text-stone-500">
-                    {formatMonth(alloc.monthKey)}
-                  </span>
-                  <span className="text-amber-700 font-medium">
-                    {formatCurrency(alloc.amount)}
-                  </span>
-                </div>
-              ))}
-              {allocations.length > 1 && (
-                <div className="flex justify-between text-xs pt-1 mt-1 border-t border-amber-200">
-                  <span className="text-stone-600 font-medium">
-                    Total committed
-                  </span>
-                  <span className="text-amber-800 font-bold">
-                    {formatCurrency(totalAllocated)}
-                  </span>
-                </div>
-              )}
-            </div>
-            <div className="mt-1.5 pt-1.5 border-t border-amber-200">
-              <div className="flex justify-between text-xs">
-                <span className="text-stone-500">Available (unallocated)</span>
-                <span
-                  className={cn(
-                    "font-medium",
-                    availableBalance >= 0 ? "text-green-600" : "text-red-500",
-                  )}
-                >
-                  {formatCurrency(availableBalance)}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Action buttons */}
         <div className="flex gap-2 flex-wrap">
@@ -242,7 +182,10 @@ export function AccountCard({
                 paperTheme.colors.borders.amber,
                 "hover:bg-amber-50",
               )}
-              onClick={() => onDeposit(account)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDeposit(account);
+              }}
             >
               <ArrowUpRight className="w-3 h-3 mr-1" />
               Deposit
@@ -257,7 +200,10 @@ export function AccountCard({
                 paperTheme.colors.borders.amber,
                 "hover:bg-amber-50",
               )}
-              onClick={() => onTransfer(account)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onTransfer(account);
+              }}
             >
               <ArrowRightLeft className="w-3 h-3 mr-1" />
               Transfer

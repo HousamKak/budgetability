@@ -12,6 +12,7 @@ import { formatNumber } from "@/lib/utils";
 import { cn, dialogStyles } from "@/styles";
 import { Check, Pencil, X } from "lucide-react";
 import { useState } from "react";
+import { CategoryPicker } from "./CategoryPicker";
 
 interface MonthlyBookDialogProps {
   open: boolean;
@@ -200,18 +201,15 @@ export function MonthlyBookDialog({
                                         placeholder="Amount"
                                         autoFocus
                                       />
-                                      <Input
-                                        type="text"
-                                        value={editFormData.category}
-                                        onChange={(e) =>
-                                          setEditFormData({
-                                            ...editFormData,
-                                            category: e.target.value,
-                                          })
-                                        }
-                                        className="h-7 text-sm flex-1"
-                                        placeholder="Category"
-                                      />
+                                      <div className="flex-1">
+                                        <CategoryPicker
+                                          value={editFormData.category}
+                                          onChange={(val) => setEditFormData({ ...editFormData, category: val })}
+                                          useNameAsValue
+                                          triggerClassName="h-7 text-sm"
+                                          placeholder="Category"
+                                        />
+                                      </div>
                                     </div>
                                     <Input
                                       type="text"
@@ -355,18 +353,15 @@ export function MonthlyBookDialog({
                                         placeholder="Amount"
                                         autoFocus
                                       />
-                                      <Input
-                                        type="text"
-                                        value={editFormData.category}
-                                        onChange={(e) =>
-                                          setEditFormData({
-                                            ...editFormData,
-                                            category: e.target.value,
-                                          })
-                                        }
-                                        className="h-7 text-sm flex-1"
-                                        placeholder="Category"
-                                      />
+                                      <div className="flex-1">
+                                        <CategoryPicker
+                                          value={editFormData.category}
+                                          onChange={(val) => setEditFormData({ ...editFormData, category: val })}
+                                          useNameAsValue
+                                          triggerClassName="h-7 text-sm"
+                                          placeholder="Category"
+                                        />
+                                      </div>
                                     </div>
                                     <Input
                                       type="text"

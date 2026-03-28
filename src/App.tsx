@@ -10,8 +10,8 @@ import { ProfilePanel } from './components/ProfilePanel'
 import { EmailConfirmation } from './components/EmailConfirmation'
 import { EmailVerificationWaiting } from './components/EmailVerificationWaiting'
 
-// Get the base path from Vite config
-const basename = ''
+// Get the base path from Vite config (strips trailing slash for Router)
+const basename = import.meta.env.BASE_URL.replace(/\/+$/, '')
 
 function App() {
   return (

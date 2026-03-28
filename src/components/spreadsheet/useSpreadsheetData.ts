@@ -1,7 +1,7 @@
 import { dataService } from "@/lib/data-service";
 import type { Category, Expense } from "@/lib/data-service";
 import type { SpreadsheetRow } from "@/types/spreadsheet.types";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildColumnGroups, INCOME_SUBCOLUMN_KEYS } from "./column-config";
 
 const MONTH_NAMES = [
@@ -163,7 +163,10 @@ export function useSpreadsheetData(
     };
   }, [startYear, startMonth, endYear, endMonth, reloadKey]);
 
-  const columnGroups = buildColumnGroups(categories.map((c) => c.name));
+  const columnGroups = useMemo(
+    () => buildColumnGroups(categories.map((c) => c.name)),
+    [categories],
+  );
 
   const updateEntry = useCallback(
     async (monthKey: string, columnKey: string, value: number) => {

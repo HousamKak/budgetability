@@ -39,7 +39,8 @@ export type AccountTransaction = {
     | "budget_allocation"
     | "savings_contribution"
     | "overdraft_coverage"
-    | "deposit";
+    | "deposit"
+    | "expense";
   monthKey?: string;
   savingsGoalId?: string;
   note?: string;
@@ -84,6 +85,7 @@ export type Expense = {
   amount: number;
   category?: string; // Legacy TEXT field
   categoryId?: string; // NEW: Reference to categories table
+  accountId?: string; // Account this expense was paid from
   note?: string;
 };
 
@@ -389,6 +391,7 @@ export class DataService {
             date: row.date,
             amount: Number(row.amount),
             category: row.category || undefined,
+            accountId: row.account_id || undefined,
             note: row.note || undefined,
           })) || []
         );
@@ -421,10 +424,25 @@ export class DataService {
             date: expense.date,
             amount: expense.amount,
             category: expense.category,
+            account_id: expense.accountId || null,
             note: expense.note,
           });
 
           if (error) throw error;
+
+          // Deduct from account if specified
+          if (expense.accountId) {
+            const txId = crypto.randomUUID();
+            await supabase.from("account_transactions").insert({
+              id: txId,
+              user_id: user.id,
+              from_account_id: expense.accountId,
+              amount: expense.amount,
+              transaction_type: "expense",
+              month_key: monthKey,
+              note: expense.note || expense.category || "Expense",
+            });
+          }
           return;
         }
       } catch (error) {
@@ -438,15 +456,60 @@ export class DataService {
       : [];
     list.push(expense);
     this.localStore.expenses[monthKey] = list;
+
+    // Deduct from account if specified
+    if (expense.accountId) {
+      this.localStore.accounts = this.localStore.accounts.map((a) =>
+        a.id === expense.accountId
+          ? { ...a, currentBalance: a.currentBalance - expense.amount }
+          : a,
+      );
+      this.localStore.accountTransactions = [
+        ...this.localStore.accountTransactions,
+        {
+          id: crypto.randomUUID(),
+          fromAccountId: expense.accountId,
+          amount: expense.amount,
+          transactionType: "expense",
+          monthKey,
+          note: expense.note || expense.category || "Expense",
+          createdAt: new Date().toISOString(),
+        },
+      ];
+    }
+
     saveStoreToLocalStorage(this.localStore);
   }
 
   async removeExpense(monthKey: string, id: string): Promise<void> {
     if (this.useSupabase && supabase) {
       try {
-        const { error } = await supabase.from("expenses").delete().eq("id", id);
+        // Fetch the expense first to check for accountId
+        const { data: expenseData } = await supabase
+          .from("expenses")
+          .select("account_id, amount, category, note")
+          .eq("id", id)
+          .single();
 
+        const { error } = await supabase.from("expenses").delete().eq("id", id);
         if (error) throw error;
+
+        // Refund the account if the expense was linked
+        if (expenseData?.account_id) {
+          const user = await this.getCurrentUser();
+          if (user) {
+            const txId = crypto.randomUUID();
+            await supabase.from("account_transactions").insert({
+              id: txId,
+              user_id: user.id,
+              to_account_id: expenseData.account_id,
+              amount: Number(expenseData.amount),
+              transaction_type: "expense",
+              month_key: monthKey,
+              note: `Refund: ${expenseData.note || expenseData.category || "Expense deleted"}`,
+            });
+          }
+        }
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
@@ -454,10 +517,37 @@ export class DataService {
       }
     }
 
+    // Find the expense before removing to check for accountId
+    const expense = (this.localStore.expenses[monthKey] ?? []).find(
+      (x) => x.id === id,
+    );
+
     const list = (this.localStore.expenses[monthKey] ?? []).filter(
       (x) => x.id !== id,
     );
     this.localStore.expenses[monthKey] = list;
+
+    // Refund the account if the expense was linked
+    if (expense?.accountId) {
+      this.localStore.accounts = this.localStore.accounts.map((a) =>
+        a.id === expense.accountId
+          ? { ...a, currentBalance: a.currentBalance + expense.amount }
+          : a,
+      );
+      this.localStore.accountTransactions = [
+        ...this.localStore.accountTransactions,
+        {
+          id: crypto.randomUUID(),
+          toAccountId: expense.accountId,
+          amount: expense.amount,
+          transactionType: "expense",
+          monthKey,
+          note: `Refund: ${expense.note || expense.category || "Expense deleted"}`,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+    }
+
     saveStoreToLocalStorage(this.localStore);
   }
 
@@ -815,12 +905,21 @@ export class DataService {
   ): Promise<void> {
     if (this.useSupabase && supabase) {
       try {
+        // Fetch old expense to handle account balance adjustments
+        const { data: oldExpense } = await supabase
+          .from("expenses")
+          .select("account_id, amount")
+          .eq("id", id)
+          .single();
+
         const dbUpdates: Record<string, unknown> = {};
         if (updates.amount !== undefined) dbUpdates.amount = updates.amount;
         if (updates.category !== undefined)
           dbUpdates.category = updates.category;
         if (updates.categoryId !== undefined)
           dbUpdates.category_id = updates.categoryId;
+        if (updates.accountId !== undefined)
+          dbUpdates.account_id = updates.accountId || null;
         if (updates.note !== undefined) dbUpdates.note = updates.note;
         if (updates.date !== undefined) dbUpdates.date = updates.date;
 
@@ -830,6 +929,40 @@ export class DataService {
           .eq("id", id);
 
         if (error) throw error;
+
+        // Handle account balance adjustments
+        const user = await this.getCurrentUser();
+        if (user && oldExpense) {
+          const oldAccountId = oldExpense.account_id;
+          const oldAmount = Number(oldExpense.amount);
+          const newAccountId = updates.accountId !== undefined ? updates.accountId : oldAccountId;
+          const newAmount = updates.amount !== undefined ? updates.amount : oldAmount;
+
+          // Refund old account
+          if (oldAccountId) {
+            await supabase.from("account_transactions").insert({
+              id: crypto.randomUUID(),
+              user_id: user.id,
+              to_account_id: oldAccountId,
+              amount: oldAmount,
+              transaction_type: "expense",
+              month_key: monthKey,
+              note: "Expense updated - old amount refunded",
+            });
+          }
+          // Deduct from new account
+          if (newAccountId) {
+            await supabase.from("account_transactions").insert({
+              id: crypto.randomUUID(),
+              user_id: user.id,
+              from_account_id: newAccountId,
+              amount: newAmount,
+              transaction_type: "expense",
+              month_key: monthKey,
+              note: "Expense updated - new amount deducted",
+            });
+          }
+        }
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
@@ -837,10 +970,40 @@ export class DataService {
       }
     }
 
+    const oldExpense = (this.localStore.expenses[monthKey] ?? []).find(
+      (x) => x.id === id,
+    );
+
     const list = (this.localStore.expenses[monthKey] ?? []).map((x) =>
       x.id === id ? { ...x, ...updates } : x,
     );
     this.localStore.expenses[monthKey] = list;
+
+    // Handle account balance adjustments for localStorage
+    if (oldExpense) {
+      const oldAccountId = oldExpense.accountId;
+      const oldAmount = oldExpense.amount;
+      const newAccountId = updates.accountId !== undefined ? updates.accountId : oldAccountId;
+      const newAmount = updates.amount !== undefined ? updates.amount : oldAmount;
+
+      // Refund old account
+      if (oldAccountId) {
+        this.localStore.accounts = this.localStore.accounts.map((a) =>
+          a.id === oldAccountId
+            ? { ...a, currentBalance: a.currentBalance + oldAmount }
+            : a,
+        );
+      }
+      // Deduct from new account
+      if (newAccountId) {
+        this.localStore.accounts = this.localStore.accounts.map((a) =>
+          a.id === newAccountId
+            ? { ...a, currentBalance: a.currentBalance - newAmount }
+            : a,
+        );
+      }
+    }
+
     saveStoreToLocalStorage(this.localStore);
   }
 
@@ -2248,8 +2411,8 @@ export class DataService {
           })) || []
         );
       } catch (error) {
-        console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
+        // Don't flip global useSupabase flag — table may not exist yet
+        console.warn("Spreadsheet entries Supabase error, using localStorage:", error);
       }
     }
 
@@ -2269,9 +2432,7 @@ export class DataService {
     if (this.useSupabase && supabase) {
       try {
         const user = await this.getCurrentUser();
-        if (!user) {
-          this.useSupabase = false;
-        } else {
+        if (user) {
           const { error } = await supabase.from("spreadsheet_entries").upsert(
             {
               id,
@@ -2286,8 +2447,7 @@ export class DataService {
           if (error) throw error;
         }
       } catch (error) {
-        console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
+        console.warn("Spreadsheet entries Supabase error, using localStorage:", error);
       }
     }
 
@@ -2322,8 +2482,7 @@ export class DataService {
           if (error) throw error;
         }
       } catch (error) {
-        console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
+        console.warn("Spreadsheet entries Supabase error, using localStorage:", error);
       }
     }
 

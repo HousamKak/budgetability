@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/button";
-import { cn, formatCurrency, formatNumber } from "@/lib/utils";
-import { Book, ChevronLeft, ChevronRight, Plus, Trash, Wallet } from "./Icons";
+import { cn, formatNumber } from "@/lib/utils";
+import { Book, ChevronLeft, ChevronRight, Plus, Trash } from "./Icons";
 import { SummaryCard } from "./SummaryCard";
+import { ClipboardList } from "lucide-react";
 
 interface DashboardHeaderProps {
   monthLabel: string;
@@ -11,15 +12,13 @@ interface DashboardHeaderProps {
   budgetInput: string;
   totalSpent: number;
   totalPlanned: number;
-  totalAllocated?: number;
-  linkedAccountsCount?: number;
   onBudgetInputChange: (value: string) => void;
   onGotoPrev: () => void;
   onGotoNext: () => void;
   onOpenMonthlyBook: () => void;
   onOpenClearDialog: () => void;
   onOpenQuickAdd: () => void;
-  onOpenBudgetSetup?: () => void;
+  onOpenBudgetDetails: () => void;
 }
 
 export function DashboardHeader({
@@ -28,22 +27,20 @@ export function DashboardHeader({
   budgetInput,
   totalSpent,
   totalPlanned,
-  totalAllocated,
-  linkedAccountsCount = 0,
   onBudgetInputChange,
   onGotoPrev,
   onGotoNext,
   onOpenMonthlyBook,
   onOpenClearDialog,
   onOpenQuickAdd,
-  onOpenBudgetSetup,
+  onOpenBudgetDetails,
 }: DashboardHeaderProps) {
   const leftNow = Math.max(0, budget - totalSpent);
   const leftAfterPlanned = budget - totalSpent - totalPlanned;
 
   return (
     <div className="mx-auto max-w-7xl px-2 sm:px-4 pt-4 pb-4">
-      {/* 4 Sections Grid: A (Month + Buttons) | B | C | D (Summary Cards) */}
+      {/* 4 Sections Grid: A (Month + Buttons) | Budget | Spent | Planned */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.3fr_1fr_1fr_1fr] gap-4 text-sm">
         {/* Section A: Month Navigation + Action Buttons */}
         <div className="flex flex-col gap-3">
@@ -108,26 +105,12 @@ export function DashboardHeader({
           </div>
         </div>
 
-        {/* Section B: Budget Card (Redesigned) */}
+        {/* Budget Card with Details button */}
         <div className="rounded-2xl border-2 border-amber-200 shadow-sm bg-gradient-to-br from-amber-50/80 to-white/80 overflow-hidden">
-          <div className="flex h-full">
-            {/* Left: Wallet Button */}
-            <button
-              onClick={onOpenBudgetSetup}
-              className={cn(
-                "flex flex-col items-center justify-center px-3 py-2",
-                "bg-amber-100/60 hover:bg-amber-200/80 transition-colors cursor-pointer",
-                "border-r border-amber-200/50"
-              )}
-              title="Setup budget sources"
-            >
-              <Wallet className="w-5 h-5 text-amber-700" />
-              <span className="text-[10px] text-amber-700 font-medium mt-0.5">Setup</span>
-            </button>
-
-            {/* Right: Budget Info */}
-            <div className="flex-1 flex flex-col justify-center px-3 py-1.5">
-              {/* Budget Amount Row */}
+          <div className="flex items-center h-full">
+            {/* Budget section */}
+            <div className="flex flex-col justify-center px-4 py-2 flex-1">
+              <p className="text-[10px] text-stone-400 text-center font-medium uppercase tracking-wider">Monthly Budget</p>
               <div className="flex items-center justify-center gap-0.5">
                 <span
                   className="text-xl font-bold tracking-wide text-stone-700"
@@ -148,44 +131,21 @@ export function DashboardHeader({
                   placeholder="0"
                 />
               </div>
+            </div>
 
-              {/* Metrics Row */}
-              <div className="flex items-center justify-center gap-3 mt-1">
-                {linkedAccountsCount > 0 ? (
-                  <>
-                    <div className="flex items-center gap-1">
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      <span className="text-[10px] text-stone-500">
-                        {linkedAccountsCount} source{linkedAccountsCount !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                    {totalAllocated !== undefined && totalAllocated > 0 && (
-                      <div className="text-[10px] text-stone-500">
-                        {formatCurrency(totalAllocated)} funded
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <span className="text-[10px] text-amber-600 font-medium">
-                    Tap wallet to link accounts
-                  </span>
-                )}
-              </div>
-
-              {/* Funding Status Bar */}
-              {budget > 0 && totalAllocated !== undefined && (
-                <div className="mt-1.5">
-                  <div className="h-1 bg-stone-200 rounded-full overflow-hidden">
-                    <div
-                      className={cn(
-                        "h-full rounded-full transition-all",
-                        totalAllocated >= budget ? "bg-emerald-500" : "bg-amber-400"
-                      )}
-                      style={{ width: `${Math.min(100, (totalAllocated / budget) * 100)}%` }}
-                    />
-                  </div>
-                </div>
-              )}
+            {/* Details button on right */}
+            <div
+              onClick={onOpenBudgetDetails}
+              className="flex flex-col items-center justify-center px-3 h-full border-l border-dashed border-amber-300/70 cursor-pointer hover:bg-amber-100/60 transition-colors"
+              title="View budget & account details"
+            >
+              <ClipboardList className="w-4 h-4 text-amber-600" />
+              <span
+                className="text-[10px] font-bold text-amber-700 mt-0.5"
+                style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+              >
+                Details
+              </span>
             </div>
           </div>
         </div>
