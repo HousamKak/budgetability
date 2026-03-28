@@ -517,8 +517,13 @@ function SpreadsheetCell({
   const isText = col.type === "text";
 
   const handleInputKeyDown = (e: React.KeyboardEvent) => {
-    // Let the grid's keydown handler manage Enter/Tab/Escape
-    if (e.key === "Enter" || e.key === "Tab" || e.key === "Escape") return;
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      onCancel();
+      return;
+    }
+    // Let the grid's keydown handler manage Enter/Tab
+    if (e.key === "Enter" || e.key === "Tab") return;
     // Stop other keys from propagating to the grid
     e.stopPropagation();
   };
