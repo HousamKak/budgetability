@@ -7,12 +7,19 @@ import {
   RefreshCw,
   Table2,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSpreadsheetData } from "./useSpreadsheetData";
 
 const now = new Date();
 const currentYear = now.getFullYear();
 const currentMonth = now.getMonth();
+
+// ── Active cell context ──────────────────────────────────────────
+
+interface CellAddr {
+  rowIdx: number;   // index into rows[]
+  colIdx: number;   // index into flat visible columns
+}
 
 export default function SpreadsheetPage() {
   const [startYear, setStartYear] = useState(currentYear);
@@ -46,6 +53,190 @@ export default function SpreadsheetPage() {
     const summary = group.columns.find((c) => c.key === group.summaryColumnKey);
     return summary ? [summary] : [group.columns[0]];
   };
+
+  // Flat list of all visible columns (for keyboard nav)
+  const flatColumns = useMemo(() => {
+    const result: { col: ColumnDef; groupId: ColumnGroupId }[] = [];
+    for (const group of columnGroups) {
+      for (const col of getVisibleColumns(group)) {
+        result.push({ col, groupId: group.id });
+      }
+    }
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columnGroups, expanded]);
+
+  // ── Active cell & editing state ────────────────────────────────
+
+  const [active, setActive] = useState<CellAddr | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
+
+  const gridRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  // ── Cell helpers ───────────────────────────────────────────────
+
+  const canEditCell = useCallback((rowIdx: number, colIdx: number): boolean => {
+    if (rowIdx < 0 || rowIdx >= rows.length) return false;
+    if (colIdx < 0 || colIdx >= flatColumns.length) return false;
+    return flatColumns[colIdx].col.editable;
+  }, [rows, flatColumns]);
+
+  const getCellDisplayValue = useCallback((rowIdx: number, colIdx: number): number | string | null | undefined => {
+    if (rowIdx < 0 || rowIdx >= rows.length) return null;
+    if (colIdx < 0 || colIdx >= flatColumns.length) return null;
+    return rows[rowIdx].values[flatColumns[colIdx].col.key];
+  }, [rows, flatColumns]);
+
+  // ── Commit / cancel ────────────────────────────────────────────
+
+  const commitEdit = useCallback(async () => {
+    if (!active) return;
+    const { col } = flatColumns[active.colIdx];
+    const monthKey = rows[active.rowIdx].monthKey;
+    const trimmed = editValue.trim();
+
+    if (trimmed === "" || trimmed === "0") {
+      await removeEntry(monthKey, col.key);
+    } else {
+      const num = parseFloat(trimmed);
+      if (!isNaN(num)) {
+        await updateEntry(monthKey, col.key, num);
+      }
+    }
+    setEditing(false);
+  }, [active, flatColumns, rows, editValue, updateEntry, removeEntry]);
+
+  const cancelEdit = useCallback(() => {
+    setEditing(false);
+    setEditValue("");
+    gridRef.current?.focus();
+  }, []);
+
+  const startEditing = useCallback((addr: CellAddr, initialValue?: string) => {
+    if (!canEditCell(addr.rowIdx, addr.colIdx)) return;
+    setActive(addr);
+    if (initialValue !== undefined) {
+      setEditValue(initialValue);
+    } else {
+      const val = getCellDisplayValue(addr.rowIdx, addr.colIdx);
+      setEditValue(val != null && val !== 0 ? String(val) : "");
+    }
+    setEditing(true);
+  }, [canEditCell, getCellDisplayValue]);
+
+  // ── Keyboard handler ───────────────────────────────────────────
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (editing) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        commitEdit().then(() => {
+          setActive(prev => prev && prev.rowIdx < rows.length - 1
+            ? { ...prev, rowIdx: prev.rowIdx + 1 }
+            : prev
+          );
+          gridRef.current?.focus();
+        });
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        commitEdit().then(() => {
+          setActive(prev => {
+            if (!prev) return prev;
+            if (e.shiftKey) {
+              return prev.colIdx > 0 ? { ...prev, colIdx: prev.colIdx - 1 } : prev;
+            }
+            return prev.colIdx < flatColumns.length - 1 ? { ...prev, colIdx: prev.colIdx + 1 } : prev;
+          });
+          gridRef.current?.focus();
+        });
+      } else if (e.key === "Escape") {
+        cancelEdit();
+      }
+      return;
+    }
+
+    // Navigation mode
+    if (!active) return;
+
+    switch (e.key) {
+      case "ArrowUp":
+        e.preventDefault();
+        setActive(prev => prev && prev.rowIdx > 0 ? { ...prev, rowIdx: prev.rowIdx - 1 } : prev);
+        break;
+      case "ArrowDown":
+        e.preventDefault();
+        setActive(prev => prev && prev.rowIdx < rows.length - 1 ? { ...prev, rowIdx: prev.rowIdx + 1 } : prev);
+        break;
+      case "ArrowLeft":
+        e.preventDefault();
+        setActive(prev => prev && prev.colIdx > 0 ? { ...prev, colIdx: prev.colIdx - 1 } : prev);
+        break;
+      case "ArrowRight":
+        e.preventDefault();
+        setActive(prev => prev && prev.colIdx < flatColumns.length - 1 ? { ...prev, colIdx: prev.colIdx + 1 } : prev);
+        break;
+      case "Tab": {
+        e.preventDefault();
+        setActive(prev => {
+          if (!prev) return prev;
+          if (e.shiftKey) {
+            return prev.colIdx > 0 ? { ...prev, colIdx: prev.colIdx - 1 } : prev;
+          }
+          return prev.colIdx < flatColumns.length - 1 ? { ...prev, colIdx: prev.colIdx + 1 } : prev;
+        });
+        break;
+      }
+      case "Enter":
+      case "F2":
+        e.preventDefault();
+        startEditing(active);
+        break;
+      case "Delete":
+      case "Backspace": {
+        e.preventDefault();
+        if (canEditCell(active.rowIdx, active.colIdx)) {
+          const { col } = flatColumns[active.colIdx];
+          removeEntry(rows[active.rowIdx].monthKey, col.key);
+        }
+        break;
+      }
+      default:
+        // Printable character → start editing with that character
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          if (canEditCell(active.rowIdx, active.colIdx)) {
+            e.preventDefault();
+            startEditing(active, e.key);
+          }
+        }
+    }
+  }, [editing, active, rows, flatColumns, commitEdit, cancelEdit, startEditing, canEditCell, removeEntry]);
+
+  // ── Click handlers ─────────────────────────────────────────────
+
+  const handleCellClick = useCallback((rowIdx: number, colIdx: number) => {
+    if (editing) commitEdit();
+    setActive({ rowIdx, colIdx });
+    setEditing(false);
+    gridRef.current?.focus();
+  }, [editing, commitEdit]);
+
+  const handleCellDoubleClick = useCallback((rowIdx: number, colIdx: number) => {
+    startEditing({ rowIdx, colIdx });
+  }, [startEditing]);
+
+  // ── Render ─────────────────────────────────────────────────────
+
+  // Track flat column index for each cell
+  let globalColIdx = 0;
 
   return (
     <div className="min-h-screen w-full p-4 md:p-8 bg-[repeating-linear-gradient(0deg,#fbf6e9,#fbf6e9_28px,#f2e8cf_28px,#f2e8cf_29px)]">
@@ -82,7 +273,7 @@ export default function SpreadsheetPage() {
                   Spreadsheet
                 </h1>
                 <p className="text-stone-500 text-sm">
-                  Track income, expenses, and savings across months
+                  Click a cell to select, type to edit — Arrow keys to navigate
                 </p>
               </div>
             </div>
@@ -137,11 +328,14 @@ export default function SpreadsheetPage() {
           </div>
         ) : (
           <div
+            ref={gridRef}
+            tabIndex={0}
+            onKeyDown={handleKeyDown}
             className={cn(
-              "rounded-xl overflow-hidden",
+              "rounded-xl overflow-hidden outline-none",
               paperTheme.colors.borders.paper,
               paperTheme.effects.shadow.lg,
-              "relative",
+              "relative focus:ring-2 focus:ring-amber-300/50",
             )}
           >
             <div className="overflow-x-auto">
@@ -210,9 +404,13 @@ export default function SpreadsheetPage() {
 
                 {/* Data rows */}
                 <tbody>
-                  {rows.map((row) => {
+                  {rows.map((row, rowIdx) => {
                     const isCurrentMonth =
                       row.year === currentYear && row.month === currentMonth;
+
+                    // Reset column counter for each row
+                    globalColIdx = 0;
+
                     return (
                       <tr
                         key={row.monthKey}
@@ -225,23 +423,45 @@ export default function SpreadsheetPage() {
                       >
                         {columnGroups.map((group) => {
                           const visCols = getVisibleColumns(group);
-                          return visCols.map((col) => (
-                            <SpreadsheetCell
-                              key={col.key}
-                              col={col}
-                              groupId={group.id}
-                              value={row.values[col.key]}
-                              monthKey={row.monthKey}
-                              onSave={updateEntry}
-                              onClear={removeEntry}
-                            />
-                          ));
+                          return visCols.map((col) => {
+                            const colIdx = globalColIdx++;
+                            const value = row.values[col.key];
+                            const isActive = active?.rowIdx === rowIdx && active?.colIdx === colIdx;
+                            const isEditing = isActive && editing;
+
+                            return (
+                              <SpreadsheetCell
+                                key={col.key}
+                                col={col}
+                                groupId={group.id}
+                                value={value}
+                                isActive={isActive}
+                                isEditing={isEditing}
+                                editValue={editValue}
+                                inputRef={isEditing ? inputRef : undefined}
+                                onEditValueChange={setEditValue}
+                                onCommit={commitEdit}
+                                onCancel={cancelEdit}
+                                onClick={() => handleCellClick(rowIdx, colIdx)}
+                                onDoubleClick={() => handleCellDoubleClick(rowIdx, colIdx)}
+                              />
+                            );
+                          });
                         })}
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
+            </div>
+
+            {/* Keyboard hint */}
+            <div className="bg-stone-50 border-t border-amber-200/60 px-4 py-1.5 text-[11px] text-stone-400 flex gap-4 flex-wrap">
+              <span>↑↓←→ navigate</span>
+              <span>Enter/type: edit</span>
+              <span>Tab: move right</span>
+              <span>Esc: cancel</span>
+              <span>Del: clear</span>
             </div>
           </div>
         )}
@@ -258,46 +478,29 @@ function SpreadsheetCell({
   col,
   groupId,
   value,
-  monthKey,
-  onSave,
-  onClear,
+  isActive,
+  isEditing,
+  editValue,
+  inputRef,
+  onEditValueChange,
+  onCommit,
+  onCancel,
+  onClick,
+  onDoubleClick,
 }: {
   col: ColumnDef;
   groupId: ColumnGroupId;
   value: number | string | null | undefined;
-  monthKey: string;
-  onSave: (monthKey: string, columnKey: string, value: number) => Promise<void>;
-  onClear: (monthKey: string, columnKey: string) => Promise<void>;
+  isActive: boolean;
+  isEditing: boolean;
+  editValue: string;
+  inputRef?: React.RefObject<HTMLInputElement | null>;
+  onEditValueChange: (v: string) => void;
+  onCommit: () => void;
+  onCancel: () => void;
+  onClick: () => void;
+  onDoubleClick: () => void;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const startEdit = () => {
-    if (!col.editable) return;
-    setDraft(value != null && value !== 0 ? String(value) : "");
-    setEditing(true);
-    setTimeout(() => inputRef.current?.focus(), 0);
-  };
-
-  const commitEdit = async () => {
-    setEditing(false);
-    const trimmed = draft.trim();
-    if (trimmed === "" || trimmed === "0") {
-      await onClear(monthKey, col.key);
-    } else {
-      const num = parseFloat(trimmed);
-      if (!isNaN(num)) {
-        await onSave(monthKey, col.key, num);
-      }
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") commitEdit();
-    if (e.key === "Escape") setEditing(false);
-  };
-
   // Format display value
   let display: string;
   if (value == null || value === "" || value === 0) {
@@ -313,14 +516,23 @@ function SpreadsheetCell({
   const isNegative = typeof value === "number" && value < 0;
   const isText = col.type === "text";
 
+  const handleInputKeyDown = (e: React.KeyboardEvent) => {
+    // Let the grid's keydown handler manage Enter/Tab/Escape
+    if (e.key === "Enter" || e.key === "Tab" || e.key === "Escape") return;
+    // Stop other keys from propagating to the grid
+    e.stopPropagation();
+  };
+
   return (
     <td
       className={cn(
-        "px-2 py-1 text-xs border border-amber-200/40 whitespace-nowrap",
+        "px-2 py-1 text-xs border border-amber-200/40 whitespace-nowrap relative",
         isText ? "text-left" : "text-right",
         isNegative ? "text-red-600" : "text-stone-800",
-        col.editable && "cursor-pointer hover:bg-amber-50/60",
+        col.editable && "cursor-cell",
+        !col.editable && "cursor-default",
         col.type === "computed" && "font-semibold bg-amber-50/30",
+        isActive && !isEditing && "outline outline-2 outline-blue-500 -outline-offset-1 z-10",
         groupCellBg(groupId),
       )}
       style={{
@@ -331,17 +543,18 @@ function SpreadsheetCell({
             : paperTheme.fonts.system,
         fontSize: isText ? "0.8rem" : undefined,
       }}
-      onDoubleClick={startEdit}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
     >
-      {editing ? (
+      {isEditing ? (
         <input
           ref={inputRef}
           type="text"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commitEdit}
-          onKeyDown={handleKeyDown}
-          className="w-full bg-white border border-amber-300 rounded px-1 py-0.5 text-xs text-right outline-none focus:ring-1 focus:ring-amber-400"
+          value={editValue}
+          onChange={(e) => onEditValueChange(e.target.value)}
+          onBlur={onCommit}
+          onKeyDown={handleInputKeyDown}
+          className="w-full bg-white border border-blue-400 rounded px-1 py-0.5 text-xs text-right outline-none focus:ring-1 focus:ring-blue-400 absolute inset-0 z-20"
         />
       ) : (
         display
