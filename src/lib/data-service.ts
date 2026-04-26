@@ -410,6 +410,14 @@ export class DataService {
   }
 
   async addExpense(monthKey: string, expense: Expense): Promise<void> {
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    if (monthKey > currentMonthKey) {
+      throw new Error(
+        "Cannot add an expense for a future month — create a plan instead.",
+      );
+    }
+
     if (this.useSupabase && supabase) {
       try {
         const user = await this.getCurrentUser();

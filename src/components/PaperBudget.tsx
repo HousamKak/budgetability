@@ -161,6 +161,9 @@ export default function PaperBudget() {
       );
     } catch (error) {
       console.error("Failed to add expense:", error);
+      if (error instanceof Error && error.message.includes("future month")) {
+        alert(error.message);
+      }
     }
   }
   async function removeExpense(id: string) {

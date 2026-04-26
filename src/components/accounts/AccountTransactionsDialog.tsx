@@ -37,19 +37,9 @@ function txIsInflow(
   tx: AccountTransaction,
   accountId: string,
 ): boolean {
-  switch (tx.transactionType) {
-    case "deposit":
-      return true;
-    case "expense":
-    case "budget_allocation":
-    case "savings_contribution":
-    case "overdraft_coverage":
-      return false;
-    case "transfer":
-      return tx.toAccountId === accountId;
-    default:
-      return false;
-  }
+  if (tx.toAccountId === accountId) return true;
+  if (tx.fromAccountId === accountId) return false;
+  return false;
 }
 
 function transactionLabel(
@@ -57,11 +47,12 @@ function transactionLabel(
   accountId: string,
   accounts: Account[],
 ): string {
+  const isRefund = tx.toAccountId === accountId;
   switch (tx.transactionType) {
     case "deposit":
       return "Deposit";
     case "expense":
-      return "Expense";
+      return isRefund ? "Expense Refund" : "Expense";
     case "transfer": {
       if (tx.fromAccountId === accountId) {
         const toAcct = accounts.find((a) => a.id === tx.toAccountId);
@@ -71,9 +62,9 @@ function transactionLabel(
       return `Transfer from ${fromAcct?.name ?? "Unknown"}`;
     }
     case "budget_allocation":
-      return "Budget Allocation";
+      return isRefund ? "Allocation Refund" : "Budget Allocation";
     case "savings_contribution":
-      return "Savings Contribution";
+      return isRefund ? "Savings Refund" : "Savings Contribution";
     case "overdraft_coverage":
       return "Overdraft Coverage";
     default:
@@ -84,7 +75,7 @@ function transactionLabel(
 function getMonthKey(dateStr: string): string {
   const d = new Date(dateStr);
   const y = d.getFullYear();
-  const m = String(d.getMonth()).padStart(2, "0");
+  const m = String(d.getMonth() + 1).padStart(2, "0");
   return `${y}-${m}`;
 }
 
@@ -123,10 +114,13 @@ export function AccountTransactionsDialog({
     }
   }
 
-  const currentMonthKey = `${year}-${String(month).padStart(2, "0")}`;
+  const currentMonthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
   const monthLabel = `${MONTH_NAMES[month]} ${year}`;
 
-  // Split transactions: before this month vs this month
+  // Split transactions: before this month vs this month.
+  // Prefer the explicit `monthKey` stamped at write time (e.g. expenses /
+  // refunds for a different month) and fall back to createdAt for ad-hoc
+  // deposits/transfers that have no monthKey.
   const { priorTxs, monthTxs } = useMemo(() => {
     if (!account) return { priorTxs: [], monthTxs: [] };
 
@@ -134,7 +128,7 @@ export function AccountTransactionsDialog({
     const current: AccountTransaction[] = [];
 
     for (const tx of allTransactions) {
-      const txKey = getMonthKey(tx.createdAt);
+      const txKey = tx.monthKey ?? getMonthKey(tx.createdAt);
       if (txKey < currentMonthKey) {
         prior.push(tx);
       } else if (txKey === currentMonthKey) {
