@@ -116,8 +116,9 @@ export function ExpenseDialog({
   const [inlineEditFormData, setInlineEditFormData] = useState<{
     amount: string;
     category: string;
+    accountId: string;
     note: string;
-  }>({ amount: "", category: "", note: "" });
+  }>({ amount: "", category: "", accountId: "", note: "" });
 
   // Inline editing handlers
   const startInlineEditingExpense = (expense: Expense) => {
@@ -126,6 +127,7 @@ export function ExpenseDialog({
     setInlineEditFormData({
       amount: expense.amount.toString(),
       category: expense.category || "",
+      accountId: expense.accountId || "",
       note: expense.note || "",
     });
   };
@@ -136,6 +138,7 @@ export function ExpenseDialog({
     setInlineEditFormData({
       amount: plan.amount.toString(),
       category: plan.category || "",
+      accountId: plan.accountId || "",
       note: plan.note || "",
     });
   };
@@ -148,6 +151,7 @@ export function ExpenseDialog({
         updateFn(expenseId, {
           amount,
           category: inlineEditFormData.category,
+          accountId: inlineEditFormData.accountId || undefined,
           note: inlineEditFormData.note,
         });
       }
@@ -163,6 +167,7 @@ export function ExpenseDialog({
         updateFn(planId, {
           amount,
           category: inlineEditFormData.category,
+          accountId: inlineEditFormData.accountId || undefined,
           note: inlineEditFormData.note,
         });
       }
@@ -174,6 +179,68 @@ export function ExpenseDialog({
     setInlineEditingExpenseId(null);
     setInlineEditingPlanId(null);
   };
+
+  // Render the icon + name for an account, used in both display rows and selects.
+  function renderAccountLabel(id: string | undefined, opts?: { iconSize?: string }) {
+    if (!id) return null;
+    const acc = accounts.find((a) => a.id === id);
+    if (!acc) return null;
+    const typeConfig = getAccountTypeConfig(acc.accountType);
+    const iconName =
+      acc.icon ||
+      ({
+        checking: "building-2",
+        savings: "piggy-bank",
+        credit: "credit-card",
+        cash: "banknote",
+        other: "wallet",
+      } as const)[acc.accountType];
+    return (
+      <span className="inline-flex items-center gap-1">
+        <CategoryIcon
+          name={iconName}
+          className={cn("shrink-0", opts?.iconSize || "w-3.5 h-3.5")}
+          style={{ color: typeConfig.color }}
+        />
+        <span>{acc.name}</span>
+      </span>
+    );
+  }
+
+  // Compact account select used inside the book's inline edit forms.
+  function InlineAccountSelect() {
+    if (accounts.length === 0) return null;
+    return (
+      <Select
+        value={inlineEditFormData.accountId || "__none__"}
+        onValueChange={(v) =>
+          setInlineEditFormData({
+            ...inlineEditFormData,
+            accountId: v === "__none__" ? "" : v,
+          })
+        }
+      >
+        <SelectTrigger className="h-7 text-sm">
+          <SelectValue>
+            {inlineEditFormData.accountId
+              ? renderAccountLabel(inlineEditFormData.accountId)
+              : "No account"}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">No account</SelectItem>
+          {accounts
+            .slice()
+            .sort((a, b) => (a.isDefault ? -1 : b.isDefault ? 1 : 0))
+            .map((acc) => (
+              <SelectItem key={acc.id} value={acc.id}>
+                {renderAccountLabel(acc.id)}
+              </SelectItem>
+            ))}
+        </SelectContent>
+      </Select>
+    );
+  }
 
   // Clear selected account if amount exceeds its available balance.
   // When editing, the original amount is already deducted from the balance,
@@ -834,6 +901,7 @@ export function ExpenseDialog({
                                               />
                                             </div>
                                           </div>
+                                          <InlineAccountSelect />
                                           <Input
                                             type="text"
                                             value={inlineEditFormData.note}
@@ -890,6 +958,11 @@ export function ExpenseDialog({
                                                   </span>
                                                 )}
                                               </div>
+                                              {expense.accountId && (
+                                                <p className="handwriting text-stone-500 text-xs mt-0.5 leading-tight">
+                                                  {renderAccountLabel(expense.accountId)}
+                                                </p>
+                                              )}
                                               {expense.note && (
                                                 <p className="handwriting text-stone-600 text-sm mt-1 leading-relaxed">
                                                   {expense.note}
@@ -991,6 +1064,7 @@ export function ExpenseDialog({
                                               />
                                             </div>
                                           </div>
+                                          <InlineAccountSelect />
                                           <Input
                                             type="text"
                                             value={inlineEditFormData.note}
@@ -1044,6 +1118,11 @@ export function ExpenseDialog({
                                                   </span>
                                                 )}
                                               </div>
+                                              {plan.accountId && (
+                                                <p className="handwriting text-stone-500 text-xs mt-0.5 leading-tight">
+                                                  {renderAccountLabel(plan.accountId)}
+                                                </p>
+                                              )}
                                               {plan.note && (
                                                 <p className="handwriting text-stone-600 text-sm mt-1 leading-relaxed">
                                                   {plan.note}
