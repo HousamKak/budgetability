@@ -260,9 +260,14 @@ export default function PaperBudget() {
       date,
       amount: p.amount,
       category: p.category,
+      accountId: p.accountId,
       note: p.note,
     });
     removePlan(p.id);
+    // Refresh accounts so any balance change from the new expense shows up.
+    if (p.accountId) {
+      dataService.getAccounts().then(setAccounts);
+    }
   }
 
   // Handle plan animation - shows blue glow on calendar day (supports multiple simultaneous)
@@ -359,6 +364,7 @@ export default function PaperBudget() {
       targetDate: planData.date,
       amount: planData.amount,
       category: planData.category,
+      accountId: expenseAccountId || undefined,
       note: planData.note,
     });
 
@@ -388,6 +394,7 @@ export default function PaperBudget() {
     setFormDate(plan.targetDate || ymd(new Date()));
     setAmount(plan.amount.toString());
     setCategory(plan.category || "groceries");
+    setExpenseAccountId(plan.accountId || "");
     setNote(plan.note || "");
     setOpen(true);
   }

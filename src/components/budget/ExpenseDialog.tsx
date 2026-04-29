@@ -45,6 +45,7 @@ interface ExpenseDialogProps {
     date: string;
     amount: number;
     category: string;
+    accountId?: string;
     note: string;
   }) => void;
   dayExpenses?: Array<{
@@ -174,10 +175,13 @@ export function ExpenseDialog({
     setInlineEditingPlanId(null);
   };
 
-  // Clear selected account if amount exceeds its available balance
+  // Clear selected account if amount exceeds its available balance.
   // When editing, the original amount is already deducted from the balance,
-  // so we only need to check if the *additional* cost is affordable
+  // so we only need to check if the *additional* cost is affordable.
+  // Plans target a future payment, so today's balance is not a real
+  // constraint — don't auto-clear in plan mode.
   useEffect(() => {
+    if (mode !== "expense") return;
     if (!accountId) return;
     const parsedAmount = parseFloat(amount) || 0;
     if (parsedAmount <= 0) return;
@@ -188,7 +192,7 @@ export function ExpenseDialog({
     if (effectiveBalance < parsedAmount) {
       onAccountIdChange("");
     }
-  }, [amount, accountId, accounts, onAccountIdChange, editingExpense]);
+  }, [amount, accountId, accounts, onAccountIdChange, editingExpense, mode]);
 
   // Determine if we're in edit mode
   const isEditing = !!(editingExpense || editingPlan);
@@ -221,6 +225,7 @@ export function ExpenseDialog({
           targetDate: formDate,
           amount: Number(a.toFixed(2)),
           category,
+          accountId: accountId || undefined,
           note,
         });
       }
@@ -234,6 +239,7 @@ export function ExpenseDialog({
         date: formDate,
         amount: Number(a.toFixed(2)),
         category,
+        accountId: accountId || undefined,
         note,
       });
     }
@@ -450,10 +456,10 @@ export function ExpenseDialog({
                         placeholder="Pick one"
                       />
                     </div>
-                    {mode === "expense" && accounts.length > 0 && (
+                    {accounts.length > 0 && (
                       <div className={dialogStyles.form.fieldContainer}>
                         <Label className={dialogStyles.form.label}>
-                          Pay from
+                          {mode === "expense" ? "Pay from" : "Will pay from"}
                         </Label>
                         <Select
                           value={accountId || "__none__"}
@@ -485,14 +491,21 @@ export function ExpenseDialog({
                                 const originalAmount = editingExpense?.accountId === acc.id ? editingExpense.amount : 0;
                                 const effectiveBalance = acc.currentBalance + originalAmount;
                                 const insufficientFunds = parsedAmount > 0 && effectiveBalance < parsedAmount;
+                                // For plans (future payments) the current balance is not a real
+                                // constraint, so don't disable — show a soft warning instead.
+                                const disableForInsufficient = mode === "expense" && insufficientFunds;
                                 const typeConfig = getAccountTypeConfig(acc.accountType);
                                 const iconName = acc.icon || ({ checking: "building-2", savings: "piggy-bank", credit: "credit-card", cash: "banknote", other: "wallet" }[acc.accountType]);
                                 return (
-                                  <SelectItem key={acc.id} value={acc.id} disabled={insufficientFunds}>
-                                    <span className={cn("flex items-center gap-2", insufficientFunds && "opacity-50")}>
+                                  <SelectItem key={acc.id} value={acc.id} disabled={disableForInsufficient}>
+                                    <span className={cn("flex items-center gap-2", disableForInsufficient && "opacity-50")}>
                                       <CategoryIcon name={iconName} className="w-4 h-4 shrink-0" style={{ color: typeConfig.color }} />
                                       <span>{acc.name}{acc.isDefault ? " ★" : ""}</span>
-                                      {insufficientFunds && <span className="text-red-500 text-xs">(insufficient)</span>}
+                                      {insufficientFunds && (
+                                        <span className={cn("text-xs", mode === "expense" ? "text-red-500" : "text-amber-500")}>
+                                          {mode === "expense" ? "(insufficient)" : "(low balance)"}
+                                        </span>
+                                      )}
                                     </span>
                                   </SelectItem>
                                 );

@@ -97,6 +97,7 @@ export type PlanItem = {
   amount: number;
   category?: string; // Legacy TEXT field
   categoryId?: string; // NEW: Reference to categories table
+  accountId?: string; // Account this plan will be paid from when marked paid
   note?: string;
   targetDate?: string;
 };
@@ -107,6 +108,7 @@ export type DraftItem = {
   amount?: number;
   category?: string;
   categoryId?: string;
+  accountId?: string;
   date?: string;
 };
 
@@ -581,6 +583,7 @@ export class DataService {
             weekIndex: row.week_index,
             amount: Number(row.amount),
             category: row.category || undefined,
+            accountId: row.account_id || undefined,
             note: row.note || undefined,
             targetDate: row.target_date || undefined,
           })) || []
@@ -610,6 +613,7 @@ export class DataService {
             week_index: plan.weekIndex,
             amount: plan.amount,
             category: plan.category,
+            account_id: plan.accountId || null,
             note: plan.note,
             target_date: plan.targetDate,
           });
@@ -648,6 +652,8 @@ export class DataService {
         if (updates.amount !== undefined) dbUpdates.amount = updates.amount;
         if (updates.category !== undefined)
           dbUpdates.category = updates.category;
+        if (updates.accountId !== undefined)
+          dbUpdates.account_id = updates.accountId || null;
         if (updates.note !== undefined) dbUpdates.note = updates.note;
         if (updates.targetDate !== undefined)
           dbUpdates.target_date = updates.targetDate;
@@ -786,6 +792,7 @@ export class DataService {
             note: row.note,
             amount: row.amount ? Number(row.amount) : undefined,
             category: row.category || undefined,
+            accountId: row.account_id || undefined,
             date: row.date || undefined,
           })) || []
         );
@@ -813,6 +820,7 @@ export class DataService {
             note: draft.note,
             amount: draft.amount,
             category: draft.category,
+            account_id: draft.accountId || null,
             date: draft.date,
           });
 
@@ -843,6 +851,8 @@ export class DataService {
         if (updates.amount !== undefined) dbUpdates.amount = updates.amount;
         if (updates.category !== undefined)
           dbUpdates.category = updates.category;
+        if (updates.accountId !== undefined)
+          dbUpdates.account_id = updates.accountId || null;
         if (updates.date !== undefined) dbUpdates.date = updates.date;
 
         const { error } = await supabase
