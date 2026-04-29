@@ -7,11 +7,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { type Expense, type PlanItem } from "@/lib/data-service";
+import { type Account, type Expense, type PlanItem } from "@/lib/data-service";
 import { formatNumber } from "@/lib/utils";
 import { cn, dialogStyles } from "@/styles";
 import { Check, Pencil, X } from "lucide-react";
 import { useState } from "react";
+import {
+  AccountInlineSelect,
+  renderAccountLabel,
+} from "./AccountInlineSelect";
 import { CategoryPicker } from "./CategoryPicker";
 
 interface MonthlyBookDialogProps {
@@ -20,6 +24,7 @@ interface MonthlyBookDialogProps {
   monthLabel: string;
   expenses: Expense[];
   plans: PlanItem[];
+  accounts?: Account[];
   onMarkPlanPaid?: (plan: PlanItem) => void;
   onRemovePlan?: (planId: string) => void;
   onRemoveExpense?: (expenseId: string) => void;
@@ -35,6 +40,7 @@ export function MonthlyBookDialog({
   monthLabel,
   expenses,
   plans,
+  accounts = [],
   onMarkPlanPaid,
   onRemovePlan,
   onRemoveExpense,
@@ -50,9 +56,10 @@ export function MonthlyBookDialog({
   const [editFormData, setEditFormData] = useState<{
     amount: string;
     category: string;
+    accountId: string;
     note: string;
     date: string;
-  }>({ amount: "", category: "", note: "", date: "" });
+  }>({ amount: "", category: "", accountId: "", note: "", date: "" });
 
   const closeBook = () => {
     setCurrentPage(0);
@@ -67,6 +74,7 @@ export function MonthlyBookDialog({
     setEditFormData({
       amount: expense.amount.toString(),
       category: expense.category || "",
+      accountId: expense.accountId || "",
       note: expense.note || "",
       date: expense.date,
     });
@@ -77,6 +85,7 @@ export function MonthlyBookDialog({
     setEditFormData({
       amount: plan.amount.toString(),
       category: plan.category || "",
+      accountId: plan.accountId || "",
       note: plan.note || "",
       date: plan.targetDate || "",
     });
@@ -89,6 +98,7 @@ export function MonthlyBookDialog({
         onUpdateExpense(editingExpenseId, {
           amount,
           category: editFormData.category,
+          accountId: editFormData.accountId || undefined,
           note: editFormData.note,
           date: editFormData.date,
         });
@@ -104,6 +114,7 @@ export function MonthlyBookDialog({
         onUpdatePlan(editingPlanId, {
           amount,
           category: editFormData.category,
+          accountId: editFormData.accountId || undefined,
           note: editFormData.note,
           targetDate: editFormData.date,
         });
@@ -211,6 +222,16 @@ export function MonthlyBookDialog({
                                         />
                                       </div>
                                     </div>
+                                    <AccountInlineSelect
+                                      accounts={accounts}
+                                      value={editFormData.accountId}
+                                      onChange={(id) =>
+                                        setEditFormData({
+                                          ...editFormData,
+                                          accountId: id,
+                                        })
+                                      }
+                                    />
                                     <Input
                                       type="text"
                                       value={editFormData.note}
@@ -268,6 +289,11 @@ export function MonthlyBookDialog({
                                           </span>
                                         )}
                                       </div>
+                                      {expense.accountId && (
+                                        <div className="text-[11px] text-stone-500 handwriting mt-0.5">
+                                          {renderAccountLabel(accounts, expense.accountId, { iconClassName: "w-3 h-3" })}
+                                        </div>
+                                      )}
                                       <div className="text-xs text-stone-400 handwriting">
                                         {new Date(
                                           expense.date
@@ -363,6 +389,16 @@ export function MonthlyBookDialog({
                                         />
                                       </div>
                                     </div>
+                                    <AccountInlineSelect
+                                      accounts={accounts}
+                                      value={editFormData.accountId}
+                                      onChange={(id) =>
+                                        setEditFormData({
+                                          ...editFormData,
+                                          accountId: id,
+                                        })
+                                      }
+                                    />
                                     <Input
                                       type="text"
                                       value={editFormData.note}
@@ -420,6 +456,11 @@ export function MonthlyBookDialog({
                                           </span>
                                         )}
                                       </div>
+                                      {plan.accountId && (
+                                        <div className="text-[11px] text-stone-500 handwriting mt-0.5">
+                                          {renderAccountLabel(accounts, plan.accountId, { iconClassName: "w-3 h-3" })}
+                                        </div>
+                                      )}
                                       {plan.targetDate && (
                                         <div className="text-xs text-stone-400 handwriting">
                                           {new Date(
