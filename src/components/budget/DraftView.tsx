@@ -1,15 +1,25 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { PlanItem } from "@/lib/data-service";
-import { useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { dataService, type Account, type PlanItem } from "@/lib/data-service";
+import { useEffect, useState } from "react";
+import { CategoryIcon } from "./CategoryIcon";
 import { CategoryPicker } from "./CategoryPicker";
 import { CalendarIcon, Plus, Trash } from "./Icons";
+import { getAccountTypeConfig } from "@/components/accounts/AccountTypeBadge";
 
 interface DraftItem {
   id: string;
   note: string;
   amount?: number;
   category?: string;
+  accountId?: string;
   date?: string;
 }
 
@@ -31,7 +41,15 @@ export function DraftView({
   const [newItemNote, setNewItemNote] = useState("");
   const [quickAmount, setQuickAmount] = useState("");
   const [quickCategory, setQuickCategory] = useState("");
+  const [quickAccountId, setQuickAccountId] = useState("");
   const [quickDate, setQuickDate] = useState("");
+  const [accounts, setAccounts] = useState<Account[]>([]);
+
+  useEffect(() => {
+    dataService.getAccounts().then(setAccounts).catch(() => {
+      /* no-op */
+    });
+  }, []);
 
   function addDraftItem() {
     if (!newItemNote.trim()) return;
@@ -42,6 +60,7 @@ export function DraftView({
       note: newItemNote.trim(),
       amount: amount,
       category: quickCategory || undefined,
+      accountId: quickAccountId || undefined,
       date: quickDate || undefined,
     });
 
@@ -49,6 +68,7 @@ export function DraftView({
     setNewItemNote("");
     setQuickAmount("");
     setQuickCategory("");
+    setQuickAccountId("");
     setQuickDate("");
   }
 
@@ -59,11 +79,38 @@ export function DraftView({
     onAddToPlan({
       amount: item.amount,
       category: item.category,
+      accountId: item.accountId,
       note: item.note,
       targetDate: item.date,
     });
 
     onRemoveDraftItem(item.id);
+  }
+
+  function renderAccountSelectValue(id: string | undefined) {
+    if (!id) return "Acct";
+    const acc = accounts.find((a) => a.id === id);
+    if (!acc) return "Acct";
+    const typeConfig = getAccountTypeConfig(acc.accountType);
+    const iconName =
+      acc.icon ||
+      ({
+        checking: "building-2",
+        savings: "piggy-bank",
+        credit: "credit-card",
+        cash: "banknote",
+        other: "wallet",
+      } as const)[acc.accountType];
+    return (
+      <span className="flex items-center gap-1 truncate">
+        <CategoryIcon
+          name={iconName}
+          className="w-3.5 h-3.5 shrink-0"
+          style={{ color: typeConfig.color }}
+        />
+        <span className="truncate">{acc.name}</span>
+      </span>
+    );
   }
 
   // Auto-convert draft to plan when all required fields are present
@@ -120,6 +167,32 @@ export function DraftView({
             useNameAsValue
           />
         </div>
+
+        {accounts.length > 0 && (
+          <div style={{ width: "100px", height: "40px", flexShrink: 0 }}>
+            <Select
+              value={quickAccountId || "__none__"}
+              onValueChange={(v) =>
+                setQuickAccountId(v === "__none__" ? "" : v)
+              }
+            >
+              <SelectTrigger className="h-[40px] bg-white/80 border-2 border-amber-200 rounded-xl shadow-sm text-xs">
+                <SelectValue>{renderAccountSelectValue(quickAccountId)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">No account</SelectItem>
+                {accounts
+                  .slice()
+                  .sort((a, b) => (a.isDefault ? -1 : b.isDefault ? 1 : 0))
+                  .map((acc) => (
+                    <SelectItem key={acc.id} value={acc.id}>
+                      {renderAccountSelectValue(acc.id)}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         <div
           className="relative bg-white/80 hover:bg-white border-2 border-amber-200 rounded-xl shadow-sm cursor-pointer transition-all hover:shadow-md"
@@ -214,6 +287,37 @@ export function DraftView({
                     useNameAsValue
                   />
                 </div>
+
+                {/* Account */}
+                {accounts.length > 0 && (
+                  <div style={{ width: "100px", flexShrink: 0 }}>
+                    <Select
+                      value={item.accountId || "__none__"}
+                      onValueChange={(v) =>
+                        onUpdateDraftItem(item.id, {
+                          accountId: v === "__none__" ? undefined : v,
+                        })
+                      }
+                    >
+                      <SelectTrigger className="h-7 text-xs">
+                        <SelectValue>
+                          {renderAccountSelectValue(item.accountId)}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">No account</SelectItem>
+                        {accounts
+                          .slice()
+                          .sort((a, b) => (a.isDefault ? -1 : b.isDefault ? 1 : 0))
+                          .map((acc) => (
+                            <SelectItem key={acc.id} value={acc.id}>
+                              {renderAccountSelectValue(acc.id)}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 {/* Date */}
                 <div className="relative flex-shrink-0">
