@@ -15,6 +15,10 @@ import { Check, Pencil, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CategoryPicker } from "./CategoryPicker";
 import { CategoryIcon } from "./CategoryIcon";
+import {
+  AccountInlineSelect,
+  renderAccountLabel,
+} from "./AccountInlineSelect";
 import { getAccountTypeConfig } from "@/components/accounts/AccountTypeBadge";
 import {
   Select,
@@ -179,68 +183,6 @@ export function ExpenseDialog({
     setInlineEditingExpenseId(null);
     setInlineEditingPlanId(null);
   };
-
-  // Render the icon + name for an account, used in both display rows and selects.
-  function renderAccountLabel(id: string | undefined, opts?: { iconSize?: string }) {
-    if (!id) return null;
-    const acc = accounts.find((a) => a.id === id);
-    if (!acc) return null;
-    const typeConfig = getAccountTypeConfig(acc.accountType);
-    const iconName =
-      acc.icon ||
-      ({
-        checking: "building-2",
-        savings: "piggy-bank",
-        credit: "credit-card",
-        cash: "banknote",
-        other: "wallet",
-      } as const)[acc.accountType];
-    return (
-      <span className="inline-flex items-center gap-1">
-        <CategoryIcon
-          name={iconName}
-          className={cn("shrink-0", opts?.iconSize || "w-3.5 h-3.5")}
-          style={{ color: typeConfig.color }}
-        />
-        <span>{acc.name}</span>
-      </span>
-    );
-  }
-
-  // Compact account select used inside the book's inline edit forms.
-  function InlineAccountSelect() {
-    if (accounts.length === 0) return null;
-    return (
-      <Select
-        value={inlineEditFormData.accountId || "__none__"}
-        onValueChange={(v) =>
-          setInlineEditFormData({
-            ...inlineEditFormData,
-            accountId: v === "__none__" ? "" : v,
-          })
-        }
-      >
-        <SelectTrigger className="h-7 text-sm">
-          <SelectValue>
-            {inlineEditFormData.accountId
-              ? renderAccountLabel(inlineEditFormData.accountId)
-              : "No account"}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__none__">No account</SelectItem>
-          {accounts
-            .slice()
-            .sort((a, b) => (a.isDefault ? -1 : b.isDefault ? 1 : 0))
-            .map((acc) => (
-              <SelectItem key={acc.id} value={acc.id}>
-                {renderAccountLabel(acc.id)}
-              </SelectItem>
-            ))}
-        </SelectContent>
-      </Select>
-    );
-  }
 
   // Clear selected account if amount exceeds its available balance.
   // When editing, the original amount is already deducted from the balance,
@@ -901,7 +843,16 @@ export function ExpenseDialog({
                                               />
                                             </div>
                                           </div>
-                                          <InlineAccountSelect />
+                                          <AccountInlineSelect
+                                            accounts={accounts}
+                                            value={inlineEditFormData.accountId}
+                                            onChange={(id) =>
+                                              setInlineEditFormData({
+                                                ...inlineEditFormData,
+                                                accountId: id,
+                                              })
+                                            }
+                                          />
                                           <Input
                                             type="text"
                                             value={inlineEditFormData.note}
@@ -960,7 +911,7 @@ export function ExpenseDialog({
                                               </div>
                                               {expense.accountId && (
                                                 <p className="handwriting text-stone-500 text-xs mt-0.5 leading-tight">
-                                                  {renderAccountLabel(expense.accountId)}
+                                                  {renderAccountLabel(accounts, expense.accountId)}
                                                 </p>
                                               )}
                                               {expense.note && (
@@ -1064,7 +1015,16 @@ export function ExpenseDialog({
                                               />
                                             </div>
                                           </div>
-                                          <InlineAccountSelect />
+                                          <AccountInlineSelect
+                                            accounts={accounts}
+                                            value={inlineEditFormData.accountId}
+                                            onChange={(id) =>
+                                              setInlineEditFormData({
+                                                ...inlineEditFormData,
+                                                accountId: id,
+                                              })
+                                            }
+                                          />
                                           <Input
                                             type="text"
                                             value={inlineEditFormData.note}
@@ -1120,7 +1080,7 @@ export function ExpenseDialog({
                                               </div>
                                               {plan.accountId && (
                                                 <p className="handwriting text-stone-500 text-xs mt-0.5 leading-tight">
-                                                  {renderAccountLabel(plan.accountId)}
+                                                  {renderAccountLabel(accounts, plan.accountId)}
                                                 </p>
                                               )}
                                               {plan.note && (

@@ -557,6 +557,7 @@ export default function PaperBudget() {
         monthLabel={monthLabel}
         expenses={expenses}
         plans={plans}
+        accounts={accounts}
         onMarkPlanPaid={markPlanPaid}
         onRemovePlan={removePlan}
         onRemoveExpense={removeExpense}
@@ -653,6 +654,7 @@ export default function PaperBudget() {
                 budget={budget}
                 expenses={expenses}
                 plans={plans}
+                accounts={accounts}
                 animatedPlanDates={animatedPlanDates}
                 animatedExpenseDates={animatedExpenseDates}
                 onDayClick={(dateString) => {

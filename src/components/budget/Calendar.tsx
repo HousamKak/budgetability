@@ -5,11 +5,15 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { Input } from "@/components/ui/input";
-import type { Expense, PlanItem } from "@/lib/data-service";
+import type { Account, Expense, PlanItem } from "@/lib/data-service";
 import { formatNumber } from "@/lib/utils";
 import { calendarStyles, cn, conditional } from "@/styles";
 import { Check, GripVertical, Pencil, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import {
+  AccountInlineSelect,
+  renderAccountLabel,
+} from "./AccountInlineSelect";
 import { CategoryPicker } from "./CategoryPicker";
 import { Plus, Trash } from "./Icons";
 import { daysInMonth, firstWeekday, pad2, ymd } from "./utils";
@@ -21,6 +25,7 @@ interface CalendarProps {
   budget: number;
   expenses: Expense[];
   plans: PlanItem[];
+  accounts?: Account[];
   animatedPlanDates?: Set<string>;
   animatedExpenseDates?: Set<string>;
   onDayClick: (date: string) => void;
@@ -41,6 +46,7 @@ export function Calendar({
   budget,
   expenses,
   plans,
+  accounts = [],
   animatedPlanDates,
   animatedExpenseDates,
   onDayClick,
@@ -65,8 +71,9 @@ export function Calendar({
   const [editFormData, setEditFormData] = useState<{
     amount: string;
     category: string;
+    accountId: string;
     note: string;
-  }>({ amount: "", category: "", note: "" });
+  }>({ amount: "", category: "", accountId: "", note: "" });
 
   const startEditingExpense = (expense: Expense, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -76,6 +83,7 @@ export function Calendar({
     setEditFormData({
       amount: expense.amount.toString(),
       category: expense.category || "",
+      accountId: expense.accountId || "",
       note: expense.note || "",
     });
   };
@@ -88,6 +96,7 @@ export function Calendar({
     setEditFormData({
       amount: plan.amount.toString(),
       category: plan.category || "",
+      accountId: plan.accountId || "",
       note: plan.note || "",
     });
   };
@@ -101,6 +110,7 @@ export function Calendar({
         onUpdateExpense(expenseId, {
           amount,
           category: editFormData.category,
+          accountId: editFormData.accountId || undefined,
           note: editFormData.note,
         });
       }
@@ -117,6 +127,7 @@ export function Calendar({
         onUpdatePlan(planId, {
           amount,
           category: editFormData.category,
+          accountId: editFormData.accountId || undefined,
           note: editFormData.note,
         });
       }
@@ -420,6 +431,18 @@ export function Calendar({
                                 />
                               </div>
                             </div>
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <AccountInlineSelect
+                                accounts={accounts}
+                                value={editFormData.accountId}
+                                onChange={(id) =>
+                                  setEditFormData({
+                                    ...editFormData,
+                                    accountId: id,
+                                  })
+                                }
+                              />
+                            </div>
                             <Input
                               type="text"
                               value={editFormData.note}
@@ -464,6 +487,11 @@ export function Calendar({
                                   {p.category}
                                 </span>
                               </div>
+                              {p.accountId && (
+                                <div className="text-[11px] text-stone-500 truncate">
+                                  {renderAccountLabel(accounts, p.accountId, { iconClassName: "w-3 h-3" })}
+                                </div>
+                              )}
                               {p.note && (
                                 <div className="text-xs text-stone-500 truncate">
                                   {p.note}
@@ -550,6 +578,18 @@ export function Calendar({
                                 />
                               </div>
                             </div>
+                            <div onClick={(ev) => ev.stopPropagation()}>
+                              <AccountInlineSelect
+                                accounts={accounts}
+                                value={editFormData.accountId}
+                                onChange={(id) =>
+                                  setEditFormData({
+                                    ...editFormData,
+                                    accountId: id,
+                                  })
+                                }
+                              />
+                            </div>
                             <Input
                               type="text"
                               value={editFormData.note}
@@ -594,6 +634,11 @@ export function Calendar({
                                   {e.category}
                                 </span>
                               </div>
+                              {e.accountId && (
+                                <div className="text-[11px] text-stone-500 truncate">
+                                  {renderAccountLabel(accounts, e.accountId, { iconClassName: "w-3 h-3" })}
+                                </div>
+                              )}
                               {e.note && (
                                 <div className="text-xs text-stone-500 truncate">
                                   {e.note}
