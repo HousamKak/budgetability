@@ -1944,10 +1944,16 @@ export class DataService {
   }
 
   async removeAccountTransaction(transactionId: string): Promise<void> {
-    // Only deposits are deletable. Other transaction types back state
-    // managed elsewhere (transfers move balances, expenses are paid
-    // against an expense row, allocations back budgets, etc.) so
-    // deleting them would desync the rest of the app.
+    // Only deposits and transfers are reversible from this entry point.
+    // Other transaction types back state managed elsewhere (expenses are
+    // paid against an expense row, allocations back budgets, etc.) so
+    // deleting them here would desync the rest of the app — those have
+    // their own undo flows.
+    const REVERSIBLE: AccountTransaction["transactionType"][] = [
+      "deposit",
+      "transfer",
+    ];
+
     if (this.useSupabase && supabase) {
       try {
         const { data: row, error: fetchErr } = await supabase
@@ -1958,11 +1964,18 @@ export class DataService {
 
         if (fetchErr) throw fetchErr;
         if (!row) throw new Error("Transaction not found");
-        if (row.transaction_type !== "deposit") {
-          throw new Error("Only deposit transactions can be deleted");
+        if (
+          !REVERSIBLE.includes(
+            row.transaction_type as AccountTransaction["transactionType"],
+          )
+        ) {
+          throw new Error(
+            "Only deposit or transfer transactions can be reverted",
+          );
         }
 
-        // Trigger will reverse the balance on delete.
+        // Trigger will reverse the balance(s) on delete — refunds source
+        // and debits destination, which undoes both deposits and transfers.
         const { error } = await supabase
           .from("account_transactions")
           .delete()
@@ -1980,8 +1993,10 @@ export class DataService {
       (t) => t.id === transactionId,
     );
     if (!tx) throw new Error("Transaction not found");
-    if (tx.transactionType !== "deposit") {
-      throw new Error("Only deposit transactions can be deleted");
+    if (!REVERSIBLE.includes(tx.transactionType)) {
+      throw new Error(
+        "Only deposit or transfer transactions can be reverted",
+      );
     }
 
     // Reverse the balance change.

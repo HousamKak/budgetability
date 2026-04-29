@@ -115,21 +115,29 @@ export function AccountTransactionsDialog({
     }
   }
 
-  async function handleDeleteDeposit(tx: AccountTransaction) {
-    if (
-      !confirm(
-        `Delete this deposit of $${formatNumber(tx.amount)}? The account balance will be reduced accordingly.`,
-      )
-    ) {
+  async function handleRevertTransaction(tx: AccountTransaction) {
+    let message: string;
+    if (tx.transactionType === "deposit") {
+      message = `Delete this deposit of $${formatNumber(tx.amount)}? The account balance will be reduced accordingly.`;
+    } else if (tx.transactionType === "transfer") {
+      const fromAcct = accounts.find((a) => a.id === tx.fromAccountId);
+      const toAcct = accounts.find((a) => a.id === tx.toAccountId);
+      message = `Revert this transfer of $${formatNumber(tx.amount)}${
+        fromAcct && toAcct
+          ? ` from ${fromAcct.name} to ${toAcct.name}`
+          : ""
+      }? The money will be moved back to its original account.`;
+    } else {
       return;
     }
+    if (!confirm(message)) return;
     try {
       await dataService.removeAccountTransaction(tx.id);
       await loadTransactions();
     } catch (error) {
-      console.error("Failed to delete transaction:", error);
+      console.error("Failed to revert transaction:", error);
       alert(
-        error instanceof Error ? error.message : "Failed to delete transaction",
+        error instanceof Error ? error.message : "Failed to revert transaction",
       );
     }
   }
@@ -417,7 +425,9 @@ export function AccountTransactionsDialog({
                         {monthTxs.map((tx) => {
                           const isInflow = txIsInflow(tx, account.id);
                           const label = transactionLabel(tx, account.id, accounts);
-                          const canDelete = tx.transactionType === "deposit";
+                          const canRevert =
+                            tx.transactionType === "deposit" ||
+                            tx.transactionType === "transfer";
                           return (
                             <div
                               key={tx.id}
@@ -451,11 +461,15 @@ export function AccountTransactionsDialog({
                                   <div className="text-xs text-stone-400 handwriting">
                                     {new Date(tx.createdAt).toLocaleDateString()}
                                   </div>
-                                  {canDelete && (
+                                  {canRevert && (
                                     <button
                                       type="button"
-                                      onClick={() => handleDeleteDeposit(tx)}
-                                      title="Delete deposit"
+                                      onClick={() => handleRevertTransaction(tx)}
+                                      title={
+                                        tx.transactionType === "transfer"
+                                          ? "Revert transfer"
+                                          : "Delete deposit"
+                                      }
                                       className="p-1 rounded hover:bg-red-50 text-stone-300 hover:text-red-600 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
