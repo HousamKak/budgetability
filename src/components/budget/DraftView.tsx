@@ -158,25 +158,25 @@ export function DraftView({
           style={{ width: "70px", height: "40px", flexShrink: 0 }}
         />
 
-        <div style={{ width: "100px", height: "40px", flexShrink: 0 }}>
+        <div style={{ width: "64px", height: "40px", flexShrink: 0 }}>
           <CategoryPicker
             value={quickCategory}
             onChange={(value) => setQuickCategory(value)}
             placeholder="Cat"
-            triggerClassName="h-[40px] bg-white/80 border-2 border-amber-200 rounded-xl shadow-sm text-xs"
+            triggerClassName="h-[40px] px-1.5 bg-white/80 border-2 border-amber-200 rounded-xl shadow-sm text-xs"
             useNameAsValue
           />
         </div>
 
         {accounts.length > 0 && (
-          <div style={{ width: "100px", height: "40px", flexShrink: 0 }}>
+          <div style={{ width: "64px", height: "40px", flexShrink: 0 }}>
             <Select
               value={quickAccountId || "__none__"}
               onValueChange={(v) =>
                 setQuickAccountId(v === "__none__" ? "" : v)
               }
             >
-              <SelectTrigger className="h-[40px] bg-white/80 border-2 border-amber-200 rounded-xl shadow-sm text-xs">
+              <SelectTrigger className="h-[40px] px-1.5 bg-white/80 border-2 border-amber-200 rounded-xl shadow-sm text-xs">
                 <SelectValue>{renderAccountSelectValue(quickAccountId)}</SelectValue>
               </SelectTrigger>
               <SelectContent>
@@ -275,7 +275,7 @@ export function DraftView({
                 </div>
 
                 {/* Category */}
-                <div style={{ width: "100px", flexShrink: 0 }}>
+                <div style={{ width: "64px", flexShrink: 0 }}>
                   <CategoryPicker
                     value={item.category || ""}
                     onChange={(value) => {
@@ -283,14 +283,14 @@ export function DraftView({
                       checkAutoConvert();
                     }}
                     placeholder="Cat"
-                    triggerClassName="h-7 text-xs"
+                    triggerClassName="h-7 px-1.5 text-xs"
                     useNameAsValue
                   />
                 </div>
 
                 {/* Account */}
                 {accounts.length > 0 && (
-                  <div style={{ width: "100px", flexShrink: 0 }}>
+                  <div style={{ width: "64px", flexShrink: 0 }}>
                     <Select
                       value={item.accountId || "__none__"}
                       onValueChange={(v) =>
@@ -299,7 +299,7 @@ export function DraftView({
                         })
                       }
                     >
-                      <SelectTrigger className="h-7 text-xs">
+                      <SelectTrigger className="h-7 px-1.5 text-xs">
                         <SelectValue>
                           {renderAccountSelectValue(item.accountId)}
                         </SelectValue>
