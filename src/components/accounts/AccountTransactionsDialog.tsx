@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -111,6 +112,25 @@ export function AccountTransactionsDialog({
       console.error("Failed to load transactions:", error);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDeleteDeposit(tx: AccountTransaction) {
+    if (
+      !confirm(
+        `Delete this deposit of $${formatNumber(tx.amount)}? The account balance will be reduced accordingly.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await dataService.removeAccountTransaction(tx.id);
+      await loadTransactions();
+    } catch (error) {
+      console.error("Failed to delete transaction:", error);
+      alert(
+        error instanceof Error ? error.message : "Failed to delete transaction",
+      );
     }
   }
 
@@ -397,13 +417,14 @@ export function AccountTransactionsDialog({
                         {monthTxs.map((tx) => {
                           const isInflow = txIsInflow(tx, account.id);
                           const label = transactionLabel(tx, account.id, accounts);
+                          const canDelete = tx.transactionType === "deposit";
                           return (
                             <div
                               key={tx.id}
-                              className="py-1.5 border-b border-stone-200/30 last:border-0"
+                              className="group py-1.5 border-b border-stone-200/30 last:border-0"
                             >
-                              <div className="flex justify-between items-start">
-                                <div className="flex-1">
+                              <div className="flex justify-between items-start gap-2">
+                                <div className="flex-1 min-w-0">
                                   <div className="handwriting text-sm leading-tight">
                                     <span
                                       className={cn(
@@ -426,8 +447,20 @@ export function AccountTransactionsDialog({
                                     </div>
                                   )}
                                 </div>
-                                <div className="text-xs text-stone-400 handwriting ml-2 shrink-0">
-                                  {new Date(tx.createdAt).toLocaleDateString()}
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <div className="text-xs text-stone-400 handwriting">
+                                    {new Date(tx.createdAt).toLocaleDateString()}
+                                  </div>
+                                  {canDelete && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteDeposit(tx)}
+                                      title="Delete deposit"
+                                      className="p-1 rounded hover:bg-red-50 text-stone-300 hover:text-red-600 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             </div>

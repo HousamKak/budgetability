@@ -1116,6 +1116,34 @@ export class DataService {
     saveStoreToLocalStorage(this.localStore);
   }
 
+  async reorderCategories(orderedIds: string[]): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        // Apply new sort_order based on the array index.
+        await Promise.all(
+          orderedIds.map((id, index) =>
+            supabase!
+              .from("categories")
+              .update({ sort_order: index })
+              .eq("id", id),
+          ),
+        );
+        return;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    const indexById = new Map(orderedIds.map((id, idx) => [id, idx]));
+    this.localStore.categories = this.localStore.categories
+      .map((c) =>
+        indexById.has(c.id) ? { ...c, sortOrder: indexById.get(c.id)! } : c,
+      )
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    saveStoreToLocalStorage(this.localStore);
+  }
+
   async removeCategory(id: string): Promise<void> {
     if (this.useSupabase && supabase) {
       try {
@@ -1903,6 +1931,62 @@ export class DataService {
           (t.fromAccountId === accountId || t.toAccountId === accountId),
       )
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async removeAccountTransaction(transactionId: string): Promise<void> {
+    // Only deposits are deletable. Other transaction types back state
+    // managed elsewhere (transfers move balances, expenses are paid
+    // against an expense row, allocations back budgets, etc.) so
+    // deleting them would desync the rest of the app.
+    if (this.useSupabase && supabase) {
+      try {
+        const { data: row, error: fetchErr } = await supabase
+          .from("account_transactions")
+          .select("transaction_type")
+          .eq("id", transactionId)
+          .single();
+
+        if (fetchErr) throw fetchErr;
+        if (!row) throw new Error("Transaction not found");
+        if (row.transaction_type !== "deposit") {
+          throw new Error("Only deposit transactions can be deleted");
+        }
+
+        // Trigger will reverse the balance on delete.
+        const { error } = await supabase
+          .from("account_transactions")
+          .delete()
+          .eq("id", transactionId);
+
+        if (error) throw error;
+        return;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    const tx = this.localStore.accountTransactions.find(
+      (t) => t.id === transactionId,
+    );
+    if (!tx) throw new Error("Transaction not found");
+    if (tx.transactionType !== "deposit") {
+      throw new Error("Only deposit transactions can be deleted");
+    }
+
+    // Reverse the balance change.
+    this.localStore.accounts = this.localStore.accounts.map((a) => {
+      if (a.id === tx.fromAccountId) {
+        return { ...a, currentBalance: a.currentBalance + tx.amount };
+      }
+      if (a.id === tx.toAccountId) {
+        return { ...a, currentBalance: a.currentBalance - tx.amount };
+      }
+      return a;
+    });
+    this.localStore.accountTransactions =
+      this.localStore.accountTransactions.filter((t) => t.id !== transactionId);
+    saveStoreToLocalStorage(this.localStore);
   }
 
   async getAccountTransactions(
