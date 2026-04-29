@@ -78,6 +78,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ name: "", color: "", icon: "" });
   const [isAddingNew, setIsAddingNew] = useState(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [newForm, setNewForm] = useState({
     name: "",
     color: "#3b82f6",
@@ -158,6 +160,54 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     } catch (error) {
       console.error("Failed to add category:", error);
     }
+  }
+
+  function handleDragStart(e: React.DragEvent, id: string) {
+    setDraggingId(id);
+    e.dataTransfer.effectAllowed = "move";
+    // Required for Firefox to register the drag.
+    e.dataTransfer.setData("text/plain", id);
+  }
+
+  function handleDragOver(e: React.DragEvent, id: string) {
+    if (!draggingId || draggingId === id) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverId(id);
+  }
+
+  function handleDragLeave(id: string) {
+    setDragOverId((prev) => (prev === id ? null : prev));
+  }
+
+  async function handleDrop(e: React.DragEvent, targetId: string) {
+    e.preventDefault();
+    const sourceId = draggingId;
+    setDraggingId(null);
+    setDragOverId(null);
+    if (!sourceId || sourceId === targetId) return;
+
+    const sourceIdx = categories.findIndex((c) => c.id === sourceId);
+    const targetIdx = categories.findIndex((c) => c.id === targetId);
+    if (sourceIdx === -1 || targetIdx === -1) return;
+
+    const reordered = [...categories];
+    const [moved] = reordered.splice(sourceIdx, 1);
+    reordered.splice(targetIdx, 0, moved);
+
+    // Optimistic update; persist in background.
+    setCategories(reordered);
+    try {
+      await dataService.reorderCategories(reordered.map((c) => c.id));
+    } catch (error) {
+      console.error("Failed to reorder categories:", error);
+      await loadCategories();
+    }
+  }
+
+  function handleDragEnd() {
+    setDraggingId(null);
+    setDragOverId(null);
   }
 
   async function deleteCategory(id: string) {
@@ -321,12 +371,26 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             )}
 
             {/* Category List */}
-            {categories.map((category) => (
+            {categories.map((category) => {
+              const isEditing = editingId === category.id;
+              const isDragging = draggingId === category.id;
+              const isDragOver = dragOverId === category.id;
+              return (
               <div
                 key={category.id}
-                className="flex items-center gap-3 p-3 rounded-xl bg-white border border-stone-200 hover:shadow-sm transition-all"
+                draggable={!isEditing}
+                onDragStart={(e) => handleDragStart(e, category.id)}
+                onDragOver={(e) => handleDragOver(e, category.id)}
+                onDragLeave={() => handleDragLeave(category.id)}
+                onDrop={(e) => handleDrop(e, category.id)}
+                onDragEnd={handleDragEnd}
+                className={cn(
+                  "flex items-center gap-3 p-3 rounded-xl bg-white border border-stone-200 hover:shadow-sm transition-all",
+                  isDragging && "opacity-40",
+                  isDragOver && "border-amber-400 ring-2 ring-amber-200",
+                )}
               >
-                {editingId === category.id ? (
+                {isEditing ? (
                   <>
                     <div className="flex-1 grid grid-cols-3 gap-3">
                       <Input
@@ -371,7 +435,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </>
                 ) : (
                   <>
-                    <GripVertical className="w-4 h-4 text-stone-400 cursor-move" />
+                    <GripVertical className="w-4 h-4 text-stone-400 cursor-grab active:cursor-grabbing" />
                     <CategoryDot color={category.color} size="md" />
                     <CategoryIcon
                       name={category.icon}
@@ -411,7 +475,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
