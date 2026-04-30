@@ -2422,6 +2422,8 @@ export class DataService {
             date: row.date,
             amount: Number(row.amount),
             category: row.category || undefined,
+            categoryId: row.category_id || undefined,
+            accountId: row.account_id || undefined,
             note: row.note || undefined,
           });
         }

@@ -1,7 +1,11 @@
 import { dataService } from "@/lib/data-service";
-import type { Category, Expense } from "@/lib/data-service";
+import type {
+  AccountTransaction,
+  Category,
+  Expense,
+} from "@/lib/data-service";
 import type { SpreadsheetRow } from "@/types/spreadsheet.types";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildColumnGroups, paymentColumnKey } from "./column-config";
 
 const MONTH_NAMES = [
@@ -47,6 +51,10 @@ function generateMonthRange(
   return result;
 }
 
+export type DrillDownItem =
+  | { kind: "deposit"; tx: AccountTransaction }
+  | { kind: "expense"; expense: Expense };
+
 export interface SpreadsheetData {
   rows: SpreadsheetRow[];
   columnGroups: ReturnType<typeof buildColumnGroups>;
@@ -55,6 +63,9 @@ export interface SpreadsheetData {
   reload: () => void;
   updateEntry: (monthKey: string, columnKey: string, value: number) => Promise<void>;
   removeEntry: (monthKey: string, columnKey: string) => Promise<void>;
+  /** Returns the underlying transactions backing a cell's value, or null
+   * if the column isn't a derived (deposit / expense) column. */
+  drillDown: (monthKey: string, columnKey: string) => DrillDownItem[] | null;
 }
 
 export function useSpreadsheetData(
@@ -67,6 +78,14 @@ export function useSpreadsheetData(
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
+
+  // Sources for drill-down popovers. Kept in refs so the lookups don't
+  // recreate every render; the data itself is small (one cell's worth
+  // of underlying rows) and refreshed atomically with the row data.
+  const depositsByMonthRef = useRef<Map<string, AccountTransaction[]>>(
+    new Map(),
+  );
+  const expensesByMonthCategoryRef = useRef<Map<string, Expense[]>>(new Map());
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
@@ -98,16 +117,24 @@ export function useSpreadsheetData(
           entryMap.set(`${e.monthKey}:${e.columnKey}`, e.value);
         }
 
-        // Income lookup: sum of deposit transactions per month.
-        const depositsByMonth = new Map<string, number>();
+        // Group deposits by month for both the Income column total AND
+        // the per-cell drill-down popover.
+        const depositsByMonth = new Map<string, AccountTransaction[]>();
         for (const tx of allTxs) {
           if (tx.transactionType !== "deposit") continue;
           const key = txMonthKey(tx);
-          depositsByMonth.set(key, (depositsByMonth.get(key) ?? 0) + tx.amount);
+          const list = depositsByMonth.get(key) ?? [];
+          list.push(tx);
+          depositsByMonth.set(key, list);
         }
+        depositsByMonthRef.current = depositsByMonth;
 
-        // Category names for column building
-        const categoryNames = cats.map((c) => c.name);
+        // Build "monthKey:categoryId" → expenses[] for drill-down,
+        // and rebuild "monthKey:categoryName" as a fallback for legacy
+        // expenses that have only the text category set.
+        const expensesByMonthCategory = new Map<string, Expense[]>();
+        const catIdByName = new Map<string, string>();
+        for (const c of cats) catIdByName.set(c.name, c.id);
 
         // Build rows
         let prevYear: number | null = null;
@@ -122,22 +149,34 @@ export function useSpreadsheetData(
           values.month = MONTH_NAMES[month];
 
           // Income — auto-derived from deposits in account_transactions.
-          values.income_total = depositsByMonth.get(monthKey) ?? 0;
+          const monthDeposits = depositsByMonth.get(monthKey) ?? [];
+          const incomeTotal = monthDeposits.reduce((s, tx) => s + tx.amount, 0);
+          values.income_total = incomeTotal;
 
-          // Payments (from actual expenses, grouped by category)
+          // Payments — match by categoryId first (stable across renames),
+          // fall back to legacy text category only when the expense has
+          // no categoryId.
           const expenses: Expense[] = expensesByMonth[monthKey] ?? [];
           let paymentTotal = 0;
-          for (const catName of categoryNames) {
-            const colKey = paymentColumnKey(catName);
-            const catExpenses = expenses.filter(
-              (e) => (e.category ?? "Other") === catName,
+          for (const cat of cats) {
+            const colKey = paymentColumnKey(cat.name);
+            const catExpenses = expenses.filter((e) =>
+              e.categoryId
+                ? e.categoryId === cat.id
+                : (e.category ?? "") === cat.name,
             );
             const sum = catExpenses.reduce((s, e) => s + e.amount, 0);
-            // Payments shown as negative (money going out)
             values[colKey] = sum > 0 ? -sum : 0;
             paymentTotal += sum;
+            // Stash for drill-down (only if there are matches).
+            if (catExpenses.length > 0) {
+              expensesByMonthCategory.set(`${monthKey}:${cat.id}`, catExpenses);
+            }
           }
           values.payment_total = paymentTotal > 0 ? -paymentTotal : 0;
+
+          // Net = Income + Payments (payments already negative).
+          values.net = incomeTotal + values.payment_total;
 
           // Savings (from manual entries)
           values.savings_drhm = entryMap.get(`${monthKey}:savings_drhm`) ?? 0;
@@ -159,6 +198,8 @@ export function useSpreadsheetData(
             values,
           };
         });
+
+        expensesByMonthCategoryRef.current = expensesByMonthCategory;
 
         setRows(builtRows);
         setCategories(cats);
@@ -196,5 +237,43 @@ export function useSpreadsheetData(
     [reload],
   );
 
-  return { rows, columnGroups, loading, categories, reload, updateEntry, removeEntry };
+  const drillDown = useCallback(
+    (monthKey: string, columnKey: string): DrillDownItem[] | null => {
+      if (columnKey === "income_total") {
+        const list = depositsByMonthRef.current.get(monthKey) ?? [];
+        return list.length
+          ? list.map((tx) => ({ kind: "deposit", tx }) as DrillDownItem)
+          : null;
+      }
+      if (columnKey.startsWith("payment_") && columnKey !== "payment_total") {
+        // Reverse the payment column key back to a category name, then to id.
+        const niceName = columnKey
+          .replace("payment_", "")
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase());
+        const cat = categories.find(
+          (c) => c.name.toLowerCase() === niceName.toLowerCase(),
+        );
+        if (!cat) return null;
+        const list =
+          expensesByMonthCategoryRef.current.get(`${monthKey}:${cat.id}`) ?? [];
+        return list.length
+          ? list.map((expense) => ({ kind: "expense", expense }) as DrillDownItem)
+          : null;
+      }
+      return null;
+    },
+    [categories],
+  );
+
+  return {
+    rows,
+    columnGroups,
+    loading,
+    categories,
+    reload,
+    updateEntry,
+    removeEntry,
+    drillDown,
+  };
 }
