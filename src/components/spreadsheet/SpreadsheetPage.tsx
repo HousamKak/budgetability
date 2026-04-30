@@ -30,7 +30,8 @@ export default function SpreadsheetPage() {
 
   const [expanded, setExpanded] = useState<ExpandedGroups>({
     time: true,
-    income: false,
+    // Income is a single auto-derived column now, so no point hiding it.
+    income: true,
     payments: false,
     savings: true,
     other: true,
@@ -74,6 +75,7 @@ export default function SpreadsheetPage() {
 
   const gridRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const committingRef = useRef(false);  // guard against double-commit
 
   useEffect(() => {
     if (editing && inputRef.current) {
@@ -98,19 +100,24 @@ export default function SpreadsheetPage() {
 
   // ── Commit / cancel ────────────────────────────────────────────
 
-  const commitEdit = useCallback(async () => {
-    if (!active) return;
-    const { col } = flatColumns[active.colIdx];
-    const monthKey = rows[active.rowIdx].monthKey;
-    const trimmed = editValue.trim();
+  const doCommit = useCallback(async () => {
+    if (!active || committingRef.current) return;
+    committingRef.current = true;
+    try {
+      const { col } = flatColumns[active.colIdx];
+      const monthKey = rows[active.rowIdx].monthKey;
+      const trimmed = editValue.trim();
 
-    if (trimmed === "" || trimmed === "0") {
-      await removeEntry(monthKey, col.key);
-    } else {
-      const num = parseFloat(trimmed);
-      if (!isNaN(num)) {
-        await updateEntry(monthKey, col.key, num);
+      if (trimmed === "" || trimmed === "0") {
+        await removeEntry(monthKey, col.key);
+      } else {
+        const num = parseFloat(trimmed);
+        if (!isNaN(num)) {
+          await updateEntry(monthKey, col.key, num);
+        }
       }
+    } finally {
+      committingRef.current = false;
     }
     setEditing(false);
   }, [active, flatColumns, rows, editValue, updateEntry, removeEntry]);
@@ -139,26 +146,29 @@ export default function SpreadsheetPage() {
     if (editing) {
       if (e.key === "Enter") {
         e.preventDefault();
-        commitEdit().then(() => {
-          setActive(prev => prev && prev.rowIdx < rows.length - 1
-            ? { ...prev, rowIdx: prev.rowIdx + 1 }
-            : prev
-          );
+        e.stopPropagation();
+        const nextRow = active && active.rowIdx < rows.length - 1
+          ? { ...active, rowIdx: active.rowIdx + 1 }
+          : active;
+        doCommit().then(() => {
+          setActive(nextRow);
           gridRef.current?.focus();
         });
       } else if (e.key === "Tab") {
         e.preventDefault();
-        commitEdit().then(() => {
-          setActive(prev => {
-            if (!prev) return prev;
-            if (e.shiftKey) {
-              return prev.colIdx > 0 ? { ...prev, colIdx: prev.colIdx - 1 } : prev;
-            }
-            return prev.colIdx < flatColumns.length - 1 ? { ...prev, colIdx: prev.colIdx + 1 } : prev;
-          });
+        e.stopPropagation();
+        const next = active
+          ? e.shiftKey
+            ? active.colIdx > 0 ? { ...active, colIdx: active.colIdx - 1 } : active
+            : active.colIdx < flatColumns.length - 1 ? { ...active, colIdx: active.colIdx + 1 } : active
+          : active;
+        doCommit().then(() => {
+          setActive(next);
           gridRef.current?.focus();
         });
       } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
         cancelEdit();
       }
       return;
@@ -218,25 +228,37 @@ export default function SpreadsheetPage() {
           }
         }
     }
-  }, [editing, active, rows, flatColumns, commitEdit, cancelEdit, startEditing, canEditCell, removeEntry]);
+  }, [editing, active, rows, flatColumns, doCommit, cancelEdit, startEditing, canEditCell, removeEntry]);
 
   // ── Click handlers ─────────────────────────────────────────────
 
   const handleCellClick = useCallback((rowIdx: number, colIdx: number) => {
-    if (editing) commitEdit();
+    if (editing) doCommit();
     setActive({ rowIdx, colIdx });
     setEditing(false);
     gridRef.current?.focus();
-  }, [editing, commitEdit]);
+  }, [editing, doCommit]);
 
   const handleCellDoubleClick = useCallback((rowIdx: number, colIdx: number) => {
     startEditing({ rowIdx, colIdx });
   }, [startEditing]);
 
+  // Commit when focus leaves the grid entirely
+  const handleGridBlur = useCallback((e: React.FocusEvent) => {
+    if (!editing) return;
+    // If focus moved to something inside the grid (like the cell input), ignore
+    if (gridRef.current?.contains(e.relatedTarget as Node)) return;
+    doCommit().then(() => gridRef.current?.focus());
+  }, [editing, doCommit]);
+
   // ── Render ─────────────────────────────────────────────────────
 
   // Track flat column index for each cell
   let globalColIdx = 0;
+
+  // Sticky offsets for the Time-group columns (kept in sync with the
+  // widths declared in column-config.ts).
+  const TIME_COL_WIDTHS = { year: 60, month: 80 } as const;
 
   return (
     <div className="min-h-screen w-full p-4 md:p-8 bg-[repeating-linear-gradient(0deg,#fbf6e9,#fbf6e9_28px,#f2e8cf_28px,#f2e8cf_29px)]">
@@ -331,6 +353,7 @@ export default function SpreadsheetPage() {
             ref={gridRef}
             tabIndex={0}
             onKeyDown={handleKeyDown}
+            onBlur={handleGridBlur}
             className={cn(
               "rounded-xl overflow-hidden outline-none",
               paperTheme.colors.borders.paper,
@@ -339,13 +362,30 @@ export default function SpreadsheetPage() {
             )}
           >
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse min-w-[600px]">
+              <table
+                className="border-collapse min-w-[600px]"
+                style={{ tableLayout: "fixed" }}
+              >
+                {/* Explicit per-column widths so table-layout: fixed has
+                    something to use. Without this, fixed layout falls
+                    back to even distribution. */}
+                <colgroup>
+                  {columnGroups.map((group) =>
+                    getVisibleColumns(group).map((col) => (
+                      <col
+                        key={col.key}
+                        style={{ width: col.width ?? 80 }}
+                      />
+                    )),
+                  )}
+                </colgroup>
                 {/* Group headers row */}
                 <thead>
                   <tr>
                     {columnGroups.map((group) => {
                       const visCols = getVisibleColumns(group);
                       const isExpanded = group.alwaysExpanded || expanded[group.id];
+                      const isTime = group.id === "time";
                       return (
                         <th
                           key={group.id}
@@ -355,7 +395,12 @@ export default function SpreadsheetPage() {
                             groupHeaderBg(group.id),
                             !group.alwaysExpanded && "cursor-pointer select-none",
                           )}
-                          style={{ fontFamily: paperTheme.fonts.handwriting }}
+                          style={{
+                            fontFamily: paperTheme.fonts.handwriting,
+                            position: isTime ? "sticky" : undefined,
+                            left: isTime ? 0 : undefined,
+                            zIndex: isTime ? 30 : 20,
+                          }}
                           onClick={
                             group.alwaysExpanded
                               ? undefined
@@ -383,21 +428,33 @@ export default function SpreadsheetPage() {
                   <tr>
                     {columnGroups.map((group) => {
                       const visCols = getVisibleColumns(group);
-                      return visCols.map((col) => (
-                        <th
-                          key={col.key}
-                          className={cn(
-                            "px-2 py-1.5 text-xs font-semibold text-stone-700 border border-amber-200/60 whitespace-nowrap",
-                            groupSubHeaderBg(group.id),
-                          )}
-                          style={{
-                            minWidth: col.width ?? 80,
-                            fontFamily: paperTheme.fonts.handwriting,
-                          }}
-                        >
-                          {col.label}
-                        </th>
-                      ));
+                      return visCols.map((col, idx) => {
+                        const isTime = group.id === "time";
+                        const stickyLeft = isTime
+                          ? idx === 0
+                            ? 0
+                            : TIME_COL_WIDTHS.year
+                          : undefined;
+                        return (
+                          <th
+                            key={col.key}
+                            className={cn(
+                              "px-2 py-1.5 text-xs font-semibold text-stone-700 border border-amber-200/60 truncate",
+                              groupSubHeaderBg(group.id),
+                            )}
+                            style={{
+                              fontFamily: paperTheme.fonts.handwriting,
+                              position: isTime ? "sticky" : undefined,
+                              left: stickyLeft,
+                              zIndex: isTime ? 30 : 20,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {col.label}
+                          </th>
+                        );
+                      });
                     })}
                   </tr>
                 </thead>
@@ -423,11 +480,17 @@ export default function SpreadsheetPage() {
                       >
                         {columnGroups.map((group) => {
                           const visCols = getVisibleColumns(group);
-                          return visCols.map((col) => {
+                          return visCols.map((col, idxInGroup) => {
                             const colIdx = globalColIdx++;
                             const value = row.values[col.key];
                             const isActive = active?.rowIdx === rowIdx && active?.colIdx === colIdx;
                             const isEditing = isActive && editing;
+                            const isTime = group.id === "time";
+                            const stickyLeft = isTime
+                              ? idxInGroup === 0
+                                ? 0
+                                : TIME_COL_WIDTHS.year
+                              : undefined;
 
                             return (
                               <SpreadsheetCell
@@ -439,9 +502,9 @@ export default function SpreadsheetPage() {
                                 isEditing={isEditing}
                                 editValue={editValue}
                                 inputRef={isEditing ? inputRef : undefined}
+                                stickyLeft={stickyLeft}
+                                isCurrentMonth={isCurrentMonth}
                                 onEditValueChange={setEditValue}
-                                onCommit={commitEdit}
-                                onCancel={cancelEdit}
                                 onClick={() => handleCellClick(rowIdx, colIdx)}
                                 onDoubleClick={() => handleCellDoubleClick(rowIdx, colIdx)}
                               />
@@ -482,9 +545,9 @@ function SpreadsheetCell({
   isEditing,
   editValue,
   inputRef,
+  stickyLeft,
+  isCurrentMonth,
   onEditValueChange,
-  onCommit,
-  onCancel,
   onClick,
   onDoubleClick,
 }: {
@@ -495,16 +558,17 @@ function SpreadsheetCell({
   isEditing: boolean;
   editValue: string;
   inputRef?: React.RefObject<HTMLInputElement | null>;
+  stickyLeft?: number;
+  isCurrentMonth?: boolean;
   onEditValueChange: (v: string) => void;
-  onCommit: () => void;
-  onCancel: () => void;
   onClick: () => void;
   onDoubleClick: () => void;
 }) {
-  // Format display value
+  // Format display value. Empty/zero numerics render as a blank string —
+  // the previous "-" placeholder created visual noise in a sparse grid.
   let display: string;
   if (value == null || value === "" || value === 0) {
-    display = col.type === "text" ? (value as string) ?? "" : "-";
+    display = col.type === "text" ? (value as string) ?? "" : "";
   } else if (col.type === "currency" || col.type === "computed") {
     display = formatCurrency(value as number);
   } else if (col.type === "number") {
@@ -515,23 +579,22 @@ function SpreadsheetCell({
 
   const isNegative = typeof value === "number" && value < 0;
   const isText = col.type === "text";
+  const isSticky = stickyLeft !== undefined;
+  // Sticky cells need an opaque background so other cells don't scroll
+  // through them. Match the row's effective background.
+  const stickyBg = isCurrentMonth ? "#fde68a99" : "#ffffff";
 
   const handleInputKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      onCancel();
-      return;
-    }
-    // Let the grid's keydown handler manage Enter/Tab
-    if (e.key === "Enter" || e.key === "Tab") return;
-    // Stop other keys from propagating to the grid
+    // Let Enter/Tab/Escape bubble to the grid's onKeyDown which handles commit/cancel
+    if (e.key === "Enter" || e.key === "Tab" || e.key === "Escape") return;
+    // Stop other keys from propagating to the grid (so arrow keys type in input, not navigate)
     e.stopPropagation();
   };
 
   return (
     <td
       className={cn(
-        "px-2 py-1 text-xs border border-amber-200/40 whitespace-nowrap relative",
+        "px-2 py-1 text-xs border border-amber-200/40 relative",
         isText ? "text-left" : "text-right",
         isNegative ? "text-red-600" : "text-stone-800",
         col.editable && "cursor-cell",
@@ -541,12 +604,18 @@ function SpreadsheetCell({
         groupCellBg(groupId),
       )}
       style={{
-        minWidth: col.width ?? 80,
         fontFamily:
           col.type === "text"
             ? paperTheme.fonts.handwriting
             : paperTheme.fonts.system,
         fontSize: isText ? "0.8rem" : undefined,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        position: isSticky ? "sticky" : undefined,
+        left: stickyLeft,
+        zIndex: isSticky ? 5 : undefined,
+        background: isSticky ? stickyBg : undefined,
       }}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
@@ -557,7 +626,6 @@ function SpreadsheetCell({
           type="text"
           value={editValue}
           onChange={(e) => onEditValueChange(e.target.value)}
-          onBlur={onCommit}
           onKeyDown={handleInputKeyDown}
           className="w-full bg-white border border-blue-400 rounded px-1 py-0.5 text-xs text-right outline-none focus:ring-1 focus:ring-blue-400 absolute inset-0 z-20"
         />
