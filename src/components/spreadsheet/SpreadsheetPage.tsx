@@ -361,10 +361,19 @@ export default function SpreadsheetPage() {
               "relative focus:ring-2 focus:ring-amber-300/50",
             )}
           >
+            {/* Row-aware sticky cell backgrounds via CSS variable.
+                Each row sets --row-bg on itself; sticky cells paint that
+                colour, so hover and current-month state stay in sync
+                between the frozen Time columns and the rest. */}
+            <style>{SPREADSHEET_CSS}</style>
             <div className="overflow-x-auto">
               <table
-                className="border-collapse min-w-[600px]"
-                style={{ tableLayout: "fixed" }}
+                className="ss-table min-w-[600px]"
+                style={{
+                  tableLayout: "fixed",
+                  borderCollapse: "separate",
+                  borderSpacing: 0,
+                }}
               >
                 {/* Explicit per-column widths so table-layout: fixed has
                     something to use. Without this, fixed layout falls
@@ -382,24 +391,52 @@ export default function SpreadsheetPage() {
                 {/* Group headers row */}
                 <thead>
                   <tr>
-                    {columnGroups.map((group) => {
+                    {columnGroups.flatMap((group) => {
                       const visCols = getVisibleColumns(group);
                       const isExpanded = group.alwaysExpanded || expanded[group.id];
                       const isTime = group.id === "time";
-                      return (
+
+                      // Time group: render N separate sticky cells (no
+                      // colSpan). colSpan + position:sticky is unreliable
+                      // across browsers. The first cell carries the
+                      // label; the rest are visually-continuous extensions
+                      // styled identically with no left border.
+                      if (isTime) {
+                        return visCols.map((_col, idx) => (
+                          <th
+                            key={`time-group-${idx}`}
+                            className={cn(
+                              "ss-cell ss-th-group ss-sticky",
+                              idx === visCols.length - 1 && "ss-freeze-edge",
+                              groupHeaderBg(group.id),
+                            )}
+                            style={{
+                              fontFamily: paperTheme.fonts.handwriting,
+                              left: idx === 0 ? 0 : TIME_COL_WIDTHS.year,
+                              zIndex: 32,
+                            }}
+                          >
+                            {idx === 0 && (
+                              <div className="flex items-center justify-center gap-1">
+                                {group.label}
+                              </div>
+                            )}
+                          </th>
+                        ));
+                      }
+
+                      return [
                         <th
                           key={group.id}
                           colSpan={visCols.length}
                           className={cn(
-                            "px-2 py-2 text-center text-sm font-bold border border-amber-200/60",
+                            "ss-cell ss-th-group",
                             groupHeaderBg(group.id),
                             !group.alwaysExpanded && "cursor-pointer select-none",
                           )}
                           style={{
                             fontFamily: paperTheme.fonts.handwriting,
-                            position: isTime ? "sticky" : undefined,
-                            left: isTime ? 0 : undefined,
-                            zIndex: isTime ? 30 : 20,
+                            zIndex: 21,
                           }}
                           onClick={
                             group.alwaysExpanded
@@ -420,8 +457,8 @@ export default function SpreadsheetPage() {
                               </span>
                             )}
                           </div>
-                        </th>
-                      );
+                        </th>,
+                      ];
                     })}
                   </tr>
                   {/* Column headers row */}
@@ -435,20 +472,21 @@ export default function SpreadsheetPage() {
                             ? 0
                             : TIME_COL_WIDTHS.year
                           : undefined;
+                        const isFreezeEdge =
+                          isTime && idx === visCols.length - 1;
                         return (
                           <th
                             key={col.key}
                             className={cn(
-                              "px-2 py-1.5 text-xs font-semibold text-stone-700 border border-amber-200/60 truncate",
+                              "ss-cell ss-th-col",
                               groupSubHeaderBg(group.id),
+                              isTime && "ss-sticky",
+                              isFreezeEdge && "ss-freeze-edge",
                             )}
                             style={{
                               fontFamily: paperTheme.fonts.handwriting,
-                              position: isTime ? "sticky" : undefined,
                               left: stickyLeft,
-                              zIndex: isTime ? 30 : 20,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
+                              zIndex: isTime ? 32 : 21,
                             }}
                           >
                             {col.label}
@@ -471,12 +509,8 @@ export default function SpreadsheetPage() {
                     return (
                       <tr
                         key={row.monthKey}
-                        className={cn(
-                          "transition-colors",
-                          isCurrentMonth
-                            ? "bg-amber-100/60"
-                            : "bg-white/40 hover:bg-amber-50/40",
-                        )}
+                        className="ss-row"
+                        data-state={isCurrentMonth ? "current" : "default"}
                       >
                         {columnGroups.map((group) => {
                           const visCols = getVisibleColumns(group);
@@ -491,6 +525,8 @@ export default function SpreadsheetPage() {
                                 ? 0
                                 : TIME_COL_WIDTHS.year
                               : undefined;
+                            const isFreezeEdge =
+                              isTime && idxInGroup === visCols.length - 1;
 
                             return (
                               <SpreadsheetCell
@@ -503,7 +539,7 @@ export default function SpreadsheetPage() {
                                 editValue={editValue}
                                 inputRef={isEditing ? inputRef : undefined}
                                 stickyLeft={stickyLeft}
-                                isCurrentMonth={isCurrentMonth}
+                                isFreezeEdge={isFreezeEdge}
                                 onEditValueChange={setEditValue}
                                 onClick={() => handleCellClick(rowIdx, colIdx)}
                                 onDoubleClick={() => handleCellDoubleClick(rowIdx, colIdx)}
@@ -546,7 +582,7 @@ function SpreadsheetCell({
   editValue,
   inputRef,
   stickyLeft,
-  isCurrentMonth,
+  isFreezeEdge,
   onEditValueChange,
   onClick,
   onDoubleClick,
@@ -559,7 +595,7 @@ function SpreadsheetCell({
   editValue: string;
   inputRef?: React.RefObject<HTMLInputElement | null>;
   stickyLeft?: number;
-  isCurrentMonth?: boolean;
+  isFreezeEdge?: boolean;
   onEditValueChange: (v: string) => void;
   onClick: () => void;
   onDoubleClick: () => void;
@@ -580,9 +616,6 @@ function SpreadsheetCell({
   const isNegative = typeof value === "number" && value < 0;
   const isText = col.type === "text";
   const isSticky = stickyLeft !== undefined;
-  // Sticky cells need an opaque background so other cells don't scroll
-  // through them. Match the row's effective background.
-  const stickyBg = isCurrentMonth ? "#fde68a99" : "#ffffff";
 
   const handleInputKeyDown = (e: React.KeyboardEvent) => {
     // Let Enter/Tab/Escape bubble to the grid's onKeyDown which handles commit/cancel
@@ -594,13 +627,15 @@ function SpreadsheetCell({
   return (
     <td
       className={cn(
-        "px-2 py-1 text-xs border border-amber-200/40 relative",
+        "ss-cell ss-td",
         isText ? "text-left" : "text-right",
         isNegative ? "text-red-600" : "text-stone-800",
         col.editable && "cursor-cell",
         !col.editable && "cursor-default",
-        col.type === "computed" && "font-semibold bg-amber-50/30",
-        isActive && !isEditing && "outline outline-2 outline-blue-500 -outline-offset-1 z-10",
+        col.type === "computed" && "ss-td-computed",
+        isActive && !isEditing && "ss-td-active",
+        isSticky && "ss-sticky",
+        isFreezeEdge && "ss-freeze-edge",
         groupCellBg(groupId),
       )}
       style={{
@@ -609,13 +644,7 @@ function SpreadsheetCell({
             ? paperTheme.fonts.handwriting
             : paperTheme.fonts.system,
         fontSize: isText ? "0.8rem" : undefined,
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-        position: isSticky ? "sticky" : undefined,
         left: stickyLeft,
-        zIndex: isSticky ? 5 : undefined,
-        background: isSticky ? stickyBg : undefined,
       }}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
@@ -627,7 +656,7 @@ function SpreadsheetCell({
           value={editValue}
           onChange={(e) => onEditValueChange(e.target.value)}
           onKeyDown={handleInputKeyDown}
-          className="w-full bg-white border border-blue-400 rounded px-1 py-0.5 text-xs text-right outline-none focus:ring-1 focus:ring-blue-400 absolute inset-0 z-20"
+          className="ss-edit-input"
         />
       ) : (
         display
@@ -635,6 +664,139 @@ function SpreadsheetCell({
     </td>
   );
 }
+
+// ============================================
+// SCOPED STYLESHEET
+// ============================================
+
+const SPREADSHEET_CSS = `
+.ss-table {
+  width: 100%;
+}
+
+/* Cells use per-side borders only (right + bottom), drawn via the
+   collapsed-style trick on a separated table. This avoids the doubled
+   borders that border-collapse:collapse produces around sticky cells. */
+.ss-cell {
+  border-right: 1px solid rgb(253 230 138 / 0.6);   /* amber-200/60 */
+  border-bottom: 1px solid rgb(253 230 138 / 0.4);  /* amber-200/40 */
+  padding: 4px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ss-table > thead > tr > .ss-cell {
+  border-bottom: 1px solid rgb(253 230 138 / 0.6);
+}
+.ss-table > thead > tr:first-child > .ss-cell {
+  border-top: 1px solid rgb(253 230 138 / 0.6);
+}
+.ss-table > tbody > tr > .ss-cell:first-child,
+.ss-table > thead > tr > .ss-cell:first-child {
+  border-left: 1px solid rgb(253 230 138 / 0.6);
+}
+
+.ss-th-group {
+  text-align: center;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 8px;
+}
+.ss-th-col {
+  text-align: inherit;
+  font-weight: 600;
+  font-size: 12px;
+  color: rgb(68 64 60);
+  padding: 6px 8px;
+}
+
+/* Row state drives both the row's background AND the sticky cells'
+   background, via a single CSS variable. By painting the variable on
+   the <tr>, every cell (sticky or not) shows the same tint — no seam
+   between the frozen Time columns and the rest. */
+.ss-row {
+  --row-bg: rgba(255, 255, 255, 0.4);
+  background: var(--row-bg);
+  transition: background-color 120ms ease;
+}
+.ss-row[data-state="current"] {
+  --row-bg: rgba(252, 211, 77, 0.42);  /* amber-300 ~ */
+}
+.ss-row:hover:not([data-state="current"]) {
+  --row-bg: rgba(254, 243, 199, 0.55); /* amber-100 */
+}
+
+/* Sticky cells inherit the row's effective background so they don't
+   leave a colored seam when the row hovers / changes state. Header
+   sticky cells override with their own group-header colour, which is
+   already opaque enough to mask anything scrolling under them. */
+.ss-sticky {
+  position: sticky;
+}
+.ss-table > tbody > tr > .ss-sticky {
+  background: var(--row-bg);
+}
+
+/* The freeze line — a strong right edge on the last sticky column so
+   the eye can read the boundary between frozen and scrolling area. */
+.ss-freeze-edge {
+  box-shadow: 2px 0 0 rgb(252 211 77);  /* amber-300 */
+  border-right: 1px solid rgb(252 211 77);
+}
+
+/* Computed cells get a faint amber wash so totals stand out, but only
+   on non-sticky cells — sticky ones must keep --row-bg to track row
+   state. */
+.ss-td-computed {
+  font-weight: 600;
+}
+.ss-td-computed:not(.ss-sticky) {
+  background: rgba(254, 243, 199, 0.35);
+}
+
+/* Active cell outline. Sits below sticky (z 6) so when the active cell
+   scrolls under the freeze line, the outline is hidden along with it
+   instead of bleeding on top. */
+.ss-td-active {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+  position: relative;
+  z-index: 4;
+}
+.ss-table > tbody > tr > .ss-sticky {
+  z-index: 6;
+}
+
+/* Edit input lives strictly inside the cell border (1px inset) so its
+   own border doesn't double up with the cell border. */
+.ss-edit-input {
+  position: absolute;
+  inset: 1px;
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  background: white;
+  border: 1px solid #60a5fa;
+  border-radius: 3px;
+  padding: 0 6px;
+  font-size: 12px;
+  text-align: right;
+  outline: none;
+  z-index: 25;
+  box-sizing: border-box;
+}
+.ss-edit-input:focus {
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+
+/* Position context for the absolute-positioned edit input. Skip sticky
+   cells — they already establish a containing block via position:sticky,
+   and overriding to relative would break their pinning. */
+.ss-td:not(.ss-sticky) {
+  position: relative;
+}
+`;
+
 
 // ============================================
 // GROUP COLOR HELPERS
