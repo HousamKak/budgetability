@@ -355,7 +355,7 @@ export default function SpreadsheetPage() {
             onKeyDown={handleKeyDown}
             onBlur={handleGridBlur}
             className={cn(
-              "rounded-xl overflow-hidden outline-none",
+              "rounded-xl overflow-hidden outline-none bg-white",
               paperTheme.colors.borders.paper,
               paperTheme.effects.shadow.lg,
               "relative focus:ring-2 focus:ring-amber-300/50",
@@ -712,19 +712,28 @@ const SPREADSHEET_CSS = `
 }
 
 /* Row state drives both the row's background AND the sticky cells'
-   background, via a single CSS variable. By painting the variable on
-   the <tr>, every cell (sticky or not) shows the same tint — no seam
-   between the frozen Time columns and the rest. */
+   background, via a single CSS variable. Backgrounds are fully opaque
+   so the page's lined-paper gradient cannot bleed through any cell —
+   especially important for sticky cells, where any transparency would
+   let scrolling content show through. */
 .ss-row {
-  --row-bg: rgba(255, 255, 255, 0.4);
+  --row-bg: #ffffff;
   background: var(--row-bg);
   transition: background-color 120ms ease;
 }
 .ss-row[data-state="current"] {
-  --row-bg: rgba(252, 211, 77, 0.42);  /* amber-300 ~ */
+  --row-bg: #fef3c7;  /* amber-100 */
 }
 .ss-row:hover:not([data-state="current"]) {
-  --row-bg: rgba(254, 243, 199, 0.55); /* amber-100 */
+  --row-bg: #fffbeb;  /* amber-50 */
+}
+/* Subtle zebra so a long horizontal row stays trackable. Applied only
+   to default-state rows so it doesn't fight the current-month tint. */
+.ss-row[data-state="default"]:nth-child(even) {
+  --row-bg: #fafaf9;  /* stone-50 */
+}
+.ss-row[data-state="default"]:nth-child(even):hover {
+  --row-bg: #fffbeb;
 }
 
 /* Sticky cells inherit the row's effective background so they don't
