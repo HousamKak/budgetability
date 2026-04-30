@@ -9,17 +9,10 @@ const timeColumns: ColumnDef[] = [
   { key: "month", label: "Month", type: "text", editable: false, width: 80 },
 ];
 
+// Income is auto-derived from account deposits. No manual sub-columns —
+// a single read-only column shows the total deposits for the month.
 const incomeColumns: ColumnDef[] = [
-  { key: "income_salary", label: "Salary", type: "currency", editable: true, width: 100 },
-  { key: "income_loan_income", label: "Loan Income", type: "currency", editable: true, width: 100 },
-  { key: "income_startups", label: "Startups", type: "currency", editable: true, width: 100 },
-  { key: "income_freelance", label: "Freelance", type: "currency", editable: true, width: 100 },
-  { key: "income_bonus", label: "Bonus", type: "currency", editable: true, width: 100 },
-  { key: "income_investments", label: "Investments & Trading", type: "currency", editable: true, width: 130 },
-  { key: "income_teaching", label: "Teaching", type: "currency", editable: true, width: 100 },
-  { key: "income_content", label: "Content Creation", type: "currency", editable: true, width: 120 },
-  { key: "income_personal_company", label: "Personal Company", type: "currency", editable: true, width: 130 },
-  { key: "income_total", label: "Total Income", type: "computed", editable: false, width: 110 },
+  { key: "income_total", label: "Income", type: "computed", editable: false, width: 110 },
 ];
 
 // Payment columns will be dynamically built from user categories + these fixed ones
@@ -49,7 +42,7 @@ export function buildColumnGroups(
 ): ColumnGroup[] {
   // Build dynamic payment columns from user's expense categories
   const dynamicPaymentColumns: ColumnDef[] = categoryNames.map((name) => ({
-    key: `payment_${name.toLowerCase().replace(/\s+/g, "_")}`,
+    key: paymentColumnKey(name),
     label: name,
     type: "currency" as const,
     editable: false, // auto-computed from expenses
@@ -93,10 +86,11 @@ export function buildColumnGroups(
   ];
 }
 
-// Keys for all income sub-columns (used to compute total)
-export const INCOME_SUBCOLUMN_KEYS = incomeColumns
-  .filter((c) => c.key !== "income_total")
-  .map((c) => c.key);
+// Single helper for deriving the payment column key from a category name.
+// Used by both buildColumnGroups and the row builder so they can't drift.
+export function paymentColumnKey(categoryName: string): string {
+  return `payment_${categoryName.toLowerCase().replace(/\s+/g, "_")}`;
+}
 
 // Helper: get the category name from a payment column key
 export function categoryNameFromPaymentKey(key: string): string | null {

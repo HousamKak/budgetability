@@ -2,7 +2,7 @@ import { dataService } from "@/lib/data-service";
 import type { Category, Expense } from "@/lib/data-service";
 import type { SpreadsheetRow } from "@/types/spreadsheet.types";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { buildColumnGroups, INCOME_SUBCOLUMN_KEYS } from "./column-config";
+import { buildColumnGroups, paymentColumnKey } from "./column-config";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -15,6 +15,15 @@ function pad2(n: number) {
 
 function mk(year: number, month: number) {
   return `${year}-${pad2(month + 1)}`;
+}
+
+// Mirror the rule used in AccountTransactionsDialog: prefer the explicit
+// monthKey stamped at write time, fall back to createdAt for ad-hoc rows
+// (deposits / transfers don't usually stamp monthKey).
+function txMonthKey(tx: { monthKey?: string; createdAt: string }): string {
+  if (tx.monthKey) return tx.monthKey;
+  const d = new Date(tx.createdAt);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
 }
 
 /** Generate month keys from startYear-startMonth to endYear-endMonth (inclusive, 0-based months) */
@@ -70,12 +79,13 @@ export function useSpreadsheetData(
         const startKey = mk(startYear, startMonth);
         const endKey = mk(endYear, endMonth);
 
-        const [expensesByMonth, , manualEntries, cats] =
+        const [expensesByMonth, , manualEntries, cats, allTxs] =
           await Promise.all([
             dataService.getExpensesForMonthRange(startKey, endKey),
             dataService.getBudgetsForMonthRange(startKey, endKey),
             dataService.getSpreadsheetEntries(),
             dataService.getCategories(),
+            dataService.getAccountTransactions(),
           ]);
 
         if (cancelled) return;
@@ -86,6 +96,14 @@ export function useSpreadsheetData(
         const entryMap = new Map<string, number>();
         for (const e of manualEntries) {
           entryMap.set(`${e.monthKey}:${e.columnKey}`, e.value);
+        }
+
+        // Income lookup: sum of deposit transactions per month.
+        const depositsByMonth = new Map<string, number>();
+        for (const tx of allTxs) {
+          if (tx.transactionType !== "deposit") continue;
+          const key = txMonthKey(tx);
+          depositsByMonth.set(key, (depositsByMonth.get(key) ?? 0) + tx.amount);
         }
 
         // Category names for column building
@@ -103,20 +121,14 @@ export function useSpreadsheetData(
           values.year = showYear ? String(year) : "";
           values.month = MONTH_NAMES[month];
 
-          // Income (from manual entries)
-          let incomeTotal = 0;
-          for (const key of INCOME_SUBCOLUMN_KEYS) {
-            const val = entryMap.get(`${monthKey}:${key}`) ?? 0;
-            values[key] = val;
-            incomeTotal += val;
-          }
-          values.income_total = incomeTotal;
+          // Income — auto-derived from deposits in account_transactions.
+          values.income_total = depositsByMonth.get(monthKey) ?? 0;
 
           // Payments (from actual expenses, grouped by category)
           const expenses: Expense[] = expensesByMonth[monthKey] ?? [];
           let paymentTotal = 0;
           for (const catName of categoryNames) {
-            const colKey = `payment_${catName.toLowerCase().replace(/\s+/g, "_")}`;
+            const colKey = paymentColumnKey(catName);
             const catExpenses = expenses.filter(
               (e) => (e.category ?? "Other") === catName,
             );
