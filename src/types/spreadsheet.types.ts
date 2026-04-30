@@ -2,7 +2,13 @@
 // SPREADSHEET VIEW TYPES
 // ============================================
 
-export type ColumnGroupId = "time" | "income" | "payments" | "savings" | "other";
+export type ColumnGroupId =
+  | "time"
+  | "income"
+  | "payments"
+  | "net"
+  | "savings"
+  | "other";
 
 export interface ColumnDef {
   key: string;

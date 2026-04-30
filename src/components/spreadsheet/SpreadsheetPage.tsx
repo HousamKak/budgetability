@@ -1,13 +1,21 @@
 import { cn, formatCurrency, formatNumber } from "@/lib/utils";
 import { paperTheme } from "@/styles";
-import type { ColumnDef, ColumnGroup, ColumnGroupId, ExpandedGroups } from "@/types/spreadsheet.types";
+import type {
+  ColumnDef,
+  ColumnGroup,
+  ColumnGroupId,
+  ExpandedGroups,
+} from "@/types/spreadsheet.types";
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
+  RotateCw,
   Table2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { DrillDownItem } from "./useSpreadsheetData";
 import { useSpreadsheetData } from "./useSpreadsheetData";
 
 const now = new Date();
@@ -25,14 +33,44 @@ export default function SpreadsheetPage() {
   const [startYear, setStartYear] = useState(currentYear);
   const [endYear, setEndYear] = useState(currentYear);
 
-  const { rows, columnGroups, loading, reload, updateEntry, removeEntry } =
-    useSpreadsheetData(startYear, 0, endYear, 11);
+  const {
+    rows,
+    columnGroups,
+    loading,
+    reload,
+    updateEntry,
+    removeEntry,
+    drillDown,
+  } = useSpreadsheetData(startYear, 0, endYear, 11);
+
+  // Footer aggregator: sum / avg / min / max across visible months.
+  type AggKind = "sum" | "avg" | "min" | "max";
+  const [aggKind, setAggKind] = useState<AggKind>("sum");
+
+  // Save-status toast — fades in for ~1.5s after every commit/clear.
+  type SaveStatus = { state: "ok" | "error"; ts: number };
+  const [saveStatus, setSaveStatus] = useState<SaveStatus | null>(null);
+  useEffect(() => {
+    if (!saveStatus) return;
+    const t = setTimeout(() => setSaveStatus(null), 1600);
+    return () => clearTimeout(t);
+  }, [saveStatus]);
+
+  // Drill-down popover — open per cell, content lazily fetched on open.
+  type Drill = {
+    rowIdx: number;
+    colIdx: number;
+    items: DrillDownItem[];
+    title: string;
+  };
+  const [drill, setDrill] = useState<Drill | null>(null);
 
   const [expanded, setExpanded] = useState<ExpandedGroups>({
     time: true,
     // Income is a single auto-derived column now, so no point hiding it.
     income: true,
     payments: false,
+    net: true,
     savings: true,
     other: true,
   });
@@ -116,6 +154,10 @@ export default function SpreadsheetPage() {
           await updateEntry(monthKey, col.key, num);
         }
       }
+      setSaveStatus({ state: "ok", ts: Date.now() });
+    } catch (err) {
+      console.error("Failed to save cell:", err);
+      setSaveStatus({ state: "error", ts: Date.now() });
     } finally {
       committingRef.current = false;
     }
@@ -237,7 +279,31 @@ export default function SpreadsheetPage() {
     setActive({ rowIdx, colIdx });
     setEditing(false);
     gridRef.current?.focus();
-  }, [editing, doCommit]);
+
+    // Single click on a non-editable derived cell opens the drill-down
+    // popover when there's something to show.
+    const colInfo = flatColumns[colIdx];
+    const row = rows[rowIdx];
+    if (!colInfo || !row) {
+      setDrill(null);
+      return;
+    }
+    if (colInfo.col.editable) {
+      setDrill(null);
+      return;
+    }
+    const items = drillDown(row.monthKey, colInfo.col.key);
+    if (items && items.length > 0) {
+      setDrill({
+        rowIdx,
+        colIdx,
+        items,
+        title: `${row.monthLabel} ${row.year} — ${colInfo.col.label}`,
+      });
+    } else {
+      setDrill(null);
+    }
+  }, [editing, doCommit, flatColumns, rows, drillDown]);
 
   const handleCellDoubleClick = useCallback((rowIdx: number, colIdx: number) => {
     startEditing({ rowIdx, colIdx });
@@ -259,6 +325,46 @@ export default function SpreadsheetPage() {
   // Sticky offsets for the Time-group columns (kept in sync with the
   // widths declared in column-config.ts).
   const TIME_COL_WIDTHS = { year: 60, month: 80 } as const;
+
+  // Sticky-top offsets — the column-header row's top must match the
+  // height of the group-header row. Heights set via CSS below.
+  const HEADER_ROW_HEIGHT = 30;
+
+  // Aggregates over visible months — one number per numeric column.
+  const aggregates = useMemo(() => {
+    const out: Record<string, number | null> = {};
+    if (rows.length === 0) return out;
+    for (const { col } of flatColumns) {
+      if (col.type === "text" || !col.key) {
+        out[col.key] = null;
+        continue;
+      }
+      const values: number[] = [];
+      for (const row of rows) {
+        const v = row.values[col.key];
+        if (typeof v === "number" && !isNaN(v)) values.push(v);
+      }
+      if (values.length === 0) {
+        out[col.key] = null;
+        continue;
+      }
+      switch (aggKind) {
+        case "sum":
+          out[col.key] = values.reduce((s, v) => s + v, 0);
+          break;
+        case "avg":
+          out[col.key] = values.reduce((s, v) => s + v, 0) / values.length;
+          break;
+        case "min":
+          out[col.key] = Math.min(...values);
+          break;
+        case "max":
+          out[col.key] = Math.max(...values);
+          break;
+      }
+    }
+    return out;
+  }, [rows, flatColumns, aggKind]);
 
   return (
     <div className="min-h-screen w-full p-4 md:p-8 bg-[repeating-linear-gradient(0deg,#fbf6e9,#fbf6e9_28px,#f2e8cf_28px,#f2e8cf_29px)]">
@@ -366,7 +472,10 @@ export default function SpreadsheetPage() {
                 colour, so hover and current-month state stay in sync
                 between the frozen Time columns and the rest. */}
             <style>{SPREADSHEET_CSS}</style>
-            <div className="overflow-x-auto">
+            <div
+              className="overflow-auto"
+              style={{ maxHeight: "calc(100vh - 240px)" }}
+            >
               <table
                 className="ss-table min-w-[600px]"
                 style={{
@@ -406,14 +515,15 @@ export default function SpreadsheetPage() {
                           <th
                             key={`time-group-${idx}`}
                             className={cn(
-                              "ss-cell ss-th-group ss-sticky",
+                              "ss-cell ss-th-group ss-sticky ss-sticky-top",
                               idx === visCols.length - 1 && "ss-freeze-edge",
                               groupHeaderBg(group.id),
                             )}
                             style={{
                               fontFamily: paperTheme.fonts.handwriting,
                               left: idx === 0 ? 0 : TIME_COL_WIDTHS.year,
-                              zIndex: 32,
+                              top: 0,
+                              zIndex: 40,
                             }}
                           >
                             {idx === 0 && (
@@ -430,13 +540,14 @@ export default function SpreadsheetPage() {
                           key={group.id}
                           colSpan={visCols.length}
                           className={cn(
-                            "ss-cell ss-th-group",
+                            "ss-cell ss-th-group ss-sticky-top",
                             groupHeaderBg(group.id),
                             !group.alwaysExpanded && "cursor-pointer select-none",
                           )}
                           style={{
                             fontFamily: paperTheme.fonts.handwriting,
-                            zIndex: 21,
+                            top: 0,
+                            zIndex: 30,
                           }}
                           onClick={
                             group.alwaysExpanded
@@ -478,7 +589,7 @@ export default function SpreadsheetPage() {
                           <th
                             key={col.key}
                             className={cn(
-                              "ss-cell ss-th-col",
+                              "ss-cell ss-th-col ss-sticky-top",
                               groupSubHeaderBg(group.id),
                               isTime && "ss-sticky",
                               isFreezeEdge && "ss-freeze-edge",
@@ -486,7 +597,8 @@ export default function SpreadsheetPage() {
                             style={{
                               fontFamily: paperTheme.fonts.handwriting,
                               left: stickyLeft,
-                              zIndex: isTime ? 32 : 21,
+                              top: HEADER_ROW_HEIGHT,
+                              zIndex: isTime ? 40 : 30,
                             }}
                           >
                             {col.label}
@@ -551,6 +663,93 @@ export default function SpreadsheetPage() {
                     );
                   })}
                 </tbody>
+
+                {/* Aggregate footer row — sticky to bottom of the
+                    scroll container. The leftmost cell carries the
+                    Sum/Avg/Min/Max selector. */}
+                <tfoot>
+                  <tr>
+                    {columnGroups.map((group) => {
+                      const visCols = getVisibleColumns(group);
+                      return visCols.map((col, idx) => {
+                        const isTime = group.id === "time";
+                        const stickyLeft = isTime
+                          ? idx === 0
+                            ? 0
+                            : TIME_COL_WIDTHS.year
+                          : undefined;
+                        const isFreezeEdge =
+                          isTime && idx === visCols.length - 1;
+                        const agg = aggregates[col.key];
+                        const isFirstFooterCell =
+                          isTime && idx === 0;
+
+                        let display: string | React.ReactNode = "";
+                        if (isFirstFooterCell) {
+                          display = (
+                            <select
+                              value={aggKind}
+                              onChange={(e) =>
+                                setAggKind(e.target.value as AggKind)
+                              }
+                              className="bg-transparent border-0 text-xs font-bold text-stone-700 focus:outline-none cursor-pointer w-full text-center"
+                              aria-label="Aggregate function"
+                            >
+                              <option value="sum">Sum</option>
+                              <option value="avg">Avg</option>
+                              <option value="min">Min</option>
+                              <option value="max">Max</option>
+                            </select>
+                          );
+                        } else if (col.type === "text") {
+                          display = "";
+                        } else if (agg == null) {
+                          display = "";
+                        } else if (col.type === "number") {
+                          display = formatNumber(agg);
+                        } else {
+                          display = formatCurrency(agg);
+                        }
+
+                        const isNegative =
+                          typeof agg === "number" && agg < 0;
+                        const isPositiveNet =
+                          col.key === "net" &&
+                          typeof agg === "number" &&
+                          agg > 0;
+
+                        return (
+                          <th
+                            key={col.key}
+                            scope="col"
+                            className={cn(
+                              "ss-cell ss-tfoot-cell",
+                              isTime && "ss-sticky",
+                              isFreezeEdge && "ss-freeze-edge",
+                              !isTime && "text-right",
+                              isNegative
+                                ? "text-red-600"
+                                : isPositiveNet
+                                  ? "text-green-700"
+                                  : "text-stone-800",
+                            )}
+                            style={{
+                              fontFamily:
+                                col.type === "text"
+                                  ? paperTheme.fonts.handwriting
+                                  : paperTheme.fonts.system,
+                              left: stickyLeft,
+                              bottom: 0,
+                              zIndex: isTime ? 35 : 25,
+                            }}
+                          >
+                            {display}
+                          </th>
+                        );
+                      });
+                    })}
+                  </tr>
+                </tfoot>
               </table>
             </div>
 
@@ -558,13 +757,133 @@ export default function SpreadsheetPage() {
             <div className="bg-stone-50 border-t border-amber-200/60 px-4 py-1.5 text-[11px] text-stone-400 flex gap-4 flex-wrap">
               <span>↑↓←→ navigate</span>
               <span>Enter/type: edit</span>
+              <span>Click derived cell: details</span>
               <span>Tab: move right</span>
               <span>Esc: cancel</span>
               <span>Del: clear</span>
             </div>
+
+            {/* Drill-down panel — appears when a derived (income or
+                per-category payment) cell is clicked. Lists the actual
+                rows that produced that cell's value. */}
+            {drill && (
+              <DrillDownPanel
+                title={drill.title}
+                items={drill.items}
+                onClose={() => setDrill(null)}
+              />
+            )}
+
+            {/* Save-status pill — fades in for ~1.5s after every commit. */}
+            {saveStatus && (
+              <div
+                role="status"
+                className={cn(
+                  "absolute top-3 right-3 z-50 px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 shadow-md transition-opacity",
+                  saveStatus.state === "ok"
+                    ? "bg-green-100 text-green-700 border border-green-300"
+                    : "bg-red-100 text-red-700 border border-red-300",
+                )}
+              >
+                {saveStatus.state === "ok" ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    Saved
+                  </>
+                ) : (
+                  <>
+                    <RotateCw className="w-3.5 h-3.5" />
+                    Save failed
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ============================================
+// DRILL-DOWN PANEL
+// ============================================
+
+function DrillDownPanel({
+  title,
+  items,
+  onClose,
+}: {
+  title: string;
+  items: DrillDownItem[];
+  onClose: () => void;
+}) {
+  const total = items.reduce((s, it) => {
+    if (it.kind === "deposit") return s + it.tx.amount;
+    return s + it.expense.amount;
+  }, 0);
+
+  return (
+    <div
+      className={cn(
+        "absolute right-3 bottom-12 z-50 w-80 max-h-80 overflow-y-auto",
+        "bg-white border-2 rounded-xl shadow-xl",
+        paperTheme.colors.borders.amber,
+      )}
+    >
+      <div className="sticky top-0 bg-amber-50 border-b border-amber-200 px-3 py-2 flex items-center justify-between">
+        <div>
+          <div className="text-xs font-semibold text-amber-700">{title}</div>
+          <div className="text-[10px] text-stone-500">
+            {items.length} item{items.length === 1 ? "" : "s"} · Total{" "}
+            {formatCurrency(total)}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="text-stone-400 hover:text-stone-700 px-2 py-0.5 rounded"
+        >
+          ✕
+        </button>
+      </div>
+      <ul className="divide-y divide-stone-100">
+        {items.map((it, idx) => {
+          if (it.kind === "deposit") {
+            return (
+              <li key={idx} className="px-3 py-2 text-xs">
+                <div className="flex justify-between items-baseline">
+                  <span className="font-semibold text-green-700">
+                    +{formatCurrency(it.tx.amount)}
+                  </span>
+                  <span className="text-[10px] text-stone-400">
+                    {new Date(it.tx.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+                {it.tx.note && (
+                  <div className="text-stone-500 mt-0.5">{it.tx.note}</div>
+                )}
+              </li>
+            );
+          }
+          return (
+            <li key={idx} className="px-3 py-2 text-xs">
+              <div className="flex justify-between items-baseline">
+                <span className="font-semibold text-red-600">
+                  -{formatCurrency(it.expense.amount)}
+                </span>
+                <span className="text-[10px] text-stone-400">
+                  {new Date(it.expense.date).toLocaleDateString()}
+                </span>
+              </div>
+              {it.expense.note && (
+                <div className="text-stone-500 mt-0.5">{it.expense.note}</div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -614,8 +933,20 @@ function SpreadsheetCell({
   }
 
   const isNegative = typeof value === "number" && value < 0;
+  const isPositiveNet =
+    col.key === "net" && typeof value === "number" && value > 0;
   const isText = col.type === "text";
   const isSticky = stickyLeft !== undefined;
+  const hasValue =
+    typeof value === "number" ? value !== 0 : value != null && value !== "";
+  // A cell is drillable when single-click should open the popover —
+  // only non-editable derived cells (income, per-category payments)
+  // with a non-zero underlying value.
+  const isDrillable =
+    !col.editable &&
+    hasValue &&
+    (col.key === "income_total" ||
+      (col.key.startsWith("payment_") && col.key !== "payment_total"));
 
   const handleInputKeyDown = (e: React.KeyboardEvent) => {
     // Let Enter/Tab/Escape bubble to the grid's onKeyDown which handles commit/cancel
@@ -629,9 +960,14 @@ function SpreadsheetCell({
       className={cn(
         "ss-cell ss-td",
         isText ? "text-left" : "text-right",
-        isNegative ? "text-red-600" : "text-stone-800",
+        isNegative
+          ? "text-red-600"
+          : isPositiveNet
+            ? "text-green-700"
+            : "text-stone-800",
         col.editable && "cursor-cell",
-        !col.editable && "cursor-default",
+        !col.editable && !isDrillable && "cursor-default",
+        isDrillable && "cursor-pointer ss-drillable",
         col.type === "computed" && "ss-td-computed",
         isActive && !isEditing && "ss-td-active",
         isSticky && "ss-sticky",
@@ -700,15 +1036,21 @@ const SPREADSHEET_CSS = `
 .ss-th-group {
   text-align: center;
   font-weight: 700;
-  font-size: 14px;
-  padding: 8px;
+  font-size: 13px;
+  /* Padding keeps the row at HEADER_ROW_HEIGHT (30px) so the
+     column-header row's sticky top-offset lines up perfectly. */
+  padding: 5px 8px;
+  height: 30px;
+  box-sizing: border-box;
 }
 .ss-th-col {
   text-align: inherit;
   font-weight: 600;
   font-size: 12px;
   color: rgb(68 64 60);
-  padding: 6px 8px;
+  padding: 4px 8px;
+  height: 26px;
+  box-sizing: border-box;
 }
 
 /* Row state drives both the row's background AND the sticky cells'
@@ -804,6 +1146,46 @@ const SPREADSHEET_CSS = `
 .ss-td:not(.ss-sticky) {
   position: relative;
 }
+
+/* Sticky-top header rows. Each header row pins itself; the column-row
+   sits below the group-row at an explicit offset. */
+.ss-sticky-top {
+  position: sticky;
+}
+
+/* Group header rows have an opaque background already (bg-* classes
+   apply). The column-header row needs to KEEP its own background even
+   when the user scrolls vertically, so non-sticky-left column headers
+   get an explicit white-ish backstop here. */
+.ss-th-col {
+  background-color: inherit;
+}
+
+/* Aggregate footer row — sticky bottom and visually distinct. Cells
+   inherit a beige tint so they read as "summary" without competing
+   with row tints. */
+.ss-tfoot-cell {
+  position: sticky;
+  background: #f5f5f4;            /* stone-100 */
+  border-top: 2px solid rgb(252 211 77);  /* amber-300 — matches freeze line */
+  font-weight: 700;
+  padding: 6px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ss-tfoot-cell.ss-sticky {
+  background: #f5f5f4;
+}
+
+/* Drill-down trigger affordance: clickable derived cells get a faint
+   underline on hover so the user knows they can drill in. Only fires
+   on rows that have a non-zero value (we leave it to the click handler
+   to no-op on empty cells). */
+.ss-td.ss-drillable:hover {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  text-decoration-color: rgb(120 113 108);  /* stone-500 */
+}
 `;
 
 
@@ -819,6 +1201,8 @@ function groupHeaderBg(id: ColumnGroupId): string {
       return "bg-emerald-100/80";
     case "payments":
       return "bg-red-100/80";
+    case "net":
+      return "bg-amber-100/80";
     case "savings":
       return "bg-blue-100/80";
     case "other":
@@ -834,6 +1218,8 @@ function groupSubHeaderBg(id: ColumnGroupId): string {
       return "bg-emerald-50/60";
     case "payments":
       return "bg-red-50/60";
+    case "net":
+      return "bg-amber-50/60";
     case "savings":
       return "bg-blue-50/60";
     case "other":
@@ -844,13 +1230,10 @@ function groupSubHeaderBg(id: ColumnGroupId): string {
 function groupCellBg(id: ColumnGroupId): string {
   switch (id) {
     case "time":
-      return "";
     case "income":
-      return "";
     case "payments":
-      return "";
+    case "net":
     case "savings":
-      return "";
     case "other":
       return "";
   }

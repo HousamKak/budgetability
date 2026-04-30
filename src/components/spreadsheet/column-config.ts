@@ -20,6 +20,13 @@ const fixedPaymentColumns: ColumnDef[] = [
   { key: "payment_total", label: "Total Payments", type: "computed", editable: false, width: 120 },
 ];
 
+// Net = income_total + payment_total (payments already negative).
+// One column in its own group so it can't be collapsed away — it's the
+// number a user looks at first.
+const netColumns: ColumnDef[] = [
+  { key: "net", label: "Net", type: "computed", editable: false, width: 110 },
+];
+
 const savingsColumns: ColumnDef[] = [
   { key: "savings_drhm", label: "Savings in DRHM", type: "currency", editable: true, width: 120 },
   { key: "savings_dollar", label: "Savings in Dollar", type: "currency", editable: true, width: 120 },
@@ -70,6 +77,13 @@ export function buildColumnGroups(
       label: "Payments",
       summaryColumnKey: "payment_total",
       columns: paymentColumns,
+    },
+    {
+      id: "net",
+      label: "Net",
+      summaryColumnKey: "net",
+      columns: netColumns,
+      alwaysExpanded: true,
     },
     {
       id: "savings",
