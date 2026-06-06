@@ -548,10 +548,13 @@ export default function AccountsPage() {
                 </Button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+              <div className="columns-1 lg:columns-2 gap-3">
                 {groupedAccounts.map(({ group, members }) => (
-                  <AccountGroupBand
+                  <div
                     key={group.id}
+                    className="mb-3 break-inside-avoid"
+                  >
+                  <AccountGroupBand
                     group={group}
                     members={members}
                     onOpenSummary={(g) => {
@@ -573,6 +576,7 @@ export default function AccountsPage() {
                     onDeposit={depositTo}
                     onSetDefault={handleSetDefault}
                   />
+                  </div>
                 ))}
               </div>
             )}
