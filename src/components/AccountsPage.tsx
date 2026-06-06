@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AccountCard } from "./accounts/AccountCard";
+import { readAccountDrag, startAccountDrag } from "./accounts/accountDrag";
 import { AccountForm } from "./accounts/AccountForm";
 import { AccountGroupBand } from "./accounts/AccountGroupBand";
 import { AccountTransactionsDialog } from "./accounts/AccountTransactionsDialog";
@@ -36,13 +37,14 @@ export default function AccountsPage() {
   // Dialog states
   const [showAccountForm, setShowAccountForm] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | undefined>();
-  const [formGroupId, setFormGroupId] = useState<string | null>(null);
+  const [formGroupIds, setFormGroupIds] = useState<string[]>([]);
 
   // Group dialog states
   const [showGroupForm, setShowGroupForm] = useState(false);
   const [editingGroup, setEditingGroup] = useState<AccountGroup | undefined>();
   const [showGroupSummary, setShowGroupSummary] = useState(false);
   const [summaryGroup, setSummaryGroup] = useState<AccountGroup | null>(null);
+  const [ungroupedOver, setUngroupedOver] = useState(false);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
   const [transferSourceAccount, setTransferSourceAccount] = useState<
     Account | undefined
@@ -76,7 +78,10 @@ export default function AccountsPage() {
     account: Omit<Account, "id" | "currentBalance">,
   ) => {
     try {
-      await dataService.addAccount(account);
+      const { groupIds = [], ...rest } = account;
+      const created = await dataService.addAccount(rest);
+      if (groupIds.length > 0)
+        await dataService.setAccountGroups(created.id, groupIds);
       await loadData();
     } catch (error) {
       console.error("Failed to create account:", error);
@@ -88,7 +93,9 @@ export default function AccountsPage() {
   ) => {
     if (!editingAccount) return;
     try {
-      await dataService.updateAccount(editingAccount.id, account);
+      const { groupIds = [], ...rest } = account;
+      await dataService.updateAccount(editingAccount.id, rest);
+      await dataService.setAccountGroups(editingAccount.id, groupIds);
       await loadData();
       setEditingAccount(undefined);
     } catch (error) {
@@ -184,8 +191,59 @@ export default function AccountsPage() {
 
   const openNewAccount = (groupId: string | null = null) => {
     setEditingAccount(undefined);
-    setFormGroupId(groupId);
+    setFormGroupIds(groupId ? [groupId] : []);
     setShowAccountForm(true);
+  };
+
+  // Optimistic membership mutation helper: apply `updater` to the account's
+  // groupIds locally, persist via `persist`, revert from server on failure.
+  const mutateMembership = async (
+    accountId: string,
+    updater: (groupIds: string[]) => string[],
+    persist: () => Promise<void>,
+  ) => {
+    setAccounts((prev) =>
+      prev.map((a) =>
+        a.id === accountId
+          ? { ...a, groupIds: updater(a.groupIds ?? []) }
+          : a,
+      ),
+    );
+    try {
+      await persist();
+    } catch (error) {
+      console.error("Failed to update membership:", error);
+      await loadData(); // revert to source of truth
+    }
+  };
+
+  // Drag an account onto a group band → add it to that group (keep others).
+  const addAccountToGroup = (groupId: string, accountId: string) => {
+    const acct = accounts.find((a) => a.id === accountId);
+    if (acct?.groupIds?.includes(groupId)) return; // already a member
+    mutateMembership(
+      accountId,
+      (ids) => [...ids, groupId],
+      () => dataService.addAccountToGroup(accountId, groupId),
+    );
+  };
+
+  // Remove an account from a single group (keeps its other memberships).
+  const removeFromGroup = (groupId: string, accountId: string) => {
+    mutateMembership(
+      accountId,
+      (ids) => ids.filter((g) => g !== groupId),
+      () => dataService.removeAccountFromGroup(accountId, groupId),
+    );
+  };
+
+  // Drop onto the Ungrouped zone → detach from every group.
+  const detachFromAllGroups = (accountId: string) => {
+    mutateMembership(
+      accountId,
+      () => [],
+      () => dataService.removeAccountFromAllGroups(accountId),
+    );
   };
 
   // Per-account card actions (shared by flat grid and group bands)
@@ -195,7 +253,7 @@ export default function AccountsPage() {
   };
   const editAccount = (a: Account) => {
     setEditingAccount(a);
-    setFormGroupId(a.groupId ?? null);
+    setFormGroupIds(a.groupIds ?? []);
     setShowAccountForm(true);
   };
   const transferFrom = (a: Account) => {
@@ -209,17 +267,15 @@ export default function AccountsPage() {
 
   const totalBalance = accounts.reduce((sum, a) => sum + a.currentBalance, 0);
 
-  // Members of a group, ordered; and accounts with no (or stale) group.
+  // Members of each group (an account can appear in several); and accounts
+  // that belong to no group at all.
   const groupedAccounts = groups.map((g) => ({
     group: g,
-    members: accounts.filter((a) => a.groupId === g.id),
+    members: accounts.filter((a) => a.groupIds?.includes(g.id)),
   }));
-  const groupIds = new Set(groups.map((g) => g.id));
-  const ungroupedAccounts = accounts.filter(
-    (a) => !a.groupId || !groupIds.has(a.groupId),
-  );
+  const ungroupedAccounts = accounts.filter((a) => !a.groupIds?.length);
   const summaryMembers = summaryGroup
-    ? accounts.filter((a) => a.groupId === summaryGroup.id)
+    ? accounts.filter((a) => a.groupIds?.includes(summaryGroup.id))
     : [];
 
   return (
@@ -481,6 +537,8 @@ export default function AccountsPage() {
                 }}
                 onDeleteGroup={handleDeleteGroup}
                 onAddAccount={(g) => openNewAccount(g.id)}
+                onAccountDrop={addAccountToGroup}
+                onRemoveFromGroup={removeFromGroup}
                 onCardClick={cardClick}
                 onEditAccount={editAccount}
                 onDeleteAccount={handleDeleteAccount}
@@ -516,33 +574,73 @@ export default function AccountsPage() {
               </div>
             )}
 
-            {/* Ungrouped accounts */}
-            {ungroupedAccounts.length > 0 && (
-              <div className="mt-2">
-                <h2
-                  className={cn(
-                    "text-lg font-bold mb-3 text-stone-500",
-                    paperTheme.fonts.handwriting,
-                  )}
-                >
-                  Ungrouped
-                </h2>
+            {/* Ungrouped accounts — also a drop zone to detach from a group */}
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (!ungroupedOver) setUngroupedOver(true);
+              }}
+              onDragLeave={(e) => {
+                if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                setUngroupedOver(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setUngroupedOver(false);
+                const id = readAccountDrag(e);
+                if (id) detachFromAllGroups(id);
+              }}
+              className={cn(
+                "mt-2 rounded-2xl p-3 transition-all",
+                ungroupedOver && "ring-2 ring-amber-400 ring-offset-2",
+              )}
+            >
+              <h2
+                className={cn(
+                  "text-lg font-bold mb-3 text-stone-500",
+                  paperTheme.fonts.handwriting,
+                )}
+              >
+                Ungrouped
+              </h2>
+              {ungroupedAccounts.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {ungroupedAccounts.map((account) => (
-                    <AccountCard
+                    <div
                       key={account.id}
-                      account={account}
-                      onClick={cardClick}
-                      onEdit={editAccount}
-                      onDelete={handleDeleteAccount}
-                      onTransfer={transferFrom}
-                      onDeposit={depositTo}
-                      onSetDefault={handleSetDefault}
-                    />
+                      draggable
+                      onDragStart={(e) => startAccountDrag(e, account.id)}
+                      className="cursor-grab active:cursor-grabbing"
+                      title="Drag onto a group to add this account"
+                    >
+                      <AccountCard
+                        account={account}
+                        onClick={cardClick}
+                        onEdit={editAccount}
+                        onDelete={handleDeleteAccount}
+                        onTransfer={transferFrom}
+                        onDeposit={depositTo}
+                        onSetDefault={handleSetDefault}
+                      />
+                    </div>
                   ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <div
+                  className={cn(
+                    "py-6 rounded-xl border-2 border-dashed text-center text-sm text-stone-500",
+                    ungroupedOver
+                      ? "border-amber-400 bg-amber-50/60"
+                      : "border-stone-300/60",
+                  )}
+                >
+                  {ungroupedOver
+                    ? "Drop to remove from its group"
+                    : "Drag an account here to remove it from its group"}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -553,13 +651,13 @@ export default function AccountsPage() {
             setShowAccountForm(open);
             if (!open) {
               setEditingAccount(undefined);
-              setFormGroupId(null);
+              setFormGroupIds([]);
             }
           }}
           onSubmit={editingAccount ? handleUpdateAccount : handleCreateAccount}
           editingAccount={editingAccount}
           groups={groups}
-          defaultGroupId={formGroupId}
+          defaultGroupIds={formGroupIds}
         />
 
         <GroupForm

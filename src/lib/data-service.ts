@@ -26,8 +26,16 @@ export type Account = {
   color?: string;
   icon?: string;
   sortOrder: number;
-  // Optional parent group ("mother account"). null/undefined = ungrouped.
-  groupId?: string | null;
+  // Parent groups ("mother accounts") this account belongs to. An account can
+  // be in several groups at once (overlapping aggregates). Populated on read;
+  // empty/undefined = ungrouped.
+  groupIds?: string[];
+};
+
+// Account ↔ group membership (many-to-many join row)
+export type AccountGroupMember = {
+  groupId: string;
+  accountId: string;
 };
 
 // Account Group type - a non-transactable "mother account" that groups several
@@ -133,6 +141,7 @@ export type Store = {
   categories: Category[];
   accounts: Account[];
   accountGroups: AccountGroup[];
+  accountGroupMembers: AccountGroupMember[];
   accountTransactions: AccountTransaction[];
   budgetAllocations: Record<string, BudgetAllocation[]>;
   savingsGoals: SavingsGoal[];
@@ -211,6 +220,7 @@ const defaultStore: Store = {
   categories: [],
   accounts: [],
   accountGroups: [],
+  accountGroupMembers: [],
   accountTransactions: [],
   budgetAllocations: {},
   savingsGoals: [],
@@ -234,6 +244,7 @@ function loadStoreFromLocalStorage(): Store {
           categories: [],
           accounts: [],
           accountGroups: [],
+          accountGroupMembers: [],
           accountTransactions: [],
           budgetAllocations: {},
           savingsGoals: [],
@@ -246,14 +257,24 @@ function loadStoreFromLocalStorage(): Store {
       return { ...defaultStore };
     }
     const parsed = JSON.parse(raw) as Partial<Store>;
+    const accounts = parsed.accounts ?? [];
+    // Migrate any legacy single-membership (account.groupId) into the join list
+    let members = parsed.accountGroupMembers ?? [];
+    if (members.length === 0) {
+      const legacy = (accounts as Array<Account & { groupId?: string }>)
+        .filter((a) => a.groupId)
+        .map((a) => ({ groupId: a.groupId as string, accountId: a.id }));
+      if (legacy.length > 0) members = legacy;
+    }
     return {
       budgets: parsed.budgets ?? {},
       expenses: parsed.expenses ?? {},
       plans: parsed.plans ?? {},
       drafts: parsed.drafts ?? [],
       categories: parsed.categories ?? [],
-      accounts: parsed.accounts ?? [],
+      accounts,
       accountGroups: parsed.accountGroups ?? [],
+      accountGroupMembers: members,
       accountTransactions: parsed.accountTransactions ?? [],
       budgetAllocations: parsed.budgetAllocations ?? {},
       savingsGoals: parsed.savingsGoals ?? [],
@@ -1218,6 +1239,14 @@ export class DataService {
 
         if (error) throw error;
 
+        const members = await this.getAccountGroupMembers();
+        const groupsByAccount = new Map<string, string[]>();
+        for (const m of members) {
+          const list = groupsByAccount.get(m.accountId) ?? [];
+          list.push(m.groupId);
+          groupsByAccount.set(m.accountId, list);
+        }
+
         const accounts =
           data?.map((row) => ({
             id: row.id,
@@ -1229,8 +1258,7 @@ export class DataService {
             color: row.color || undefined,
             icon: row.icon || undefined,
             sortOrder: row.sort_order,
-            groupId:
-              (row as { group_id?: string | null }).group_id || null,
+            groupIds: groupsByAccount.get(row.id) ?? [],
           })) || [];
 
         this.localStore.accounts = accounts;
@@ -1243,7 +1271,14 @@ export class DataService {
       }
     }
 
-    return this.localStore.accounts ?? [];
+    // Local: attach groupIds from the membership list
+    const members = this.localStore.accountGroupMembers ?? [];
+    return (this.localStore.accounts ?? []).map((a) => ({
+      ...a,
+      groupIds: members
+        .filter((m) => m.accountId === a.id)
+        .map((m) => m.groupId),
+    }));
   }
 
   async addAccount(
@@ -1274,8 +1309,7 @@ export class DataService {
             color: account.color,
             icon: account.icon,
             sort_order: account.sortOrder,
-            group_id: account.groupId ?? null,
-          } as never);
+          });
 
           if (error) throw error;
           return newAccount;
@@ -1308,8 +1342,6 @@ export class DataService {
         if (updates.icon !== undefined) dbUpdates.icon = updates.icon;
         if (updates.sortOrder !== undefined)
           dbUpdates.sort_order = updates.sortOrder;
-        if (updates.groupId !== undefined)
-          dbUpdates.group_id = updates.groupId ?? null;
 
         const { error } = await supabase
           .from("accounts")
@@ -1359,6 +1391,11 @@ export class DataService {
     this.localStore.accounts = this.localStore.accounts.filter(
       (a) => a.id !== id,
     );
+
+    // Remove its group memberships (DB cascades; mirror locally)
+    this.localStore.accountGroupMembers = (
+      this.localStore.accountGroupMembers ?? []
+    ).filter((m) => m.accountId !== id);
 
     // Clean up any remaining orphaned allocations in all months
     for (const monthKey of Object.keys(this.localStore.budgetAllocations)) {
@@ -1509,8 +1546,8 @@ export class DataService {
     saveStoreToLocalStorage(this.localStore);
   }
 
-  // Deleting a group never deletes its accounts — members simply become
-  // ungrouped (group_id is set to NULL by the DB FK / locally below).
+  // Deleting a group never deletes its accounts — only its membership rows are
+  // removed (DB FK cascades; mirrored locally below).
   async removeAccountGroup(id: string): Promise<void> {
     if (this.useSupabase && supabase) {
       try {
@@ -1520,13 +1557,12 @@ export class DataService {
           .eq("id", id);
 
         if (error) throw error;
-        // FK ON DELETE SET NULL already detached members in the DB.
+        // FK ON DELETE CASCADE already removed membership rows in the DB.
         this.localStore.accountGroups = this.localStore.accountGroups.filter(
           (g) => g.id !== id,
         );
-        this.localStore.accounts = this.localStore.accounts.map((a) =>
-          a.groupId === id ? { ...a, groupId: null } : a,
-        );
+        this.localStore.accountGroupMembers =
+          this.localStore.accountGroupMembers.filter((m) => m.groupId !== id);
         saveStoreToLocalStorage(this.localStore);
         return;
       } catch (error) {
@@ -1538,18 +1574,126 @@ export class DataService {
     this.localStore.accountGroups = this.localStore.accountGroups.filter(
       (g) => g.id !== id,
     );
-    this.localStore.accounts = this.localStore.accounts.map((a) =>
-      a.groupId === id ? { ...a, groupId: null } : a,
-    );
+    this.localStore.accountGroupMembers =
+      this.localStore.accountGroupMembers.filter((m) => m.groupId !== id);
     saveStoreToLocalStorage(this.localStore);
   }
 
-  // Assign (or clear, with groupId = null) an account's parent group.
-  async assignAccountToGroup(
+  // ============================================
+  // ACCOUNT ↔ GROUP MEMBERSHIP (many-to-many)
+  // ============================================
+  async getAccountGroupMembers(): Promise<AccountGroupMember[]> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("account_group_members")
+          .select("group_id, account_id");
+
+        if (error) throw error;
+
+        const members =
+          (data as Array<Record<string, unknown>> | null)?.map((row) => ({
+            groupId: row.group_id as string,
+            accountId: row.account_id as string,
+          })) || [];
+
+        this.localStore.accountGroupMembers = members;
+        saveStoreToLocalStorage(this.localStore);
+        return members;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    return this.localStore.accountGroupMembers ?? [];
+  }
+
+  // Add an account to a group (no-op if already a member).
+  async addAccountToGroup(accountId: string, groupId: string): Promise<void> {
+    const exists = (this.localStore.accountGroupMembers ?? []).some(
+      (m) => m.accountId === accountId && m.groupId === groupId,
+    );
+
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser();
+        if (!user) throw new Error("Not authenticated");
+
+        const { error } = await supabase
+          .from("account_group_members")
+          .upsert(
+            {
+              user_id: user.id,
+              group_id: groupId,
+              account_id: accountId,
+            },
+            { onConflict: "group_id,account_id", ignoreDuplicates: true },
+          );
+
+        if (error) throw error;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    if (!exists) {
+      this.localStore.accountGroupMembers = [
+        ...(this.localStore.accountGroupMembers ?? []),
+        { accountId, groupId },
+      ];
+      saveStoreToLocalStorage(this.localStore);
+    }
+  }
+
+  // Remove an account from a single group.
+  async removeAccountFromGroup(
     accountId: string,
-    groupId: string | null,
+    groupId: string,
   ): Promise<void> {
-    await this.updateAccount(accountId, { groupId });
+    if (this.useSupabase && supabase) {
+      try {
+        const { error } = await supabase
+          .from("account_group_members")
+          .delete()
+          .eq("account_id", accountId)
+          .eq("group_id", groupId);
+
+        if (error) throw error;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    this.localStore.accountGroupMembers = (
+      this.localStore.accountGroupMembers ?? []
+    ).filter((m) => !(m.accountId === accountId && m.groupId === groupId));
+    saveStoreToLocalStorage(this.localStore);
+  }
+
+  // Replace the full set of groups an account belongs to.
+  async setAccountGroups(
+    accountId: string,
+    groupIds: string[],
+  ): Promise<void> {
+    const desired = new Set(groupIds);
+    const current = new Set(
+      (this.localStore.accountGroupMembers ?? [])
+        .filter((m) => m.accountId === accountId)
+        .map((m) => m.groupId),
+    );
+    const toAdd = groupIds.filter((g) => !current.has(g));
+    const toRemove = [...current].filter((g) => !desired.has(g));
+
+    for (const g of toAdd) await this.addAccountToGroup(accountId, g);
+    for (const g of toRemove) await this.removeAccountFromGroup(accountId, g);
+  }
+
+  // Detach an account from every group it belongs to.
+  async removeAccountFromAllGroups(accountId: string): Promise<void> {
+    await this.setAccountGroups(accountId, []);
   }
 
   async depositToAccount(

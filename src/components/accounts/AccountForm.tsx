@@ -38,8 +38,6 @@ function getDefaultIconForType(type: Account["accountType"]): string {
   return DEFAULT_ICONS[type] || "wallet";
 }
 
-const NO_GROUP = "__none__";
-
 interface AccountFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -47,8 +45,8 @@ interface AccountFormProps {
   editingAccount?: Account;
   /** Available groups to assign this account to ("mother accounts"). */
   groups?: AccountGroup[];
-  /** Pre-select a group (e.g. when adding from a group band). */
-  defaultGroupId?: string | null;
+  /** Pre-select groups (e.g. when adding from a group band). */
+  defaultGroupIds?: string[];
 }
 
 /**
@@ -60,7 +58,7 @@ export function AccountForm({
   onSubmit,
   editingAccount,
   groups = [],
-  defaultGroupId = null,
+  defaultGroupIds,
 }: AccountFormProps) {
   const [name, setName] = useState("");
   const [accountType, setAccountType] =
@@ -68,7 +66,7 @@ export function AccountForm({
   const [initialBalance, setInitialBalance] = useState("");
   const [isDefault, setIsDefault] = useState(false);
   const [icon, setIcon] = useState("");
-  const [groupId, setGroupId] = useState<string | null>(null);
+  const [groupIds, setGroupIds] = useState<string[]>([]);
 
   const isEditing = !!editingAccount;
 
@@ -81,17 +79,22 @@ export function AccountForm({
         setInitialBalance(editingAccount.initialBalance.toString());
         setIsDefault(editingAccount.isDefault);
         setIcon(editingAccount.icon || "");
-        setGroupId(editingAccount.groupId ?? null);
+        setGroupIds(editingAccount.groupIds ?? []);
       } else {
         setName("");
         setAccountType("checking");
         setInitialBalance("");
         setIsDefault(false);
         setIcon("");
-        setGroupId(defaultGroupId ?? null);
+        setGroupIds(defaultGroupIds ?? []);
       }
     }
-  }, [open, editingAccount, defaultGroupId]);
+  }, [open, editingAccount, defaultGroupIds]);
+
+  const toggleGroup = (id: string) =>
+    setGroupIds((prev) =>
+      prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id],
+    );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,7 +108,7 @@ export function AccountForm({
       isDefault,
       icon: icon || undefined,
       sortOrder: 0,
-      groupId,
+      groupIds,
     });
 
     onOpenChange(false);
@@ -204,34 +207,48 @@ export function AccountForm({
             </Select>
           </div>
 
-          {/* Group (mother account) */}
+          {/* Groups (mother accounts) — multi-select chips */}
           {groups.length > 0 && (
             <div className="space-y-2">
               <Label className={cn("text-base", paperTheme.fonts.handwriting)}>
-                Group
+                Groups
+                <span className="ml-1 text-xs font-normal text-stone-400">
+                  optional · pick any
+                </span>
               </Label>
-              <Select
-                value={groupId ?? NO_GROUP}
-                onValueChange={(v) => setGroupId(v === NO_GROUP ? null : v)}
-              >
-                <SelectTrigger
-                  className={cn(
-                    "w-full rounded-xl border-2 shadow-sm",
-                    paperTheme.colors.borders.amber,
-                    paperTheme.colors.background.white,
-                  )}
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_GROUP}>No group</SelectItem>
-                  {groups.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>
+              <div className="flex flex-wrap gap-1.5">
+                {groups.map((g) => {
+                  const active = groupIds.includes(g.id);
+                  const accent = g.color || "#f59e0b";
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      onClick={() => toggleGroup(g.id)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border-2 transition-all cursor-pointer",
+                        active
+                          ? "text-white shadow-sm"
+                          : "bg-white/70 text-stone-600 border-transparent hover:bg-white",
+                      )}
+                      style={
+                        active
+                          ? { backgroundColor: accent, borderColor: accent }
+                          : { borderColor: accent + "55" }
+                      }
+                    >
+                      {g.icon && (
+                        <CategoryIcon
+                          name={g.icon}
+                          className="w-3.5 h-3.5"
+                          style={active ? undefined : { color: accent }}
+                        />
+                      )}
                       {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 
