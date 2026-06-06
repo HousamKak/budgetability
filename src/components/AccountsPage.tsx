@@ -13,9 +13,10 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AccountCard } from "./accounts/AccountCard";
-import { readAccountDrag, startAccountDrag } from "./accounts/accountDrag";
+import { readAccountDrag } from "./accounts/accountDrag";
 import { AccountForm } from "./accounts/AccountForm";
 import { AccountGroupBand } from "./accounts/AccountGroupBand";
+import { AccountRow } from "./accounts/AccountRow";
 import { AccountTransactionsDialog } from "./accounts/AccountTransactionsDialog";
 import { DepositDialog } from "./accounts/DepositDialog";
 import { GroupForm } from "./accounts/GroupForm";
@@ -520,38 +521,12 @@ export default function AccountsPage() {
             ))}
           </div>
         ) : (
-          <div>
-            {/* Group bands ("mother accounts") */}
-            {groupedAccounts.map(({ group, members }) => (
-              <AccountGroupBand
-                key={group.id}
-                group={group}
-                members={members}
-                onOpenSummary={(g) => {
-                  setSummaryGroup(g);
-                  setShowGroupSummary(true);
-                }}
-                onEditGroup={(g) => {
-                  setEditingGroup(g);
-                  setShowGroupForm(true);
-                }}
-                onDeleteGroup={handleDeleteGroup}
-                onAddAccount={(g) => openNewAccount(g.id)}
-                onAccountDrop={addAccountToGroup}
-                onRemoveFromGroup={removeFromGroup}
-                onCardClick={cardClick}
-                onEditAccount={editAccount}
-                onDeleteAccount={handleDeleteAccount}
-                onTransfer={transferFrom}
-                onDeposit={depositTo}
-                onSetDefault={handleSetDefault}
-              />
-            ))}
-
-            {groups.length === 0 && (
+          <div className="space-y-4">
+            {/* Group cards in a responsive 2-column grid */}
+            {groups.length === 0 ? (
               <div
                 className={cn(
-                  "mb-5 p-6 rounded-2xl border-2 border-dashed text-center",
+                  "p-6 rounded-2xl border-2 border-dashed text-center",
                   paperTheme.colors.borders.amber,
                 )}
               >
@@ -572,9 +547,37 @@ export default function AccountsPage() {
                   New Group
                 </Button>
               </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+                {groupedAccounts.map(({ group, members }) => (
+                  <AccountGroupBand
+                    key={group.id}
+                    group={group}
+                    members={members}
+                    onOpenSummary={(g) => {
+                      setSummaryGroup(g);
+                      setShowGroupSummary(true);
+                    }}
+                    onEditGroup={(g) => {
+                      setEditingGroup(g);
+                      setShowGroupForm(true);
+                    }}
+                    onDeleteGroup={handleDeleteGroup}
+                    onAddAccount={(g) => openNewAccount(g.id)}
+                    onAccountDrop={addAccountToGroup}
+                    onRemoveFromGroup={removeFromGroup}
+                    onCardClick={cardClick}
+                    onEditAccount={editAccount}
+                    onDeleteAccount={handleDeleteAccount}
+                    onTransfer={transferFrom}
+                    onDeposit={depositTo}
+                    onSetDefault={handleSetDefault}
+                  />
+                ))}
+              </div>
             )}
 
-            {/* Ungrouped accounts — also a drop zone to detach from a group */}
+            {/* Ungrouped — compact rows; also a drop zone to detach from groups */}
             <div
               onDragOver={(e) => {
                 e.preventDefault();
@@ -592,52 +595,47 @@ export default function AccountsPage() {
                 if (id) detachFromAllGroups(id);
               }}
               className={cn(
-                "mt-2 rounded-2xl p-3 transition-all",
-                ungroupedOver && "ring-2 ring-amber-400 ring-offset-2",
+                "rounded-xl border bg-white/50 p-2 transition-all",
+                ungroupedOver
+                  ? "ring-2 ring-amber-400 border-amber-300"
+                  : "border-stone-200/70",
               )}
             >
-              <h2
-                className={cn(
-                  "text-lg font-bold mb-3 text-stone-500",
-                  paperTheme.fonts.handwriting,
-                )}
-              >
-                Ungrouped
-              </h2>
+              <div className="flex items-center gap-2 px-1.5 py-1">
+                <h2 className="text-xs font-bold uppercase tracking-wide text-stone-400">
+                  Ungrouped
+                </h2>
+                <span className="text-[11px] text-stone-300">
+                  {ungroupedAccounts.length}
+                </span>
+              </div>
               {ungroupedAccounts.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-2">
                   {ungroupedAccounts.map((account) => (
-                    <div
+                    <AccountRow
                       key={account.id}
-                      draggable
-                      onDragStart={(e) => startAccountDrag(e, account.id)}
-                      className="cursor-grab active:cursor-grabbing"
-                      title="Drag onto a group to add this account"
-                    >
-                      <AccountCard
-                        account={account}
-                        onClick={cardClick}
-                        onEdit={editAccount}
-                        onDelete={handleDeleteAccount}
-                        onTransfer={transferFrom}
-                        onDeposit={depositTo}
-                        onSetDefault={handleSetDefault}
-                      />
-                    </div>
+                      account={account}
+                      onClick={cardClick}
+                      onEdit={editAccount}
+                      onDelete={handleDeleteAccount}
+                      onTransfer={transferFrom}
+                      onDeposit={depositTo}
+                      onSetDefault={handleSetDefault}
+                    />
                   ))}
                 </div>
               ) : (
                 <div
                   className={cn(
-                    "py-6 rounded-xl border-2 border-dashed text-center text-sm text-stone-500",
+                    "py-4 rounded-lg border border-dashed text-center text-xs text-stone-400",
                     ungroupedOver
-                      ? "border-amber-400 bg-amber-50/60"
+                      ? "border-amber-400 bg-amber-50/60 text-amber-600"
                       : "border-stone-300/60",
                   )}
                 >
                   {ungroupedOver
-                    ? "Drop to remove from its group"
-                    : "Drag an account here to remove it from its group"}
+                    ? "Drop to remove from its groups"
+                    : "Every account is in a group — drag one here to detach it"}
                 </div>
               )}
             </div>

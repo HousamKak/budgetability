@@ -6,19 +6,18 @@ import {
 } from "@/components/ui/hover-card";
 import type { Account, AccountGroup } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
-import { paperTheme } from "@/styles";
 import {
-  ChevronRight,
+  BarChart3,
+  ChevronDown,
   MoreVertical,
   Pencil,
   Plus,
   Trash2,
-  X,
 } from "lucide-react";
 import { useState } from "react";
 import { CategoryIcon } from "@/components/budget/CategoryIcon";
-import { AccountCard } from "./AccountCard";
-import { readAccountDrag, startAccountDrag } from "./accountDrag";
+import { AccountRow } from "./AccountRow";
+import { readAccountDrag } from "./accountDrag";
 import { groupTotal } from "./accountMath";
 
 interface AccountGroupBandProps {
@@ -28,11 +27,8 @@ interface AccountGroupBandProps {
   onEditGroup: (group: AccountGroup) => void;
   onDeleteGroup: (group: AccountGroup) => void;
   onAddAccount: (group: AccountGroup) => void;
-  // Fired when an account card is dropped onto this group band
   onAccountDrop: (groupId: string, accountId: string) => void;
-  // Remove a single account from THIS group (keeps its other memberships)
   onRemoveFromGroup: (groupId: string, accountId: string) => void;
-  // Per-account actions (forwarded to each member's AccountCard)
   onCardClick: (account: Account) => void;
   onEditAccount: (account: Account) => void;
   onDeleteAccount: (account: Account) => void;
@@ -42,8 +38,9 @@ interface AccountGroupBandProps {
 }
 
 /**
- * A horizontal "band" for one mother account: a clickable group header showing
- * the combined balance, followed by its member accounts stacked horizontally.
+ * A compact, collapsible group card ("mother account"): a tight header with the
+ * combined total, and members listed as dense rows. Acts as a drop target —
+ * drag an account onto it to add it to the group.
  */
 export function AccountGroupBand({
   group,
@@ -64,6 +61,7 @@ export function AccountGroupBand({
   const combined = groupTotal(members);
   const accent = group.color || "#f59e0b";
   const [isOver, setIsOver] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   function handleDragOver(e: React.DragEvent) {
     e.preventDefault();
@@ -71,7 +69,6 @@ export function AccountGroupBand({
     if (!isOver) setIsOver(true);
   }
   function handleDragLeave(e: React.DragEvent) {
-    // Ignore moves between children of the band
     if (e.currentTarget.contains(e.relatedTarget as Node)) return;
     setIsOver(false);
   }
@@ -88,157 +85,142 @@ export function AccountGroupBand({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={cn(
-        "relative rounded-2xl p-4 mb-5 transition-all",
-        paperTheme.colors.background.cardGradient,
-        paperTheme.colors.borders.paper,
-        paperTheme.effects.shadow.md,
-        "overflow-hidden",
-        isOver && "ring-2 ring-amber-400 ring-offset-2",
+        "relative rounded-xl border bg-white/70 backdrop-blur-sm shadow-sm transition-all overflow-hidden self-start",
+        isOver
+          ? "ring-2 ring-amber-400 border-amber-300"
+          : "border-stone-200/70",
       )}
     >
+      {/* Accent strip */}
       <div
-        className={cn(
-          "absolute inset-0 opacity-10 pointer-events-none rounded-2xl",
-          paperTheme.effects.paperTexture,
-        )}
-      />
-      {/* Accent spine on the left */}
-      <div
-        className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl"
+        className="absolute left-0 top-0 bottom-0 w-1"
         style={{ backgroundColor: accent }}
       />
 
-      {/* Group header — click to view combined status */}
-      <div className="relative z-10 flex items-center justify-between gap-3 mb-4 pl-2">
+      {/* Header */}
+      <div className="flex items-center gap-1.5 pl-3 pr-1.5 py-1.5">
+        {/* Collapse toggle + identity */}
         <button
           type="button"
-          onClick={() => onOpenSummary(group)}
-          className="flex items-center gap-3 group/header text-left cursor-pointer rounded-lg -ml-1 pr-3 py-1 hover:bg-white/40 transition-colors"
+          onClick={() => setCollapsed((c) => !c)}
+          className="flex items-center gap-2 min-w-0 flex-1 text-left rounded-lg py-1 hover:bg-stone-50 transition-colors cursor-pointer"
+          title={collapsed ? "Expand" : "Collapse"}
         >
+          <ChevronDown
+            className={cn(
+              "w-4 h-4 text-stone-400 shrink-0 transition-transform",
+              collapsed && "-rotate-90",
+            )}
+          />
           <div
-            className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+            className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
             style={{ backgroundColor: accent + "22" }}
           >
             <CategoryIcon
               name={group.icon || "layers"}
-              className="w-6 h-6"
+              className="w-4 h-4"
               style={{ color: accent }}
             />
           </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <h2
-                className={cn(
-                  "text-xl font-bold",
-                  paperTheme.colors.text.accent,
-                  paperTheme.fonts.handwriting,
-                )}
-              >
-                {group.name}
-              </h2>
-              <ChevronRight className="w-4 h-4 text-stone-400 group-hover/header:translate-x-0.5 transition-transform" />
+          <div className="min-w-0">
+            <div className="text-sm font-bold text-stone-700 truncate handwriting leading-tight">
+              {group.name}
             </div>
-            <p className="text-xs text-stone-500">
-              {members.length} {members.length === 1 ? "account" : "accounts"} ·
-              combined
-            </p>
+            <div className="text-[11px] text-stone-400 leading-tight">
+              {members.length} {members.length === 1 ? "account" : "accounts"}
+            </div>
           </div>
-          <p
+        </button>
+
+        {/* Combined total → opens summary */}
+        <button
+          type="button"
+          onClick={() => onOpenSummary(group)}
+          title="View combined status"
+          className="flex items-center gap-1 px-1.5 py-1 rounded-lg hover:bg-stone-50 transition-colors cursor-pointer shrink-0"
+        >
+          <span
             className={cn(
-              "text-2xl font-bold ml-2",
-              paperTheme.fonts.handwriting,
+              "text-base font-bold tabular-nums handwriting",
               combined >= 0 ? "text-green-700" : "text-red-600",
             )}
           >
             {formatCurrency(combined)}
-          </p>
+          </span>
+          <BarChart3 className="w-3.5 h-3.5 text-stone-300" />
         </button>
 
-        <div className="flex items-center gap-1 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            className={cn("h-8 text-xs", paperTheme.colors.borders.amber)}
-            onClick={() => onAddAccount(group)}
-          >
-            <Plus className="w-3.5 h-3.5 mr-1" />
-            Add
-          </Button>
-          <HoverCard>
-            <HoverCardTrigger asChild>
+        {/* Actions */}
+        <button
+          type="button"
+          onClick={() => onAddAccount(group)}
+          title="Add account to group"
+          className="w-7 h-7 rounded-md flex items-center justify-center text-stone-400 hover:text-amber-600 hover:bg-amber-50 cursor-pointer shrink-0"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+        <HoverCard openDelay={0} closeDelay={80}>
+          <HoverCardTrigger asChild>
+            <button
+              type="button"
+              className="w-7 h-7 rounded-md flex items-center justify-center text-stone-400 hover:text-stone-700 hover:bg-stone-100 cursor-pointer shrink-0"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+          </HoverCardTrigger>
+          <HoverCardContent align="end" className="w-40 p-1">
+            <div className="flex flex-col gap-0.5">
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 p-0 hover:bg-amber-100"
+                className="justify-start h-8 text-xs"
+                onClick={() => onOpenSummary(group)}
               >
-                <MoreVertical className="w-4 h-4 text-stone-500" />
+                <BarChart3 className="w-3 h-3 mr-2" />
+                Combined status
               </Button>
-            </HoverCardTrigger>
-            <HoverCardContent align="end" className="w-40 p-1">
-              <div className="flex flex-col gap-0.5">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="justify-start h-8 text-xs"
-                  onClick={() => onEditGroup(group)}
-                >
-                  <Pencil className="w-3 h-3 mr-2" />
-                  Edit Group
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="justify-start h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-                  onClick={() => onDeleteGroup(group)}
-                >
-                  <Trash2 className="w-3 h-3 mr-2" />
-                  Delete Group
-                </Button>
-              </div>
-            </HoverCardContent>
-          </HoverCard>
-        </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="justify-start h-8 text-xs"
+                onClick={() => onEditGroup(group)}
+              >
+                <Pencil className="w-3 h-3 mr-2" />
+                Edit Group
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="justify-start h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                onClick={() => onDeleteGroup(group)}
+              >
+                <Trash2 className="w-3 h-3 mr-2" />
+                Delete Group
+              </Button>
+            </div>
+          </HoverCardContent>
+        </HoverCard>
       </div>
 
-      {/* Members stacked horizontally */}
-      <div className="relative z-10 pl-2">
-        {members.length === 0 ? (
-          <button
-            type="button"
-            onClick={() => onAddAccount(group)}
-            className={cn(
-              "w-full py-6 rounded-xl border-2 border-dashed text-sm text-stone-500 hover:bg-white/40 transition-colors cursor-pointer",
-              isOver ? "border-amber-400 bg-amber-50/60" : "",
-              paperTheme.colors.borders.amber,
-            )}
-          >
-            {isOver
-              ? "Drop to add to this group"
-              : "No accounts yet — add one or drag an account here"}
-          </button>
-        ) : (
-          <div className="flex gap-4 overflow-x-auto pb-2 book-scroll">
-            {members.map((account) => (
-              <div
-                key={account.id}
-                draggable
-                onDragStart={(e) => startAccountDrag(e, account.id)}
-                className="group/member relative w-72 shrink-0 cursor-grab active:cursor-grabbing"
-                title="Drag to add this account to another group"
-              >
-                {/* Remove from THIS group (keeps other memberships) */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRemoveFromGroup(group.id, account.id);
-                  }}
-                  title={`Remove from ${group.name}`}
-                  className="absolute -top-1.5 -right-1.5 z-20 w-6 h-6 rounded-full bg-white shadow-md border border-stone-200 flex items-center justify-center text-stone-400 hover:text-red-600 hover:border-red-200 opacity-0 group-hover/member:opacity-100 focus:opacity-100 transition-opacity cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-                <AccountCard
+      {/* Members */}
+      {!collapsed && (
+        <div className="pl-1.5 pr-1 pb-1.5 border-t border-stone-100">
+          {members.length === 0 ? (
+            <button
+              type="button"
+              onClick={() => onAddAccount(group)}
+              className={cn(
+                "mt-1.5 w-full py-3 rounded-lg border border-dashed text-xs text-stone-400 hover:bg-amber-50/50 transition-colors cursor-pointer",
+                isOver ? "border-amber-400 bg-amber-50/60 text-amber-600" : "border-stone-300",
+              )}
+            >
+              {isOver ? "Drop to add" : "Drag an account here, or click to add"}
+            </button>
+          ) : (
+            <div className="mt-1 space-y-0.5">
+              {members.map((account) => (
+                <AccountRow
+                  key={account.id}
                   account={account}
                   onClick={onCardClick}
                   onEdit={onEditAccount}
@@ -246,12 +228,14 @@ export function AccountGroupBand({
                   onTransfer={onTransfer}
                   onDeposit={onDeposit}
                   onSetDefault={onSetDefault}
+                  onRemove={() => onRemoveFromGroup(group.id, account.id)}
+                  removeLabel={`Remove from ${group.name}`}
                 />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
