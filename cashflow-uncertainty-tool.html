@@ -1,0 +1,2752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cash Flow Uncertainty Modeler</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+
+        .subtitle {
+            color: #7f8c8d;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .year-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: white;
+            padding: 8px 15px;
+            border-radius: 6px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .year-selector button {
+            background: transparent;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #495057;
+            padding: 0 5px;
+            transition: color 0.2s;
+        }
+
+        .year-selector button:hover {
+            color: #3498db;
+        }
+
+        .year-selector .year-display {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+            min-width: 80px;
+            text-align: center;
+        }
+
+        .view-toggle {
+            display: flex;
+            gap: 5px;
+            background: #ecf0f1;
+            padding: 4px;
+            border-radius: 6px;
+            flex-wrap: wrap;
+        }
+
+        .view-toggle button {
+            padding: 8px 16px;
+            border: none;
+            background: transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: #7f8c8d;
+            transition: all 0.2s;
+        }
+
+        .view-toggle button.active {
+            background: white;
+            color: #2c3e50;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .detail-view-container {
+            background: #fafafa;
+            border-radius: 8px;
+            padding: 30px;
+            margin-bottom: 30px;
+            overflow-x: auto;
+        }
+
+        /* Monthly Detail Table */
+        .monthly-table {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 10px;
+            min-width: 1200px;
+        }
+
+        .month-column {
+            background: white;
+            border-radius: 6px;
+            padding: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .month-column h4 {
+            font-size: 13px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            text-align: center;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .payment-entry {
+            font-size: 11px;
+            padding: 6px 8px;
+            margin-bottom: 6px;
+            border-radius: 4px;
+            background: #f8f9fa;
+        }
+
+        .payment-entry.inflow {
+            background: #d4edda;
+            border-left: 3px solid #28a745;
+        }
+
+        .payment-entry.outflow {
+            background: #f8d7da;
+            border-left: 3px solid #dc3545;
+        }
+
+        .payment-entry.uncertain {
+            opacity: 0.7;
+            border-style: dashed;
+        }
+
+        .payment-entry .name {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 2px;
+        }
+
+        .payment-entry .amount {
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            color: #495057;
+        }
+
+        /* Calendar/Card View */
+        .calendar-view {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .month-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .month-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .month-card h3 {
+            font-size: 16px;
+            color: #2c3e50;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #3498db;
+        }
+
+        .month-card .total {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #e0e0e0;
+            font-weight: 600;
+        }
+
+        .card-payment {
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .card-payment.inflow {
+            background: #d4edda;
+        }
+
+        .card-payment.outflow {
+            background: #f8d7da;
+        }
+
+        .card-payment .payment-name {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .card-payment .payment-amount {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        /* Gantt-style Timeline */
+        .gantt-view {
+            min-width: 1200px;
+        }
+
+        .gantt-row {
+            display: grid;
+            grid-template-columns: 200px 1fr;
+            gap: 15px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+
+        .gantt-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #2c3e50;
+            padding: 10px;
+            background: white;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .gantt-label .amount {
+            font-size: 11px;
+            color: #7f8c8d;
+            font-weight: 400;
+            margin-top: 4px;
+        }
+
+        .gantt-timeline {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 4px;
+            height: 40px;
+        }
+
+        .gantt-cell {
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 600;
+            color: white;
+        }
+
+        .gantt-cell.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .gantt-cell.active.inflow {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        .gantt-cell.active.outflow {
+            background: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%);
+        }
+
+        .gantt-cell.active.uncertain {
+            opacity: 0.6;
+            border: 2px dashed rgba(255,255,255,0.5);
+        }
+
+        .gantt-month-header {
+            display: grid;
+            grid-template-columns: 200px 1fr;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+
+        .gantt-months {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 4px;
+        }
+
+        .gantt-month-label {
+            text-align: center;
+            font-size: 11px;
+            font-weight: 600;
+            color: #7f8c8d;
+            padding: 5px 0;
+        }
+
+        /* Stacked Column View */
+        .stacked-view {
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+            min-width: 1200px;
+            padding: 20px 0;
+        }
+
+        .stacked-column {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .stacked-bars {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-bottom: 10px;
+            min-height: 50px;
+        }
+
+        .stacked-bar {
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.2s;
+            color: white;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        }
+
+        .stacked-bar:hover {
+            transform: scale(1.05);
+        }
+
+        .stacked-bar.inflow {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        .stacked-bar.outflow {
+            background: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%);
+        }
+
+        .stacked-bar.uncertain {
+            opacity: 0.7;
+            border: 2px dashed rgba(255,255,255,0.6);
+        }
+
+        .stacked-month-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-top: 8px;
+        }
+
+        .view-section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+
+        /* Cash Flow Table */
+        .cashflow-table-container {
+            margin-top: 30px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .cashflow-table-header {
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .cashflow-table-header h2 {
+            margin: 0;
+            font-size: 18px;
+            color: #2c3e50;
+        }
+
+        .cashflow-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .cashflow-table thead {
+            background: #f8f9fa;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        .cashflow-table th {
+            padding: 12px 15px;
+            text-align: left;
+            font-size: 13px;
+            font-weight: 600;
+            color: #495057;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .cashflow-table tbody tr {
+            border-bottom: 1px solid #f1f3f5;
+            transition: background 0.2s;
+        }
+
+        .cashflow-table tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        .cashflow-table tbody tr.disabled {
+            opacity: 0.4;
+            background: #f8f9fa;
+        }
+
+        .cashflow-table tbody tr.ghost-row {
+            background: linear-gradient(90deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+        }
+
+        .cashflow-table tbody tr.ghost-row:hover {
+            background: linear-gradient(90deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+        }
+
+        .cashflow-table td {
+            padding: 12px 15px;
+            font-size: 13px;
+            color: #495057;
+        }
+
+        .month-row {
+            cursor: pointer;
+            background: #e9ecef;
+            font-weight: 600;
+        }
+
+        .month-row:hover {
+            background: #dee2e6;
+        }
+
+        .month-row td {
+            padding: 10px 15px;
+        }
+
+        .month-toggle {
+            display: inline-block;
+            margin-right: 8px;
+            transition: transform 0.2s;
+        }
+
+        .month-toggle.expanded {
+            transform: rotate(90deg);
+        }
+
+        .entry-row {
+            display: none;
+        }
+
+        .entry-row.visible {
+            display: table-row;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge.inflow {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .badge.outflow {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .badge.ghost {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin-left: 5px;
+        }
+
+        .badge.uncertain {
+            background: #fff3cd;
+            color: #856404;
+            margin-left: 5px;
+        }
+
+        .amount-cell {
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+        }
+
+        .actions-cell {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .month-count {
+            font-size: 11px;
+            color: #6c757d;
+            margin-left: 8px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+
+        .btn-toggle {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-toggle:hover {
+            background: #c0392b;
+        }
+
+        .btn-toggle.active {
+            background: #27ae60;
+        }
+
+        .btn-toggle.active:hover {
+            background: #229954;
+        }
+
+        .timeline-container {
+            background: #fafafa;
+            border-radius: 8px;
+            padding: 30px;
+            margin-bottom: 30px;
+            overflow-x: auto;
+            position: relative;
+        }
+
+        .chart-controls {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            z-index: 10;
+        }
+
+        .chart-toggle-btn {
+            background: white;
+            border: 2px solid #e0e0e0;
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            color: #495057;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .chart-toggle-btn:hover {
+            border-color: #3498db;
+            color: #3498db;
+        }
+
+        .chart-toggle-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: #667eea;
+            color: white;
+        }
+
+        #timeline {
+            min-width: 1200px;
+        }
+
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .summary-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .summary-card h3 {
+            font-size: 14px;
+            font-weight: 500;
+            opacity: 0.9;
+            margin-bottom: 8px;
+        }
+
+        .summary-card .value {
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .summary-card.best {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        .summary-card.worst {
+            background: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%);
+        }
+
+        .summary-card.expected {
+            background: linear-gradient(135deg, #4776e6 0%, #8e54e9 100%);
+        }
+
+        .summary-card.hidden {
+            display: none;
+        }
+
+
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: 0.3s;
+            border-radius: 24px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: #27ae60;
+        }
+
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(20px);
+        }
+
+        .cashflow-item .month {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .cashflow-item .type {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            text-align: center;
+        }
+
+        .cashflow-item .type.inflow {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .cashflow-item .type.outflow {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .cashflow-item .amount {
+            font-family: 'Courier New', monospace;
+            color: #495057;
+        }
+
+        .delete-btn, .edit-btn {
+            background: transparent;
+            border: 1px solid;
+            padding: 5px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .delete-btn {
+            color: #dc3545;
+            border-color: #dc3545;
+        }
+
+        .delete-btn:hover {
+            background: #dc3545;
+            color: white;
+        }
+
+        .edit-btn {
+            color: #3498db;
+            border-color: #3498db;
+        }
+
+        .edit-btn:hover {
+            background: #3498db;
+            color: white;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 6px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+        }
+
+        .modal-content h2 {
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #495057;
+        }
+
+        .form-group select,
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .uncertainty-inputs {
+            display: none;
+            gap: 10px;
+        }
+
+        .uncertainty-inputs.active {
+            display: flex;
+        }
+
+        .uncertainty-inputs input {
+            flex: 1;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 25px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+            cursor: pointer;
+        }
+
+        .checkbox-group label {
+            margin: 0;
+            cursor: pointer;
+        }
+
+        text {
+            user-select: none;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0,0,0,0.85);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 1000;
+            display: none;
+            white-space: nowrap;
+        }
+
+        .month-selector {
+            margin-bottom: 15px;
+        }
+
+        .month-selector label {
+            display: block;
+            margin-bottom: 12px;
+            font-weight: 500;
+            color: #495057;
+        }
+
+        .month-checkboxes {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .month-checkbox {
+            position: relative;
+        }
+
+        .month-checkbox input[type="checkbox"] {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .month-checkbox label {
+            display: block;
+            padding: 10px 8px;
+            text-align: center;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            color: #6c757d;
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .month-checkbox label:hover {
+            border-color: #3498db;
+            background: #f0f7ff;
+        }
+
+        .month-checkbox input[type="checkbox"]:checked + label {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: #667eea;
+            color: white;
+            font-weight: 600;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+        }
+
+        .select-all-months {
+            display: inline-block;
+            font-size: 12px;
+            color: #3498db;
+            cursor: pointer;
+            padding: 6px 12px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .select-all-months:hover {
+            background: #e8f4fd;
+            color: #2980b9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Cash Flow Uncertainty Modeler</h1>
+        <p class="subtitle">Model your cash flows with uncertainty ranges across the year</p>
+
+        <div class="controls">
+            <div class="year-selector">
+                <button onclick="changeYear(-1)">◀</button>
+                <div class="year-display" id="currentYear">2026</div>
+                <button onclick="changeYear(1)">▶</button>
+            </div>
+            <button class="btn btn-primary" onclick="openModal()">Add Cash Flow</button>
+            <button class="btn btn-secondary" onclick="exportToPDF()">Export Report (PDF)</button>
+            <button class="btn btn-secondary" onclick="clearAllData()">Clear All Data</button>
+            <div class="view-toggle">
+                <button class="active" id="lineViewBtn" onclick="switchView('line')">Line Chart</button>
+                <button id="arrowViewBtn" onclick="switchView('arrow')">Arrows</button>
+                <button id="tableViewBtn" onclick="switchView('table')">Monthly Table</button>
+                <button id="calendarViewBtn" onclick="switchView('calendar')">Calendar Cards</button>
+                <button id="stackedViewBtn" onclick="switchView('stacked')">Stacked Columns</button>
+            </div>
+        </div>
+
+        <div class="summary">
+            <div class="summary-card best">
+                <h3>Best Case</h3>
+                <div class="value" id="bestCase">0k</div>
+            </div>
+            <div class="summary-card worst">
+                <h3>Worst Case</h3>
+                <div class="value" id="worstCase">0k</div>
+            </div>
+        </div>
+
+        <div class="timeline-container" id="chartContainer">
+            <div class="chart-controls">
+                <button class="chart-toggle-btn active" id="chartScenarioToggle" onclick="toggleScenarios()">
+                    Show Both Scenarios
+                </button>
+            </div>
+            <svg id="timeline" width="1200" height="400"></svg>
+        </div>
+
+        <div class="detail-view-container" id="detailContainer" style="display: none;">
+            <div id="detailContent"></div>
+        </div>
+
+        <div class="cashflow-table-container">
+            <div class="cashflow-table-header">
+                <h2>Cash Flow Entries</h2>
+            </div>
+            <table class="cashflow-table" id="cashflowTable">
+                <thead>
+                    <tr>
+                        <th style="width: 50px;"></th>
+                        <th style="width: 60px;">On/Off</th>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Amount</th>
+                        <th style="width: 100px;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="cashflowTableBody">
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 40px; color: #7f8c8d;">
+                            No cash flows added yet
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="modal" id="cashflowModal">
+        <div class="modal-content">
+            <h2>Add Cash Flow</h2>
+            <form id="cashflowForm">
+                <div class="form-group">
+                    <label for="year">Year</label>
+                    <input type="number" id="year" min="2000" max="2100" required placeholder="e.g., 2026">
+                </div>
+
+                <div class="form-group month-selector">
+                    <label>Months (select one or more)</label>
+                    <div class="month-checkboxes" id="monthCheckboxes"></div>
+                    <a class="select-all-months" onclick="toggleAllMonths()">Select All / Deselect All</a>
+                </div>
+
+                <div class="form-group">
+                    <label for="name">Name (optional)</label>
+                    <input type="text" id="name" placeholder="e.g., Salary, Rent, Project Payment">
+                </div>
+
+                <div class="form-group">
+                    <label for="type">Type</label>
+                    <select id="type" required>
+                        <option value="in">Inflow</option>
+                        <option value="out">Outflow</option>
+                    </select>
+                </div>
+
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="isGhost" onchange="toggleGhostMode()">
+                    <label for="isGhost">Ghost Flow (reusable template for multiple months)</label>
+                </div>
+
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="uncertain" onchange="toggleUncertainty()">
+                    <label for="uncertain">Uncertain amount (high/low range)</label>
+                </div>
+
+                <div class="form-group">
+                    <label for="amount">Amount (k)</label>
+                    <input type="number" id="amount" step="0.001" required placeholder="e.g., 5 for 5k">
+                </div>
+
+                <div class="uncertainty-inputs" id="uncertaintyInputs">
+                    <div class="form-group" style="margin: 0; flex: 1;">
+                        <label for="lowAmount">Low Value (k)</label>
+                        <input type="number" id="lowAmount" step="0.001" placeholder="e.g., 0.2">
+                    </div>
+                    <div class="form-group" style="margin: 0; flex: 1;">
+                        <label for="highAmount">High Value (k)</label>
+                        <input type="number" id="highAmount" step="0.001" placeholder="e.g., 0.5">
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="tooltip" id="tooltip"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script>
+        let cashFlows = [];
+        let ghostFlows = [];
+        let showAllScenarios = true;
+        let currentView = 'line';
+        let currentYear = new Date().getFullYear();
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const monthsFull = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+        // Change year
+        function changeYear(delta) {
+            currentYear += delta;
+            document.getElementById('currentYear').textContent = currentYear;
+            renderAll();
+        }
+
+        // Load data from localStorage
+        function loadData() {
+            const saved = localStorage.getItem('cashFlowData');
+            if (saved) {
+                cashFlows = JSON.parse(saved);
+            }
+
+            const savedGhosts = localStorage.getItem('ghostFlowData');
+            if (savedGhosts) {
+                ghostFlows = JSON.parse(savedGhosts);
+            }
+
+            // Initialize year display
+            document.getElementById('currentYear').textContent = currentYear;
+
+            renderAll();
+        }
+
+        // Save data to localStorage
+        function saveData() {
+            localStorage.setItem('cashFlowData', JSON.stringify(cashFlows));
+            localStorage.setItem('ghostFlowData', JSON.stringify(ghostFlows));
+        }
+
+        // Toggle ghost mode in modal
+        function toggleGhostMode() {
+            // Ghost mode doesn't change the form, just flags the entry as ghost
+        }
+
+        // Modal functions
+        function openModal() {
+            document.getElementById('cashflowModal').classList.add('active');
+            initializeMonthCheckboxes();
+            document.getElementById('year').value = currentYear;
+            loadFormState();
+        }
+
+        function closeModal() {
+            document.getElementById('cashflowModal').classList.remove('active');
+            saveFormState();
+        }
+
+        function saveFormState() {
+            const formState = {
+                name: document.getElementById('name').value,
+                year: document.getElementById('year').value,
+                type: document.getElementById('type').value,
+                isGhost: document.getElementById('isGhost').checked,
+                uncertain: document.getElementById('uncertain').checked,
+                amount: document.getElementById('amount').value,
+                lowAmount: document.getElementById('lowAmount').value,
+                highAmount: document.getElementById('highAmount').value,
+                selectedMonths: Array.from(document.querySelectorAll('input[name="months"]:checked')).map(cb => cb.value)
+            };
+            localStorage.setItem('cashFlowFormState', JSON.stringify(formState));
+        }
+
+        function loadFormState() {
+            const saved = localStorage.getItem('cashFlowFormState');
+            if (!saved) return;
+
+            try {
+                const formState = JSON.parse(saved);
+
+                if (formState.name) document.getElementById('name').value = formState.name;
+                if (formState.year) document.getElementById('year').value = formState.year;
+                if (formState.type) document.getElementById('type').value = formState.type;
+
+                document.getElementById('isGhost').checked = formState.isGhost || false;
+                document.getElementById('uncertain').checked = formState.uncertain || false;
+                toggleUncertainty();
+
+                if (formState.amount) document.getElementById('amount').value = formState.amount;
+                if (formState.lowAmount) document.getElementById('lowAmount').value = formState.lowAmount;
+                if (formState.highAmount) document.getElementById('highAmount').value = formState.highAmount;
+
+                // Restore selected months
+                if (formState.selectedMonths && formState.selectedMonths.length > 0) {
+                    formState.selectedMonths.forEach(monthValue => {
+                        const checkbox = document.getElementById(`month${monthValue}`);
+                        if (checkbox) checkbox.checked = true;
+                    });
+                }
+            } catch (e) {
+                console.error('Failed to load form state:', e);
+            }
+        }
+
+        function initializeMonthCheckboxes() {
+            const container = document.getElementById('monthCheckboxes');
+            container.innerHTML = months.map((month, idx) => `
+                <div class="month-checkbox">
+                    <input type="checkbox" id="month${idx + 1}" name="months" value="${idx + 1}">
+                    <label for="month${idx + 1}">${month}</label>
+                </div>
+            `).join('');
+        }
+
+        function toggleAllMonths() {
+            const checkboxes = document.querySelectorAll('input[name="months"]');
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            checkboxes.forEach(cb => cb.checked = !allChecked);
+        }
+
+        function toggleUncertainty() {
+            const isChecked = document.getElementById('uncertain').checked;
+            document.getElementById('uncertaintyInputs').classList.toggle('active', isChecked);
+            document.getElementById('amount').required = !isChecked;
+            document.getElementById('lowAmount').required = isChecked;
+            document.getElementById('highAmount').required = isChecked;
+        }
+
+        // Form submission
+        document.getElementById('cashflowForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            const selectedMonths = Array.from(document.querySelectorAll('input[name="months"]:checked'))
+                .map(cb => parseInt(cb.value));
+
+            if (selectedMonths.length === 0) {
+                alert('Please select at least one month');
+                return;
+            }
+
+            const year = parseInt(document.getElementById('year').value);
+            const type = document.getElementById('type').value;
+            const uncertain = document.getElementById('uncertain').checked;
+            const name = document.getElementById('name').value.trim();
+            const isGhost = document.getElementById('isGhost').checked;
+
+            if (isGhost) {
+                // Create a ghost flow
+                const ghostFlow = {
+                    id: Date.now(),
+                    name: name || 'Unnamed Ghost',
+                    type: type,
+                    year: year,
+                    months: selectedMonths,
+                    enabled: true,
+                    isGhost: true
+                };
+
+                if (uncertain) {
+                    const low = parseFloat(document.getElementById('lowAmount').value);
+                    const high = parseFloat(document.getElementById('highAmount').value);
+                    ghostFlow.lowValue = type === 'out' ? -Math.abs(low) : Math.abs(low);
+                    ghostFlow.highValue = type === 'out' ? -Math.abs(high) : Math.abs(high);
+                    ghostFlow.uncertain = true;
+                } else {
+                    const amount = parseFloat(document.getElementById('amount').value);
+                    ghostFlow.value = type === 'out' ? -Math.abs(amount) : Math.abs(amount);
+                    ghostFlow.uncertain = false;
+                }
+
+                ghostFlows.push(ghostFlow);
+            } else {
+                // Create regular cash flows
+                selectedMonths.forEach(month => {
+                    const cashFlow = {
+                        id: Date.now() + Math.random(),
+                        year: year,
+                        month: month,
+                        type: type,
+                        name: name || null,
+                        enabled: true,
+                        isGhost: false
+                    };
+
+                    if (uncertain) {
+                        const low = parseFloat(document.getElementById('lowAmount').value);
+                        const high = parseFloat(document.getElementById('highAmount').value);
+                        cashFlow.lowValue = type === 'out' ? -Math.abs(low) : Math.abs(low);
+                        cashFlow.highValue = type === 'out' ? -Math.abs(high) : Math.abs(high);
+                        cashFlow.uncertain = true;
+                    } else {
+                        const amount = parseFloat(document.getElementById('amount').value);
+                        cashFlow.value = type === 'out' ? -Math.abs(amount) : Math.abs(amount);
+                        cashFlow.uncertain = false;
+                    }
+
+                    cashFlows.push(cashFlow);
+                });
+            }
+
+            saveData();
+            renderAll();
+            closeModal();
+        });
+
+        // Toggle cash flow enabled/disabled
+        function toggleCashFlow(id) {
+            const cashFlow = cashFlows.find(cf => cf.id === id);
+            if (cashFlow) {
+                cashFlow.enabled = !cashFlow.enabled;
+                saveData();
+                renderAll();
+            }
+        }
+
+        // Toggle ghost flow enabled/disabled
+        function toggleGhostFlow(id) {
+            const ghostFlow = ghostFlows.find(gf => gf.id === id);
+            if (ghostFlow) {
+                ghostFlow.enabled = !ghostFlow.enabled;
+                saveData();
+                renderAll();
+            }
+        }
+
+        // Toggle ghost flow month
+        function toggleGhostMonth(ghostId, month) {
+            const ghostFlow = ghostFlows.find(gf => gf.id === ghostId);
+            if (ghostFlow) {
+                const monthIndex = ghostFlow.months.indexOf(month);
+                if (monthIndex > -1) {
+                    ghostFlow.months.splice(monthIndex, 1);
+                } else {
+                    ghostFlow.months.push(month);
+                    ghostFlow.months.sort((a, b) => a - b);
+                }
+                saveData();
+                renderAll();
+            }
+        }
+
+        // Delete ghost flow
+        function deleteGhostFlow(id) {
+            ghostFlows = ghostFlows.filter(gf => gf.id !== id);
+            saveData();
+            renderAll();
+        }
+
+        // Edit cash flow
+        function editCashFlow(id) {
+            const cashFlow = cashFlows.find(cf => cf.id === id);
+            if (!cashFlow) return;
+
+            // Open modal first
+            document.getElementById('cashflowModal').classList.add('active');
+            initializeMonthCheckboxes();
+
+            // Populate form with existing data
+            document.getElementById('name').value = cashFlow.name || '';
+            document.getElementById('year').value = cashFlow.year;
+            document.getElementById('type').value = cashFlow.type;
+            document.getElementById('isGhost').checked = false;
+            document.getElementById('uncertain').checked = cashFlow.uncertain || false;
+
+            // Trigger uncertainty toggle to show/hide fields
+            toggleUncertainty();
+
+            if (cashFlow.uncertain) {
+                document.getElementById('amount').value = '';
+                document.getElementById('lowAmount').value = Math.abs(cashFlow.lowValue);
+                document.getElementById('highAmount').value = Math.abs(cashFlow.highValue);
+            } else {
+                document.getElementById('amount').value = Math.abs(cashFlow.value);
+                document.getElementById('lowAmount').value = '';
+                document.getElementById('highAmount').value = '';
+            }
+
+            // Select the month
+            const checkbox = document.getElementById(`month${cashFlow.month}`);
+            if (checkbox) checkbox.checked = true;
+
+            // Delete the old entry
+            cashFlows = cashFlows.filter(cf => cf.id !== id);
+            saveData();
+        }
+
+        // Edit ghost flow
+        function editGhostFlow(id) {
+            const ghostFlow = ghostFlows.find(gf => gf.id === id);
+            if (!ghostFlow) return;
+
+            // Open modal first
+            document.getElementById('cashflowModal').classList.add('active');
+            initializeMonthCheckboxes();
+
+            // Populate form with existing data
+            document.getElementById('name').value = ghostFlow.name || '';
+            document.getElementById('year').value = ghostFlow.year;
+            document.getElementById('type').value = ghostFlow.type;
+            document.getElementById('isGhost').checked = true;
+            document.getElementById('uncertain').checked = ghostFlow.uncertain || false;
+
+            // Trigger uncertainty toggle to show/hide fields
+            toggleUncertainty();
+
+            if (ghostFlow.uncertain) {
+                document.getElementById('amount').value = '';
+                document.getElementById('lowAmount').value = Math.abs(ghostFlow.lowValue);
+                document.getElementById('highAmount').value = Math.abs(ghostFlow.highValue);
+            } else {
+                document.getElementById('amount').value = Math.abs(ghostFlow.value);
+                document.getElementById('lowAmount').value = '';
+                document.getElementById('highAmount').value = '';
+            }
+
+            // Select the months
+            ghostFlow.months.forEach(month => {
+                const checkbox = document.getElementById(`month${month}`);
+                if (checkbox) checkbox.checked = true;
+            });
+
+            // Delete the old entry
+            ghostFlows = ghostFlows.filter(gf => gf.id !== id);
+            saveData();
+        }
+
+        // Delete cash flow
+        function deleteCashFlow(id) {
+            cashFlows = cashFlows.filter(cf => cf.id !== id);
+            saveData();
+            renderAll();
+        }
+
+        // Clear all data
+        function clearAllData() {
+            if (confirm('Are you sure you want to clear all cash flows and ghost flows?')) {
+                cashFlows = [];
+                ghostFlows = [];
+                saveData();
+                renderAll();
+            }
+        }
+
+        // Export to PDF
+        async function exportToPDF() {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const margin = 15;
+            let yPos = margin;
+
+            // Save current view
+            const originalView = currentView;
+
+            // Title
+            pdf.setFontSize(20);
+            pdf.setFont(undefined, 'bold');
+            pdf.text(`Cash Flow Report - ${currentYear}`, margin, yPos);
+            yPos += 10;
+
+            pdf.setFontSize(10);
+            pdf.setFont(undefined, 'normal');
+            pdf.setTextColor(100);
+            pdf.text(`Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, margin, yPos);
+            yPos += 15;
+            pdf.setTextColor(0);
+
+            // Summary Cards
+            const { scenarios } = calculateScenarios();
+            pdf.setFontSize(14);
+            pdf.setFont(undefined, 'bold');
+            pdf.text('Summary', margin, yPos);
+            yPos += 8;
+
+            pdf.setFontSize(11);
+            pdf.setFont(undefined, 'normal');
+            pdf.text(`Best Case (End of ${currentYear}): ${scenarios.best.toFixed(3)}k`, margin, yPos);
+            yPos += 6;
+            pdf.text(`Worst Case (End of ${currentYear}): ${scenarios.worst.toFixed(3)}k`, margin, yPos);
+            yPos += 15;
+
+            // Capture all chart views
+            const chartViews = ['line', 'arrow', 'table', 'calendar', 'stacked'];
+            const chartTitles = {
+                'line': 'Line Chart - Cumulative Cash Flow',
+                'arrow': 'Waterfall View - Monthly Changes',
+                'table': 'Monthly Table - Detailed Breakdown',
+                'calendar': 'Calendar View - Monthly Cards',
+                'stacked': 'Stacked View - Payment Blocks'
+            };
+
+            for (const view of chartViews) {
+                // Switch to view
+                currentView = view;
+                const isChartView = view === 'line' || view === 'arrow';
+                document.getElementById('chartContainer').style.display = isChartView ? 'block' : 'none';
+                document.getElementById('detailContainer').style.display = isChartView ? 'none' : 'block';
+                renderTimeline();
+
+                // Wait a moment for rendering
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                // Add page break if needed
+                if (yPos > pageHeight - 80) {
+                    pdf.addPage();
+                    yPos = margin;
+                }
+
+                // Add chart title
+                pdf.setFontSize(14);
+                pdf.setFont(undefined, 'bold');
+                pdf.text(chartTitles[view], margin, yPos);
+                yPos += 10;
+
+                try {
+                    const containerToCapture = isChartView ?
+                        document.getElementById('chartContainer') :
+                        document.getElementById('detailContainer');
+
+                    const canvas = await html2canvas(containerToCapture, {
+                        scale: 2,
+                        backgroundColor: '#ffffff',
+                        logging: false
+                    });
+
+                    const imgData = canvas.toDataURL('image/png');
+                    const imgWidth = pageWidth - 2 * margin;
+                    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+                    // Check if we need a new page
+                    if (yPos + imgHeight > pageHeight - margin) {
+                        pdf.addPage();
+                        yPos = margin;
+                    }
+
+                    pdf.addImage(imgData, 'PNG', margin, yPos, imgWidth, imgHeight);
+                    yPos += imgHeight + 15;
+                } catch (error) {
+                    console.error(`Error capturing ${view} view:`, error);
+                    pdf.setFontSize(10);
+                    pdf.setTextColor(255, 0, 0);
+                    pdf.text('Error capturing this view', margin, yPos);
+                    yPos += 10;
+                    pdf.setTextColor(0);
+                }
+
+                // Add page break between charts
+                if (view !== chartViews[chartViews.length - 1]) {
+                    pdf.addPage();
+                    yPos = margin;
+                }
+            }
+
+            // Add page break for cash flow list
+            pdf.addPage();
+            yPos = margin;
+
+            // Cash Flow Table
+            pdf.setFontSize(14);
+            pdf.setFont(undefined, 'bold');
+            pdf.text('Cash Flow Entries', margin, yPos);
+            yPos += 8;
+
+            pdf.setFontSize(9);
+            pdf.setFont(undefined, 'normal');
+
+            // Group by month
+            const flowsByMonth = {};
+            const allFlows = getAllCashFlows();
+
+            allFlows.forEach(cf => {
+                if (!flowsByMonth[cf.month]) flowsByMonth[cf.month] = [];
+                flowsByMonth[cf.month].push(cf);
+            });
+
+            const sortedMonths = Object.keys(flowsByMonth).map(m => parseInt(m)).sort((a, b) => a - b);
+
+            sortedMonths.forEach(month => {
+                if (yPos > pageHeight - 30) {
+                    pdf.addPage();
+                    yPos = margin;
+                }
+
+                // Month header
+                pdf.setFont(undefined, 'bold');
+                pdf.text(monthsFull[month - 1], margin, yPos);
+                yPos += 5;
+
+                // Entries
+                pdf.setFont(undefined, 'normal');
+                flowsByMonth[month].forEach(flow => {
+                    if (yPos > pageHeight - 20) {
+                        pdf.addPage();
+                        yPos = margin;
+                    }
+
+                    const name = flow.name || '(unnamed)';
+                    const type = flow.type === 'in' ? 'Inflow' : 'Outflow';
+                    let amount = '';
+
+                    if (flow.uncertain) {
+                        const low = Math.abs(flow.lowValue);
+                        const high = Math.abs(flow.highValue);
+                        amount = `${Math.min(low, high).toFixed(3)}k - ${Math.max(low, high).toFixed(3)}k`;
+                    } else {
+                        amount = `${Math.abs(flow.value).toFixed(3)}k`;
+                    }
+
+                    const status = flow.enabled === false ? ' (DISABLED)' : '';
+                    const ghost = flow.isGhost ? ' [Ghost]' : '';
+                    const uncertain = flow.uncertain ? ' [Uncertain]' : '';
+
+                    pdf.text(`  • ${name}${ghost} - ${type}: ${amount}${uncertain}${status}`, margin + 2, yPos);
+                    yPos += 5;
+                });
+
+                yPos += 3;
+            });
+
+            // Save PDF
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+            pdf.save(`cashflow-report-${currentYear}-${timestamp}.pdf`);
+
+            // Restore original view
+            currentView = originalView;
+            const isChartView = originalView === 'line' || originalView === 'arrow';
+            document.getElementById('chartContainer').style.display = isChartView ? 'block' : 'none';
+            document.getElementById('detailContainer').style.display = isChartView ? 'none' : 'block';
+            renderAll();
+        }
+
+        // Get all cash flows including ghost flows for current year
+        function getAllCashFlows() {
+            // Filter regular flows by current year
+            const allFlows = cashFlows.filter(cf => cf.year === currentYear);
+
+            // Add ghost flows that are enabled and match current year
+            ghostFlows.forEach(gf => {
+                if (gf.enabled !== false && gf.year === currentYear) {
+                    gf.months.forEach(month => {
+                        allFlows.push({
+                            id: `ghost_${gf.id}_${month}`,
+                            year: gf.year,
+                            month: month,
+                            type: gf.type,
+                            name: gf.name,
+                            value: gf.value,
+                            lowValue: gf.lowValue,
+                            highValue: gf.highValue,
+                            uncertain: gf.uncertain,
+                            enabled: true,
+                            isGhost: true
+                        });
+                    });
+                }
+            });
+
+            return allFlows;
+        }
+
+        // Toggle scenarios
+        function toggleScenarios() {
+            showAllScenarios = !showAllScenarios;
+            const btn = document.getElementById('chartScenarioToggle');
+            if (btn) {
+                btn.textContent = showAllScenarios ? 'Show Both Scenarios' : 'Show Best Case Only';
+                btn.classList.toggle('active', showAllScenarios);
+            }
+            renderTimeline();
+        }
+
+        // Get starting balance from previous years
+        function getStartingBalance() {
+            const balance = { best: 0, worst: 0 };
+
+            // Calculate cumulative balance from all previous years
+            const allYears = [...new Set([...cashFlows.map(cf => cf.year), ...ghostFlows.map(gf => gf.year)])];
+            const previousYears = allYears.filter(y => y < currentYear).sort((a, b) => a - b);
+
+            previousYears.forEach(year => {
+                // Get flows for this year
+                const yearFlows = cashFlows.filter(cf => cf.year === year && cf.enabled !== false);
+                const yearGhosts = ghostFlows.filter(gf => gf.year === year && gf.enabled !== false);
+
+                // Add regular flows
+                yearFlows.forEach(cf => {
+                    if (cf.uncertain) {
+                        balance.best += Math.max(cf.lowValue, cf.highValue);
+                        balance.worst += Math.min(cf.lowValue, cf.highValue);
+                    } else {
+                        balance.best += cf.value;
+                        balance.worst += cf.value;
+                    }
+                });
+
+                // Add ghost flows
+                yearGhosts.forEach(gf => {
+                    gf.months.forEach(() => {
+                        if (gf.uncertain) {
+                            balance.best += Math.max(gf.lowValue, gf.highValue);
+                            balance.worst += Math.min(gf.lowValue, gf.highValue);
+                        } else {
+                            balance.best += gf.value;
+                            balance.worst += gf.value;
+                        }
+                    });
+                });
+            });
+
+            return balance;
+        }
+
+        // Calculate scenarios
+        function calculateScenarios() {
+            const startingBalance = getStartingBalance();
+            const scenarios = { best: startingBalance.best, worst: startingBalance.worst };
+            const monthlyData = Array(12).fill(null).map(() => ({ best: 0, worst: 0 }));
+
+            const allFlows = getAllCashFlows();
+
+            allFlows.forEach(cf => {
+                // Skip disabled cash flows
+                if (cf.enabled === false) return;
+
+                const monthIdx = cf.month - 1;
+
+                if (cf.uncertain) {
+                    const low = cf.lowValue;
+                    const high = cf.highValue;
+
+                    monthlyData[monthIdx].best += Math.max(low, high);
+                    monthlyData[monthIdx].worst += Math.min(low, high);
+                } else {
+                    monthlyData[monthIdx].best += cf.value;
+                    monthlyData[monthIdx].worst += cf.value;
+                }
+            });
+
+            // Calculate cumulative for current year
+            for (let i = 0; i < 12; i++) {
+                scenarios.best += monthlyData[i].best;
+                scenarios.worst += monthlyData[i].worst;
+            }
+
+            return { scenarios, monthlyData, startingBalance };
+        }
+
+        // Render summary
+        function renderSummary() {
+            const { scenarios, startingBalance } = calculateScenarios();
+
+            document.getElementById('bestCase').textContent = scenarios.best.toFixed(3) + 'k';
+            document.getElementById('worstCase').textContent = scenarios.worst.toFixed(3) + 'k';
+
+            // Show starting balance if not zero
+            const bestCaseCard = document.querySelector('.summary-card.best');
+            const worstCaseCard = document.querySelector('.summary-card.worst');
+
+            if (startingBalance.best !== 0 || startingBalance.worst !== 0) {
+                bestCaseCard.querySelector('h3').textContent = `Best Case (End of ${currentYear})`;
+                worstCaseCard.querySelector('h3').textContent = `Worst Case (End of ${currentYear})`;
+            } else {
+                bestCaseCard.querySelector('h3').textContent = 'Best Case';
+                worstCaseCard.querySelector('h3').textContent = 'Worst Case';
+            }
+        }
+
+        // Render cash flow list
+        function renderList() {
+            const container = document.getElementById('cashflowItems');
+
+            if (cashFlows.length === 0) {
+                container.innerHTML = '<p style="color: #7f8c8d; text-align: center; padding: 20px;">No cash flows added yet</p>';
+                return;
+            }
+
+            const sorted = [...cashFlows].sort((a, b) => a.month - b.month);
+
+            container.innerHTML = sorted.map(cf => {
+                let amountText = '';
+                if (cf.uncertain) {
+                    const low = Math.abs(cf.lowValue);
+                    const high = Math.abs(cf.highValue);
+                    amountText = `${Math.min(low, high)}k - ${Math.max(low, high)}k`;
+                } else {
+                    amountText = `${Math.abs(cf.value)}k`;
+                }
+
+                const isEnabled = cf.enabled !== false;
+
+                return `
+                    <div class="cashflow-item ${!isEnabled ? 'disabled' : ''}">
+                        <label class="toggle-switch">
+                            <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleCashFlow(${cf.id})">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <div class="month">${monthsFull[cf.month - 1]}</div>
+                        <div class="name">${cf.name || '(unnamed)'}</div>
+                        <div class="type ${cf.type === 'in' ? 'inflow' : 'outflow'}">
+                            ${cf.type === 'in' ? 'Inflow' : 'Outflow'}
+                        </div>
+                        <div class="amount">${amountText}${cf.uncertain ? ' (uncertain)' : ''}</div>
+                        <button class="delete-btn" onclick="deleteCashFlow(${cf.id})">Delete</button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Switch view
+        function switchView(view) {
+            currentView = view;
+
+            // Update active button
+            ['lineViewBtn', 'arrowViewBtn', 'tableViewBtn', 'calendarViewBtn', 'stackedViewBtn'].forEach(btnId => {
+                document.getElementById(btnId).classList.remove('active');
+            });
+
+            const viewBtnMap = {
+                'line': 'lineViewBtn',
+                'arrow': 'arrowViewBtn',
+                'table': 'tableViewBtn',
+                'calendar': 'calendarViewBtn',
+                'stacked': 'stackedViewBtn'
+            };
+
+            document.getElementById(viewBtnMap[view]).classList.add('active');
+
+            // Show/hide containers
+            const isChartView = view === 'line' || view === 'arrow';
+            document.getElementById('chartContainer').style.display = isChartView ? 'block' : 'none';
+            document.getElementById('detailContainer').style.display = isChartView ? 'none' : 'block';
+
+            renderAll();
+        }
+
+        // Render timeline
+        function renderTimeline() {
+            if (currentView === 'arrow') {
+                renderArrowView();
+            } else if (currentView === 'line') {
+                renderLineChart();
+            } else if (currentView === 'table') {
+                renderMonthlyTable();
+            } else if (currentView === 'calendar') {
+                renderCalendarView();
+            } else if (currentView === 'stacked') {
+                renderStackedView();
+            }
+        }
+
+        function renderLineChart() {
+            const svg = document.getElementById('timeline');
+            const width = 1200;
+            const height = 400;
+            const margin = { top: 40, right: 40, bottom: 60, left: 60 };
+            const chartWidth = width - margin.left - margin.right;
+            const chartHeight = height - margin.top - margin.bottom;
+
+            svg.innerHTML = '';
+
+            const { monthlyData, startingBalance } = calculateScenarios();
+
+            // Calculate cumulative data
+            const cumulativeBest = [];
+            const cumulativeWorst = [];
+            let sumBest = startingBalance.best;
+            let sumWorst = startingBalance.worst;
+
+            for (let i = 0; i < 12; i++) {
+                sumBest += monthlyData[i].best;
+                sumWorst += monthlyData[i].worst;
+                cumulativeBest.push(sumBest);
+                cumulativeWorst.push(sumWorst);
+            }
+
+            // Find min/max for scale
+            const allValues = [...cumulativeBest, ...cumulativeWorst];
+            const minValue = Math.min(0, ...allValues);
+            const maxValue = Math.max(0, ...allValues);
+            const yRange = maxValue - minValue;
+            const yPadding = yRange * 0.1;
+
+            // Scales
+            const xScale = (month) => margin.left + (month * chartWidth / 12);
+            const yScale = (value) => {
+                return margin.top + chartHeight - ((value - (minValue - yPadding)) / (yRange + 2 * yPadding)) * chartHeight;
+            };
+
+            // Draw axes
+            const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+            // X-axis
+            const xAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            xAxis.setAttribute('x1', margin.left);
+            xAxis.setAttribute('y1', yScale(0));
+            xAxis.setAttribute('x2', width - margin.right);
+            xAxis.setAttribute('y2', yScale(0));
+            xAxis.setAttribute('stroke', '#333');
+            xAxis.setAttribute('stroke-width', '2');
+            g.appendChild(xAxis);
+
+            // Y-axis
+            const yAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            yAxis.setAttribute('x1', margin.left);
+            yAxis.setAttribute('y1', margin.top);
+            yAxis.setAttribute('x2', margin.left);
+            yAxis.setAttribute('y2', height - margin.bottom);
+            yAxis.setAttribute('stroke', '#333');
+            yAxis.setAttribute('stroke-width', '2');
+            g.appendChild(yAxis);
+
+            // Month labels
+            for (let i = 0; i < 12; i++) {
+                const x = xScale(i + 0.5);
+
+                // Grid lines
+                const gridLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                gridLine.setAttribute('x1', x);
+                gridLine.setAttribute('y1', margin.top);
+                gridLine.setAttribute('x2', x);
+                gridLine.setAttribute('y2', height - margin.bottom);
+                gridLine.setAttribute('stroke', '#e0e0e0');
+                gridLine.setAttribute('stroke-width', '1');
+                g.appendChild(gridLine);
+
+                // Month text
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', x);
+                text.setAttribute('y', height - margin.bottom + 20);
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('fill', '#666');
+                text.setAttribute('font-size', '12');
+                text.textContent = months[i];
+                g.appendChild(text);
+            }
+
+            // Y-axis labels
+            const yTicks = 5;
+            for (let i = 0; i <= yTicks; i++) {
+                const value = minValue - yPadding + (yRange + 2 * yPadding) * (i / yTicks);
+                const y = yScale(value);
+
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', margin.left - 10);
+                text.setAttribute('y', y + 4);
+                text.setAttribute('text-anchor', 'end');
+                text.setAttribute('fill', '#666');
+                text.setAttribute('font-size', '11');
+                text.textContent = value.toFixed(2) + 'k';
+                g.appendChild(text);
+            }
+
+            svg.appendChild(g);
+
+            // Draw lines
+            function drawLine(data, color, strokeWidth, dashArray = null) {
+                let pathD = `M ${xScale(0.5)} ${yScale(data[0])}`;
+                for (let i = 1; i < 12; i++) {
+                    pathD += ` L ${xScale(i + 0.5)} ${yScale(data[i])}`;
+                }
+
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', pathD);
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke', color);
+                path.setAttribute('stroke-width', strokeWidth);
+                if (dashArray) path.setAttribute('stroke-dasharray', dashArray);
+                svg.appendChild(path);
+            }
+
+            function drawPoints(data, color, label) {
+                for (let i = 0; i < 12; i++) {
+                    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    circle.setAttribute('cx', xScale(i + 0.5));
+                    circle.setAttribute('cy', yScale(data[i]));
+                    circle.setAttribute('r', '5');
+                    circle.setAttribute('fill', color);
+                    circle.setAttribute('stroke', 'white');
+                    circle.setAttribute('stroke-width', '2');
+                    circle.style.cursor = 'pointer';
+
+                    circle.addEventListener('mouseenter', (e) => showTooltip(e, `${label}\n${months[i]}: ${data[i].toFixed(2)}k`));
+                    circle.addEventListener('mouseleave', hideTooltip);
+
+                    svg.appendChild(circle);
+                }
+            }
+
+            // Draw scenarios
+            if (showAllScenarios) {
+                drawLine(cumulativeBest, '#27ae60', 3);
+                drawPoints(cumulativeBest, '#27ae60', 'Best Case');
+
+                drawLine(cumulativeWorst, '#e74c3c', 3);
+                drawPoints(cumulativeWorst, '#e74c3c', 'Worst Case');
+            } else {
+                drawLine(cumulativeBest, '#27ae60', 3);
+                drawPoints(cumulativeBest, '#27ae60', 'Best Case');
+            }
+
+            // Legend
+            const legendY = 20;
+            const legendX = width - margin.right - 200;
+
+            if (showAllScenarios) {
+                drawLegendItem(legendX, legendY, '#27ae60', 'Best Case');
+                drawLegendItem(legendX, legendY + 25, '#e74c3c', 'Worst Case');
+            } else {
+                drawLegendItem(legendX, legendY, '#27ae60', 'Best Case');
+            }
+
+            function drawLegendItem(x, y, color, label) {
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', x);
+                line.setAttribute('y1', y);
+                line.setAttribute('x2', x + 30);
+                line.setAttribute('y2', y);
+                line.setAttribute('stroke', color);
+                line.setAttribute('stroke-width', '3');
+                svg.appendChild(line);
+
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', x + 40);
+                text.setAttribute('y', y + 4);
+                text.setAttribute('fill', '#333');
+                text.setAttribute('font-size', '13');
+                text.textContent = label;
+                svg.appendChild(text);
+            }
+        }
+
+        function renderArrowView() {
+            const svg = document.getElementById('timeline');
+            const width = 1200;
+            const height = 500;
+            const margin = { top: 80, right: 40, bottom: 60, left: 80 };
+            const chartWidth = width - margin.left - margin.right;
+            const chartHeight = height - margin.top - margin.bottom;
+
+            svg.setAttribute('height', height);
+            svg.innerHTML = '';
+
+            const { monthlyData, startingBalance } = calculateScenarios();
+
+            // Calculate cumulative data for both scenarios
+            const cumulativeBest = [startingBalance.best];
+            const cumulativeWorst = [startingBalance.worst];
+            let sumBest = startingBalance.best;
+            let sumWorst = startingBalance.worst;
+
+            for (let i = 0; i < 12; i++) {
+                sumBest += monthlyData[i].best;
+                sumWorst += monthlyData[i].worst;
+                cumulativeBest.push(sumBest);
+                cumulativeWorst.push(sumWorst);
+            }
+
+            // Find min/max for scale
+            const allValues = [...cumulativeBest, ...cumulativeWorst];
+            const minValue = Math.min(0, ...allValues);
+            const maxValue = Math.max(0, ...allValues);
+            const yRange = maxValue - minValue || 10;
+            const yPadding = yRange * 0.15;
+
+            // Scales
+            const xScale = (month) => margin.left + (month * chartWidth / 12);
+            const yScale = (value) => {
+                return margin.top + chartHeight - ((value - (minValue - yPadding)) / (yRange + 2 * yPadding)) * chartHeight;
+            };
+
+            const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+            // Y-axis
+            const yAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            yAxis.setAttribute('x1', margin.left);
+            yAxis.setAttribute('y1', margin.top);
+            yAxis.setAttribute('x2', margin.left);
+            yAxis.setAttribute('y2', height - margin.bottom);
+            yAxis.setAttribute('stroke', '#333');
+            yAxis.setAttribute('stroke-width', '2');
+            g.appendChild(yAxis);
+
+            // Month labels and grid
+            for (let i = 0; i < 12; i++) {
+                const x = xScale(i + 0.5);
+
+                const gridLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                gridLine.setAttribute('x1', x);
+                gridLine.setAttribute('y1', margin.top);
+                gridLine.setAttribute('x2', x);
+                gridLine.setAttribute('y2', height - margin.bottom);
+                gridLine.setAttribute('stroke', '#e0e0e0');
+                gridLine.setAttribute('stroke-width', '1');
+                g.appendChild(gridLine);
+
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', x);
+                text.setAttribute('y', height - margin.bottom + 20);
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('fill', '#666');
+                text.setAttribute('font-size', '12');
+                text.setAttribute('font-weight', '500');
+                text.textContent = months[i];
+                g.appendChild(text);
+            }
+
+            // Y-axis labels with horizontal grid lines
+            const yTicks = 8;
+            for (let i = 0; i <= yTicks; i++) {
+                const value = minValue - yPadding + (yRange + 2 * yPadding) * (i / yTicks);
+                const y = yScale(value);
+
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', margin.left - 10);
+                text.setAttribute('y', y + 4);
+                text.setAttribute('text-anchor', 'end');
+                text.setAttribute('fill', '#666');
+                text.setAttribute('font-size', '11');
+                text.textContent = value.toFixed(2) + 'k';
+                g.appendChild(text);
+
+                const gridLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                gridLine.setAttribute('x1', margin.left);
+                gridLine.setAttribute('y1', y);
+                gridLine.setAttribute('x2', width - margin.right);
+                gridLine.setAttribute('y2', y);
+                gridLine.setAttribute('stroke', '#e0e0e0');
+                gridLine.setAttribute('stroke-width', '1');
+                g.appendChild(gridLine);
+            }
+
+            svg.appendChild(g);
+
+            // Draw cumulative balance line (background)
+            function drawBalanceLine(cumulativeData, color, label) {
+                let pathD = `M ${xScale(0.5)} ${yScale(cumulativeData[0])}`;
+                for (let i = 1; i <= 12; i++) {
+                    pathD += ` L ${xScale(i - 0.5)} ${yScale(cumulativeData[i])}`;
+                    if (i < 12) {
+                        pathD += ` L ${xScale(i + 0.5)} ${yScale(cumulativeData[i])}`;
+                    }
+                }
+
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', pathD);
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke', color);
+                path.setAttribute('stroke-width', '1.5');
+                path.setAttribute('stroke-dasharray', '3,3');
+                path.setAttribute('opacity', '0.3');
+                svg.appendChild(path);
+
+                // Draw balance points
+                for (let i = 1; i <= 12; i++) {
+                    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    circle.setAttribute('cx', xScale(i - 0.5));
+                    circle.setAttribute('cy', yScale(cumulativeData[i]));
+                    circle.setAttribute('r', '3');
+                    circle.setAttribute('fill', color);
+                    circle.setAttribute('opacity', '0.5');
+                    svg.appendChild(circle);
+                }
+            }
+
+            // Draw arrows for each scenario
+            function drawArrows(cumulativeData, monthlyData, xOffset, scenarioColor, label) {
+                for (let i = 0; i < 12; i++) {
+                    const startY = yScale(cumulativeData[i]);
+                    const endY = yScale(cumulativeData[i + 1]);
+                    const x = xScale(i + 0.5) + xOffset;
+                    const change = monthlyData[i];
+
+                    if (Math.abs(change) < 0.001) continue;
+
+                    const isUp = change > 0;
+                    const arrowColor = isUp ? '#27ae60' : '#e74c3c';
+
+                    // Check if this is uncertain
+                    const monthCashFlows = getAllCashFlows().filter(cf => cf.month === i + 1);
+                    const hasUncertain = monthCashFlows.some(cf => cf.uncertain);
+
+                    // Arrow line (thicker)
+                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    line.setAttribute('x1', x);
+                    line.setAttribute('y1', startY);
+                    line.setAttribute('x2', x);
+                    line.setAttribute('y2', endY);
+                    line.setAttribute('stroke', arrowColor);
+                    line.setAttribute('stroke-width', '8');
+                    line.setAttribute('opacity', hasUncertain ? '0.5' : '0.85');
+                    if (hasUncertain) {
+                        line.setAttribute('stroke-dasharray', '8,4');
+                    }
+                    svg.appendChild(line);
+
+                    // Arrow head (larger)
+                    const arrowSize = 10;
+                    const arrowY = isUp ? endY : endY;
+                    const direction = isUp ? -1 : 1;
+
+                    const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                    const points = `${x},${arrowY} ${x - arrowSize},${arrowY + direction * arrowSize * 1.2} ${x + arrowSize},${arrowY + direction * arrowSize * 1.2}`;
+                    polygon.setAttribute('points', points);
+                    polygon.setAttribute('fill', arrowColor);
+                    polygon.setAttribute('opacity', hasUncertain ? '0.5' : '0.85');
+                    svg.appendChild(polygon);
+
+                    // Value label (positioned better)
+                    const labelY = (startY + endY) / 2;
+                    const labelX = x + (showAllScenarios ? (xOffset < 0 ? -35 : 18) : 18);
+
+                    const valueText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    valueText.setAttribute('x', labelX);
+                    valueText.setAttribute('y', labelY + 4);
+                    valueText.setAttribute('fill', '#333');
+                    valueText.setAttribute('font-size', '10');
+                    valueText.setAttribute('font-weight', '600');
+                    valueText.setAttribute('text-anchor', xOffset < 0 ? 'end' : 'start');
+                    valueText.textContent = (change > 0 ? '+' : '') + change.toFixed(2) + 'k';
+                    svg.appendChild(valueText);
+
+                    // Interactive area for tooltip
+                    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    rect.setAttribute('x', x - 15);
+                    rect.setAttribute('y', Math.min(startY, endY));
+                    rect.setAttribute('width', '30');
+                    rect.setAttribute('height', Math.abs(endY - startY));
+                    rect.setAttribute('fill', 'transparent');
+                    rect.style.cursor = 'pointer';
+
+                    const tooltipText = `${label}\n${months[i]}: ${change > 0 ? '+' : ''}${change.toFixed(2)}k\nRunning Balance: ${cumulativeData[i + 1].toFixed(2)}k`;
+                    rect.addEventListener('mouseenter', (e) => showTooltip(e, tooltipText));
+                    rect.addEventListener('mouseleave', hideTooltip);
+
+                    svg.appendChild(rect);
+                }
+            }
+
+            // Draw balance lines first (in background)
+            if (showAllScenarios) {
+                drawBalanceLine(cumulativeBest, '#27ae60', 'Best');
+                drawBalanceLine(cumulativeWorst, '#e74c3c', 'Worst');
+            } else {
+                drawBalanceLine(cumulativeBest, '#27ae60', 'Best');
+            }
+
+            // Draw arrows on top
+            if (showAllScenarios) {
+                drawArrows(cumulativeBest, monthlyData.map(m => m.best), -12, '#27ae60', 'Best Case');
+                drawArrows(cumulativeWorst, monthlyData.map(m => m.worst), 12, '#e74c3c', 'Worst Case');
+            } else {
+                drawArrows(cumulativeBest, monthlyData.map(m => m.best), 0, '#27ae60', 'Best Case');
+            }
+
+            // Title
+            const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            title.setAttribute('x', width / 2);
+            title.setAttribute('y', 25);
+            title.setAttribute('text-anchor', 'middle');
+            title.setAttribute('fill', '#2c3e50');
+            title.setAttribute('font-size', '16');
+            title.setAttribute('font-weight', '600');
+            title.textContent = 'Waterfall View - Monthly Cash Flow Changes';
+            svg.appendChild(title);
+
+            // Legend
+            const legendY = 45;
+            const legendX = 20;
+
+            function drawLegendItem(x, y, color, label, isDashed = false) {
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', x);
+                line.setAttribute('y1', y);
+                line.setAttribute('x2', x + 30);
+                line.setAttribute('y2', y);
+                line.setAttribute('stroke', color);
+                line.setAttribute('stroke-width', '6');
+                line.setAttribute('opacity', '0.85');
+                if (isDashed) line.setAttribute('stroke-dasharray', '6,3');
+                svg.appendChild(line);
+
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', x + 38);
+                text.setAttribute('y', y + 4);
+                text.setAttribute('fill', '#333');
+                text.setAttribute('font-size', '11');
+                text.textContent = label;
+                svg.appendChild(text);
+            }
+
+            drawLegendItem(legendX, legendY, '#27ae60', 'Inflow');
+            drawLegendItem(legendX + 100, legendY, '#e74c3c', 'Outflow');
+            drawLegendItem(legendX + 200, legendY, '#666', 'Uncertain', true);
+
+            if (showAllScenarios) {
+                const note = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                note.setAttribute('x', legendX + 320);
+                note.setAttribute('y', legendY + 4);
+                note.setAttribute('fill', '#7f8c8d');
+                note.setAttribute('font-size', '11');
+                note.setAttribute('font-style', 'italic');
+                note.textContent = '(Best case on left, Worst case on right)';
+                svg.appendChild(note);
+            }
+        }
+
+        // Monthly Table View
+        function renderMonthlyTable() {
+            const container = document.getElementById('detailContent');
+            container.innerHTML = '<h3 class="view-section-title">Monthly Payment Details</h3>';
+
+            const tableDiv = document.createElement('div');
+            tableDiv.className = 'monthly-table';
+
+            for (let month = 1; month <= 12; month++) {
+                const monthCol = document.createElement('div');
+                monthCol.className = 'month-column';
+
+                const header = document.createElement('h4');
+                header.textContent = monthsFull[month - 1];
+                monthCol.appendChild(header);
+
+                const monthCashFlows = getAllCashFlows().filter(cf => cf.month === month && cf.enabled !== false);
+
+                if (monthCashFlows.length === 0) {
+                    const emptyMsg = document.createElement('div');
+                    emptyMsg.style.fontSize = '11px';
+                    emptyMsg.style.color = '#adb5bd';
+                    emptyMsg.style.textAlign = 'center';
+                    emptyMsg.style.padding = '10px 0';
+                    emptyMsg.textContent = 'No payments';
+                    monthCol.appendChild(emptyMsg);
+                } else {
+                    monthCashFlows.forEach(cf => {
+                        const entry = document.createElement('div');
+                        entry.className = `payment-entry ${cf.type === 'in' ? 'inflow' : 'outflow'}${cf.uncertain ? ' uncertain' : ''}`;
+
+                        const name = document.createElement('div');
+                        name.className = 'name';
+                        name.textContent = cf.name || 'Unnamed';
+                        entry.appendChild(name);
+
+                        const amount = document.createElement('div');
+                        amount.className = 'amount';
+                        if (cf.uncertain) {
+                            const low = Math.abs(cf.lowValue);
+                            const high = Math.abs(cf.highValue);
+                            amount.textContent = `${Math.min(low, high).toFixed(2)}k - ${Math.max(low, high).toFixed(2)}k`;
+                        } else {
+                            amount.textContent = `${Math.abs(cf.value).toFixed(2)}k`;
+                        }
+                        entry.appendChild(amount);
+
+                        monthCol.appendChild(entry);
+                    });
+                }
+
+                tableDiv.appendChild(monthCol);
+            }
+
+            container.appendChild(tableDiv);
+        }
+
+        // Calendar/Card View
+        function renderCalendarView() {
+            const container = document.getElementById('detailContent');
+            container.innerHTML = '<h3 class="view-section-title">Calendar View - Monthly Cards</h3>';
+
+            const calendarDiv = document.createElement('div');
+            calendarDiv.className = 'calendar-view';
+
+            for (let month = 1; month <= 12; month++) {
+                const card = document.createElement('div');
+                card.className = 'month-card';
+
+                const header = document.createElement('h3');
+                header.textContent = monthsFull[month - 1];
+                card.appendChild(header);
+
+                const monthCashFlows = getAllCashFlows().filter(cf => cf.month === month && cf.enabled !== false);
+
+                if (monthCashFlows.length === 0) {
+                    const emptyMsg = document.createElement('div');
+                    emptyMsg.style.fontSize = '13px';
+                    emptyMsg.style.color = '#adb5bd';
+                    emptyMsg.style.textAlign = 'center';
+                    emptyMsg.style.padding = '20px 0';
+                    emptyMsg.textContent = 'No payments scheduled';
+                    card.appendChild(emptyMsg);
+                } else {
+                    let totalBest = 0;
+                    let totalWorst = 0;
+
+                    monthCashFlows.forEach(cf => {
+                        const payment = document.createElement('div');
+                        payment.className = `card-payment ${cf.type === 'in' ? 'inflow' : 'outflow'}`;
+
+                        const paymentName = document.createElement('div');
+                        paymentName.className = 'payment-name';
+                        paymentName.textContent = cf.name || 'Unnamed';
+                        payment.appendChild(paymentName);
+
+                        const paymentAmount = document.createElement('div');
+                        paymentAmount.className = 'payment-amount';
+                        if (cf.uncertain) {
+                            const low = cf.lowValue;
+                            const high = cf.highValue;
+                            paymentAmount.textContent = `${low > 0 ? '+' : ''}${Math.min(low, high).toFixed(2)}k to ${high > 0 ? '+' : ''}${Math.max(low, high).toFixed(2)}k`;
+                            totalBest += Math.max(low, high);
+                            totalWorst += Math.min(low, high);
+                        } else {
+                            paymentAmount.textContent = `${cf.value > 0 ? '+' : ''}${cf.value.toFixed(2)}k`;
+                            totalBest += cf.value;
+                            totalWorst += cf.value;
+                        }
+                        payment.appendChild(paymentAmount);
+
+                        card.appendChild(payment);
+                    });
+
+                    const total = document.createElement('div');
+                    total.className = 'total';
+                    if (totalBest === totalWorst) {
+                        total.textContent = `Total: ${totalBest > 0 ? '+' : ''}${totalBest.toFixed(2)}k`;
+                    } else {
+                        total.textContent = `Total: ${totalWorst.toFixed(2)}k to ${totalBest.toFixed(2)}k`;
+                    }
+                    card.appendChild(total);
+                }
+
+                calendarDiv.appendChild(card);
+            }
+
+            container.appendChild(calendarDiv);
+        }
+
+        // Gantt Timeline View
+        function renderGanttView() {
+            const container = document.getElementById('detailContent');
+            container.innerHTML = '<h3 class="view-section-title">Gantt Timeline - Payment Schedule</h3>';
+
+            const ganttDiv = document.createElement('div');
+            ganttDiv.className = 'gantt-view';
+
+            // Month headers
+            const headerDiv = document.createElement('div');
+            headerDiv.className = 'gantt-month-header';
+            headerDiv.innerHTML = '<div></div>';
+
+            const monthsDiv = document.createElement('div');
+            monthsDiv.className = 'gantt-months';
+            months.forEach(m => {
+                const label = document.createElement('div');
+                label.className = 'gantt-month-label';
+                label.textContent = m;
+                monthsDiv.appendChild(label);
+            });
+            headerDiv.appendChild(monthsDiv);
+            ganttDiv.appendChild(headerDiv);
+
+            // Group cash flows by unique payment name + type + amount
+            const paymentGroups = {};
+            getAllCashFlows().filter(cf => cf.enabled !== false).forEach(cf => {
+                const key = `${cf.name || 'Unnamed'}_${cf.type}_${cf.uncertain ? `${cf.lowValue}-${cf.highValue}` : cf.value}`;
+                if (!paymentGroups[key]) {
+                    paymentGroups[key] = {
+                        name: cf.name || 'Unnamed',
+                        type: cf.type,
+                        uncertain: cf.uncertain,
+                        value: cf.value,
+                        lowValue: cf.lowValue,
+                        highValue: cf.highValue,
+                        months: []
+                    };
+                }
+                paymentGroups[key].months.push(cf.month);
+            });
+
+            // Render each payment group
+            Object.values(paymentGroups).forEach(group => {
+                const row = document.createElement('div');
+                row.className = 'gantt-row';
+
+                const label = document.createElement('div');
+                label.className = 'gantt-label';
+                label.innerHTML = `<div>${group.name}</div>`;
+
+                const amountDiv = document.createElement('div');
+                amountDiv.className = 'amount';
+                if (group.uncertain) {
+                    const low = Math.abs(group.lowValue);
+                    const high = Math.abs(group.highValue);
+                    amountDiv.textContent = `${Math.min(low, high).toFixed(2)}k - ${Math.max(low, high).toFixed(2)}k`;
+                } else {
+                    amountDiv.textContent = `${Math.abs(group.value).toFixed(2)}k`;
+                }
+                label.appendChild(amountDiv);
+                row.appendChild(label);
+
+                const timeline = document.createElement('div');
+                timeline.className = 'gantt-timeline';
+
+                for (let month = 1; month <= 12; month++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'gantt-cell';
+
+                    if (group.months.includes(month)) {
+                        cell.classList.add('active', group.type === 'in' ? 'inflow' : 'outflow');
+                        if (group.uncertain) {
+                            cell.classList.add('uncertain');
+                        }
+                        cell.textContent = '✓';
+                    }
+
+                    timeline.appendChild(cell);
+                }
+
+                row.appendChild(timeline);
+                ganttDiv.appendChild(row);
+            });
+
+            container.appendChild(ganttDiv);
+        }
+
+        // Stacked Column View
+        function renderStackedView() {
+            const container = document.getElementById('detailContent');
+            container.innerHTML = '<h3 class="view-section-title">Stacked Columns - Payment Blocks</h3>';
+
+            const stackedDiv = document.createElement('div');
+            stackedDiv.className = 'stacked-view';
+
+            for (let month = 1; month <= 12; month++) {
+                const column = document.createElement('div');
+                column.className = 'stacked-column';
+
+                const bars = document.createElement('div');
+                bars.className = 'stacked-bars';
+
+                const monthCashFlows = getAllCashFlows().filter(cf => cf.month === month && cf.enabled !== false);
+
+                monthCashFlows.forEach(cf => {
+                    const bar = document.createElement('div');
+                    bar.className = `stacked-bar ${cf.type === 'in' ? 'inflow' : 'outflow'}${cf.uncertain ? ' uncertain' : ''}`;
+
+                    let displayText = cf.name || 'Unnamed';
+                    if (cf.uncertain) {
+                        const low = Math.abs(cf.lowValue);
+                        const high = Math.abs(cf.highValue);
+                        displayText += `\n${Math.min(low, high).toFixed(1)}-${Math.max(low, high).toFixed(1)}k`;
+                    } else {
+                        displayText += `\n${Math.abs(cf.value).toFixed(1)}k`;
+                    }
+
+                    bar.textContent = displayText.split('\n')[0];
+                    bar.title = displayText;
+
+                    // Calculate height based on amount
+                    const amount = cf.uncertain ? Math.max(Math.abs(cf.lowValue), Math.abs(cf.highValue)) : Math.abs(cf.value);
+                    const minHeight = 35;
+                    const heightFactor = 5;
+                    bar.style.minHeight = `${Math.max(minHeight, amount * heightFactor)}px`;
+
+                    bars.appendChild(bar);
+                });
+
+                column.appendChild(bars);
+
+                const label = document.createElement('div');
+                label.className = 'stacked-month-label';
+                label.textContent = months[month - 1];
+                column.appendChild(label);
+
+                stackedDiv.appendChild(column);
+            }
+
+            container.appendChild(stackedDiv);
+        }
+
+        // Tooltip functions
+        function showTooltip(e, text) {
+            const tooltip = document.getElementById('tooltip');
+            tooltip.style.display = 'block';
+            tooltip.style.left = (e.pageX + 10) + 'px';
+            tooltip.style.top = (e.pageY - 10) + 'px';
+            tooltip.innerHTML = text.replace(/\n/g, '<br>');
+        }
+
+        function hideTooltip() {
+            document.getElementById('tooltip').style.display = 'none';
+        }
+
+        // Toggle month expansion
+        const expandedMonths = new Set();
+
+        function toggleMonth(month) {
+            if (expandedMonths.has(month)) {
+                expandedMonths.delete(month);
+            } else {
+                expandedMonths.add(month);
+            }
+            renderList();
+        }
+
+        // Render cash flow table
+        function renderList() {
+            const tbody = document.getElementById('cashflowTableBody');
+
+            const currentYearFlows = cashFlows.filter(cf => cf.year === currentYear);
+            const currentYearGhosts = ghostFlows.filter(gf => gf.year === currentYear);
+
+            if (currentYearFlows.length === 0 && currentYearGhosts.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 40px; color: #7f8c8d;">
+                            No cash flows for ${currentYear}
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            let html = '';
+
+            // Group by month
+            const flowsByMonth = {};
+
+            // Add regular flows for current year
+            currentYearFlows.forEach(cf => {
+                if (!flowsByMonth[cf.month]) flowsByMonth[cf.month] = [];
+                flowsByMonth[cf.month].push({ ...cf, isGhostEntry: false });
+            });
+
+            // Add ghost flows expanded by month for current year
+            currentYearGhosts.forEach(gf => {
+                gf.months.forEach(month => {
+                    if (!flowsByMonth[month]) flowsByMonth[month] = [];
+                    flowsByMonth[month].push({
+                        ...gf,
+                        month: month,
+                        id: `${gf.id}_${month}`,
+                        ghostParentId: gf.id,
+                        isGhostEntry: true
+                    });
+                });
+            });
+
+            // Sort months
+            const sortedMonths = Object.keys(flowsByMonth).map(m => parseInt(m)).sort((a, b) => a - b);
+
+            sortedMonths.forEach(month => {
+                const flows = flowsByMonth[month];
+                const ghostCount = flows.filter(f => f.isGhostEntry).length;
+                const regularCount = flows.filter(f => !f.isGhostEntry).length;
+                const isExpanded = expandedMonths.has(month);
+
+                // Month header row
+                html += `
+                    <tr class="month-row" onclick="toggleMonth(${month})">
+                        <td>
+                            <span class="month-toggle ${isExpanded ? 'expanded' : ''}">▶</span>
+                        </td>
+                        <td colspan="5">
+                            <strong>${monthsFull[month - 1]}</strong>
+                            <span class="month-count">${flows.length} flow${flows.length > 1 ? 's' : ''}</span>
+                            ${ghostCount > 0 ? `<span class="badge ghost">Ghost: ${ghostCount}</span>` : ''}
+                        </td>
+                    </tr>
+                `;
+
+                // Entry rows
+                flows.forEach(flow => {
+                    const isEnabled = flow.enabled !== false;
+                    let amountText = '';
+
+                    if (flow.uncertain) {
+                        const low = Math.abs(flow.lowValue);
+                        const high = Math.abs(flow.highValue);
+                        amountText = `${Math.min(low, high).toFixed(3)}k - ${Math.max(low, high).toFixed(3)}k`;
+                    } else {
+                        amountText = `${Math.abs(flow.value).toFixed(3)}k`;
+                    }
+
+                    const rowClass = `entry-row ${isExpanded ? 'visible' : ''} ${!isEnabled ? 'disabled' : ''} ${flow.isGhostEntry ? 'ghost-row' : ''}`;
+
+                    html += `
+                        <tr class="${rowClass}">
+                            <td></td>
+                            <td>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" ${isEnabled ? 'checked' : ''}
+                                        onchange="${flow.isGhostEntry ? `toggleGhostFlow(${flow.ghostParentId})` : `toggleCashFlow(${flow.id})`}">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </td>
+                            <td>
+                                ${flow.name || '(unnamed)'}
+                                ${flow.isGhostEntry ? '<span class="badge ghost">Ghost</span>' : ''}
+                            </td>
+                            <td>
+                                <span class="badge ${flow.type === 'in' ? 'inflow' : 'outflow'}">
+                                    ${flow.type === 'in' ? 'Inflow' : 'Outflow'}
+                                </span>
+                            </td>
+                            <td class="amount-cell">
+                                ${amountText}
+                                ${flow.uncertain ? '<span class="badge uncertain">Uncertain</span>' : ''}
+                            </td>
+                            <td>
+                                <div class="action-buttons">
+                                    <button class="edit-btn" onclick="${flow.isGhostEntry ? `editGhostFlow(${flow.ghostParentId})` : `editCashFlow(${flow.id})`}">
+                                        Edit
+                                    </button>
+                                    <button class="delete-btn" onclick="${flow.isGhostEntry ? `deleteGhostFlow(${flow.ghostParentId})` : `deleteCashFlow(${flow.id})`}">
+                                        Delete
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+            });
+
+            tbody.innerHTML = html;
+        }
+
+        // Render all
+        function renderAll() {
+            renderSummary();
+            renderTimeline();
+            renderList();
+        }
+
+        // Close modal on outside click
+        document.getElementById('cashflowModal').addEventListener('click', (e) => {
+            if (e.target.id === 'cashflowModal') {
+                closeModal();
+            }
+        });
+
+        // Initialize
+        loadData();
+        renderAll();
+    </script>
+</body>
+</html>
