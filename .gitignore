@@ -26,3 +26,7 @@ dist-ssr
 # Environment files (all excluded for public repo security)
 .env*
 !.env.example
+
+# Private/personal data — NEVER commit to this public repo
+*.private.json
+private/

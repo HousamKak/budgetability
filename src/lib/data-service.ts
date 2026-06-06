@@ -38,6 +38,24 @@ export type AccountGroupMember = {
   accountId: string;
 };
 
+// Forecast flow type - a projected inflow/outflow across months of a year.
+// Amounts are positive magnitudes (in real currency); `type` sets the sign.
+// Uncertain flows carry a low/high range that produces best/worst scenarios.
+export type ForecastFlow = {
+  id: string;
+  year: number;
+  months: number[]; // 1..12
+  type: "in" | "out";
+  name?: string;
+  uncertain: boolean;
+  value?: number; // certain amount (magnitude)
+  lowValue?: number; // uncertain low (magnitude)
+  highValue?: number; // uncertain high (magnitude)
+  isGhost: boolean; // hypothetical what-if
+  enabled: boolean;
+  sortOrder: number;
+};
+
 // Account Group type - a non-transactable "mother account" that groups several
 // real accounts. Its balance is always derived (sum of member currentBalance).
 export type AccountGroup = {
@@ -147,6 +165,7 @@ export type Store = {
   savingsGoals: SavingsGoal[];
   savingsContributions: SavingsContribution[];
   spreadsheetEntries: ManualEntry[];
+  forecastFlows: ForecastFlow[];
 };
 
 // Default categories seed data
@@ -226,6 +245,7 @@ const defaultStore: Store = {
   savingsGoals: [],
   savingsContributions: [],
   spreadsheetEntries: [],
+  forecastFlows: [],
 };
 
 function loadStoreFromLocalStorage(): Store {
@@ -250,6 +270,7 @@ function loadStoreFromLocalStorage(): Store {
           savingsGoals: [],
           savingsContributions: [],
           spreadsheetEntries: [],
+          forecastFlows: [],
         };
         saveStoreToLocalStorage(migrated);
         return migrated;
@@ -280,6 +301,7 @@ function loadStoreFromLocalStorage(): Store {
       savingsGoals: parsed.savingsGoals ?? [],
       savingsContributions: parsed.savingsContributions ?? [],
       spreadsheetEntries: parsed.spreadsheetEntries ?? [],
+      forecastFlows: parsed.forecastFlows ?? [],
     };
   } catch {
     return { ...defaultStore };
@@ -2924,6 +2946,211 @@ export class DataService {
     ).filter((e) => !(e.monthKey === monthKey && e.columnKey === columnKey));
     saveStoreToLocalStorage(this.localStore);
   }
+
+  // ============================================
+  // FORECAST FLOW OPERATIONS
+  // ============================================
+  async getForecastFlows(): Promise<ForecastFlow[]> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("forecast_flows")
+          .select("*")
+          .order("sort_order", { ascending: true });
+
+        if (error) throw error;
+
+        const flows =
+          (data as Array<Record<string, unknown>> | null)?.map((row) =>
+            forecastRowToFlow(row),
+          ) || [];
+
+        this.localStore.forecastFlows = flows;
+        saveStoreToLocalStorage(this.localStore);
+        return flows;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    return this.localStore.forecastFlows ?? [];
+  }
+
+  async addForecastFlow(
+    flow: Omit<ForecastFlow, "id">,
+  ): Promise<ForecastFlow> {
+    const id = crypto.randomUUID();
+    const newFlow: ForecastFlow = { id, ...flow };
+
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser();
+        if (!user) {
+          console.warn("User not authenticated, falling back to localStorage");
+          this.useSupabase = false;
+        } else {
+          const { error } = await supabase
+            .from("forecast_flows")
+            .insert(forecastFlowToRow(newFlow, user.id) as never);
+          if (error) throw error;
+          return newFlow;
+        }
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    this.localStore.forecastFlows = [
+      ...(this.localStore.forecastFlows ?? []),
+      newFlow,
+    ];
+    saveStoreToLocalStorage(this.localStore);
+    return newFlow;
+  }
+
+  async updateForecastFlow(
+    id: string,
+    updates: Partial<Omit<ForecastFlow, "id">>,
+  ): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const dbUpdates: Record<string, unknown> = {};
+        if (updates.year !== undefined) dbUpdates.year = updates.year;
+        if (updates.months !== undefined) dbUpdates.months = updates.months;
+        if (updates.type !== undefined) dbUpdates.type = updates.type;
+        if (updates.name !== undefined) dbUpdates.name = updates.name ?? null;
+        if (updates.uncertain !== undefined)
+          dbUpdates.uncertain = updates.uncertain;
+        if (updates.value !== undefined)
+          dbUpdates.value = updates.value ?? null;
+        if (updates.lowValue !== undefined)
+          dbUpdates.low_value = updates.lowValue ?? null;
+        if (updates.highValue !== undefined)
+          dbUpdates.high_value = updates.highValue ?? null;
+        if (updates.isGhost !== undefined) dbUpdates.is_ghost = updates.isGhost;
+        if (updates.enabled !== undefined) dbUpdates.enabled = updates.enabled;
+        if (updates.sortOrder !== undefined)
+          dbUpdates.sort_order = updates.sortOrder;
+
+        const { error } = await supabase
+          .from("forecast_flows")
+          .update(dbUpdates as never)
+          .eq("id", id);
+        if (error) throw error;
+        return;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    this.localStore.forecastFlows = (this.localStore.forecastFlows ?? []).map(
+      (f) => (f.id === id ? { ...f, ...updates } : f),
+    );
+    saveStoreToLocalStorage(this.localStore);
+  }
+
+  async removeForecastFlow(id: string): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { error } = await supabase
+          .from("forecast_flows")
+          .delete()
+          .eq("id", id);
+        if (error) throw error;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    this.localStore.forecastFlows = (
+      this.localStore.forecastFlows ?? []
+    ).filter((f) => f.id !== id);
+    saveStoreToLocalStorage(this.localStore);
+  }
+
+  // Bulk-insert flows (used by the importer). Returns the created flows.
+  async addForecastFlows(
+    flows: Array<Omit<ForecastFlow, "id">>,
+  ): Promise<ForecastFlow[]> {
+    const created: ForecastFlow[] = flows.map((f) => ({
+      id: crypto.randomUUID(),
+      ...f,
+    }));
+    if (created.length === 0) return [];
+
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser();
+        if (!user) {
+          console.warn("User not authenticated, falling back to localStorage");
+          this.useSupabase = false;
+        } else {
+          const { error } = await supabase
+            .from("forecast_flows")
+            .insert(
+              created.map((f) => forecastFlowToRow(f, user.id)) as never,
+            );
+          if (error) throw error;
+          return created;
+        }
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    this.localStore.forecastFlows = [
+      ...(this.localStore.forecastFlows ?? []),
+      ...created,
+    ];
+    saveStoreToLocalStorage(this.localStore);
+    return created;
+  }
+}
+
+// ---- Forecast flow row mappers (DB snake_case <-> ForecastFlow) ----
+function forecastRowToFlow(row: Record<string, unknown>): ForecastFlow {
+  const num = (v: unknown): number | undefined =>
+    v === null || v === undefined ? undefined : Number(v);
+  return {
+    id: row.id as string,
+    year: Number(row.year),
+    months: Array.isArray(row.months) ? (row.months as number[]) : [],
+    type: row.type as ForecastFlow["type"],
+    name: (row.name as string) || undefined,
+    uncertain: !!row.uncertain,
+    value: num(row.value),
+    lowValue: num(row.low_value),
+    highValue: num(row.high_value),
+    isGhost: !!row.is_ghost,
+    enabled: row.enabled !== false,
+    sortOrder: Number(row.sort_order ?? 0),
+  };
+}
+
+function forecastFlowToRow(
+  flow: ForecastFlow,
+  userId: string,
+): Record<string, unknown> {
+  return {
+    id: flow.id,
+    user_id: userId,
+    year: flow.year,
+    months: flow.months,
+    type: flow.type,
+    name: flow.name ?? null,
+    uncertain: flow.uncertain,
+    value: flow.value ?? null,
+    low_value: flow.lowValue ?? null,
+    high_value: flow.highValue ?? null,
+    is_ghost: flow.isGhost,
+    enabled: flow.enabled,
+    sort_order: flow.sortOrder,
+  };
 }
 
 // Export singleton instance
