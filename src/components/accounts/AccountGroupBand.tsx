@@ -8,8 +8,10 @@ import type { Account, AccountGroup } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import { ChevronRight, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { CategoryIcon } from "@/components/budget/CategoryIcon";
 import { AccountCard } from "./AccountCard";
+import { readAccountDrag, startAccountDrag } from "./accountDrag";
 
 interface AccountGroupBandProps {
   group: AccountGroup;
@@ -18,6 +20,8 @@ interface AccountGroupBandProps {
   onEditGroup: (group: AccountGroup) => void;
   onDeleteGroup: (group: AccountGroup) => void;
   onAddAccount: (group: AccountGroup) => void;
+  // Fired when an account card is dropped onto this group band
+  onAccountDrop: (groupId: string, accountId: string) => void;
   // Per-account actions (forwarded to each member's AccountCard)
   onCardClick: (account: Account) => void;
   onEditAccount: (account: Account) => void;
@@ -38,6 +42,7 @@ export function AccountGroupBand({
   onEditGroup,
   onDeleteGroup,
   onAddAccount,
+  onAccountDrop,
   onCardClick,
   onEditAccount,
   onDeleteAccount,
@@ -47,15 +52,37 @@ export function AccountGroupBand({
 }: AccountGroupBandProps) {
   const combined = members.reduce((sum, a) => sum + a.currentBalance, 0);
   const accent = group.color || "#f59e0b";
+  const [isOver, setIsOver] = useState(false);
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (!isOver) setIsOver(true);
+  }
+  function handleDragLeave(e: React.DragEvent) {
+    // Ignore moves between children of the band
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsOver(false);
+  }
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsOver(false);
+    const id = readAccountDrag(e);
+    if (id) onAccountDrop(group.id, id);
+  }
 
   return (
     <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       className={cn(
-        "relative rounded-2xl p-4 mb-5",
+        "relative rounded-2xl p-4 mb-5 transition-all",
         paperTheme.colors.background.cardGradient,
         paperTheme.colors.borders.paper,
         paperTheme.effects.shadow.md,
         "overflow-hidden",
+        isOver && "ring-2 ring-amber-400 ring-offset-2",
       )}
     >
       <div
@@ -170,15 +197,24 @@ export function AccountGroupBand({
             onClick={() => onAddAccount(group)}
             className={cn(
               "w-full py-6 rounded-xl border-2 border-dashed text-sm text-stone-500 hover:bg-white/40 transition-colors cursor-pointer",
+              isOver ? "border-amber-400 bg-amber-50/60" : "",
               paperTheme.colors.borders.amber,
             )}
           >
-            No accounts yet — add one to this group
+            {isOver
+              ? "Drop to add to this group"
+              : "No accounts yet — add one or drag an account here"}
           </button>
         ) : (
           <div className="flex gap-4 overflow-x-auto pb-2 book-scroll">
             {members.map((account) => (
-              <div key={account.id} className="w-72 shrink-0">
+              <div
+                key={account.id}
+                draggable
+                onDragStart={(e) => startAccountDrag(e, account.id)}
+                className="w-72 shrink-0 cursor-grab active:cursor-grabbing"
+                title="Drag to move this account to another group"
+              >
                 <AccountCard
                   account={account}
                   onClick={onCardClick}

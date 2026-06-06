@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AccountCard } from "./accounts/AccountCard";
+import { readAccountDrag, startAccountDrag } from "./accounts/accountDrag";
 import { AccountForm } from "./accounts/AccountForm";
 import { AccountGroupBand } from "./accounts/AccountGroupBand";
 import { AccountTransactionsDialog } from "./accounts/AccountTransactionsDialog";
@@ -43,6 +44,7 @@ export default function AccountsPage() {
   const [editingGroup, setEditingGroup] = useState<AccountGroup | undefined>();
   const [showGroupSummary, setShowGroupSummary] = useState(false);
   const [summaryGroup, setSummaryGroup] = useState<AccountGroup | null>(null);
+  const [ungroupedOver, setUngroupedOver] = useState(false);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
   const [transferSourceAccount, setTransferSourceAccount] = useState<
     Account | undefined
@@ -186,6 +188,28 @@ export default function AccountsPage() {
     setEditingAccount(undefined);
     setFormGroupId(groupId);
     setShowAccountForm(true);
+  };
+
+  // Move an account into a group (or out, with targetGroupId = null).
+  // Optimistic: update UI immediately, persist, and revert from server on error.
+  const moveAccountToGroup = async (
+    accountId: string,
+    targetGroupId: string | null,
+  ) => {
+    const acct = accounts.find((a) => a.id === accountId);
+    if (!acct) return;
+    if ((acct.groupId ?? null) === targetGroupId) return; // no-op
+    setAccounts((prev) =>
+      prev.map((a) =>
+        a.id === accountId ? { ...a, groupId: targetGroupId } : a,
+      ),
+    );
+    try {
+      await dataService.assignAccountToGroup(accountId, targetGroupId);
+    } catch (error) {
+      console.error("Failed to move account:", error);
+      await loadData(); // revert to source of truth
+    }
   };
 
   // Per-account card actions (shared by flat grid and group bands)
@@ -481,6 +505,7 @@ export default function AccountsPage() {
                 }}
                 onDeleteGroup={handleDeleteGroup}
                 onAddAccount={(g) => openNewAccount(g.id)}
+                onAccountDrop={moveAccountToGroup}
                 onCardClick={cardClick}
                 onEditAccount={editAccount}
                 onDeleteAccount={handleDeleteAccount}
@@ -516,33 +541,73 @@ export default function AccountsPage() {
               </div>
             )}
 
-            {/* Ungrouped accounts */}
-            {ungroupedAccounts.length > 0 && (
-              <div className="mt-2">
-                <h2
-                  className={cn(
-                    "text-lg font-bold mb-3 text-stone-500",
-                    paperTheme.fonts.handwriting,
-                  )}
-                >
-                  Ungrouped
-                </h2>
+            {/* Ungrouped accounts — also a drop zone to detach from a group */}
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (!ungroupedOver) setUngroupedOver(true);
+              }}
+              onDragLeave={(e) => {
+                if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                setUngroupedOver(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setUngroupedOver(false);
+                const id = readAccountDrag(e);
+                if (id) moveAccountToGroup(id, null);
+              }}
+              className={cn(
+                "mt-2 rounded-2xl p-3 transition-all",
+                ungroupedOver && "ring-2 ring-amber-400 ring-offset-2",
+              )}
+            >
+              <h2
+                className={cn(
+                  "text-lg font-bold mb-3 text-stone-500",
+                  paperTheme.fonts.handwriting,
+                )}
+              >
+                Ungrouped
+              </h2>
+              {ungroupedAccounts.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {ungroupedAccounts.map((account) => (
-                    <AccountCard
+                    <div
                       key={account.id}
-                      account={account}
-                      onClick={cardClick}
-                      onEdit={editAccount}
-                      onDelete={handleDeleteAccount}
-                      onTransfer={transferFrom}
-                      onDeposit={depositTo}
-                      onSetDefault={handleSetDefault}
-                    />
+                      draggable
+                      onDragStart={(e) => startAccountDrag(e, account.id)}
+                      className="cursor-grab active:cursor-grabbing"
+                      title="Drag onto a group to add this account"
+                    >
+                      <AccountCard
+                        account={account}
+                        onClick={cardClick}
+                        onEdit={editAccount}
+                        onDelete={handleDeleteAccount}
+                        onTransfer={transferFrom}
+                        onDeposit={depositTo}
+                        onSetDefault={handleSetDefault}
+                      />
+                    </div>
                   ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <div
+                  className={cn(
+                    "py-6 rounded-xl border-2 border-dashed text-center text-sm text-stone-500",
+                    ungroupedOver
+                      ? "border-amber-400 bg-amber-50/60"
+                      : "border-stone-300/60",
+                  )}
+                >
+                  {ungroupedOver
+                    ? "Drop to remove from its group"
+                    : "Drag an account here to remove it from its group"}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
