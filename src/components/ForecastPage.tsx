@@ -24,6 +24,7 @@ import { ForecastChart } from "./forecast/ForecastChart";
 import { ForecastFlowDialog } from "./forecast/ForecastFlowDialog";
 import { ForecastImportDialog } from "./forecast/ForecastImportDialog";
 import {
+  MONTHS_FULL,
   MONTHS_SHORT,
   computeForecast,
   flowDisplayAmount,
@@ -307,7 +308,7 @@ export default function ForecastPage() {
           ) : view === "bars" ? (
             <ForecastBars buckets={model.buckets} />
           ) : view === "table" ? (
-            <MonthlyTable model={model} />
+            <MonthlyPaymentsTable flows={yearFlows} />
           ) : (
             <CalendarView model={model} />
           )}
@@ -485,49 +486,64 @@ function FlowRow({
   );
 }
 
-function MonthlyTable({ model }: { model: ReturnType<typeof computeForecast> }) {
+// Monthly Payment Details — 12 month columns listing each named flow,
+// color-coded inflow/outflow (dashed when uncertain). Ported from the
+// original cash-flow tool's "Monthly Table" view.
+function MonthlyPaymentsTable({ flows }: { flows: ForecastFlow[] }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-stone-400 text-xs border-b border-stone-200">
-            <th className="text-left py-2 px-2 font-medium">Month</th>
-            <th className="text-right py-2 px-2 font-medium">In</th>
-            <th className="text-right py-2 px-2 font-medium">Out</th>
-            <th className="text-right py-2 px-2 font-medium">Net (exp.)</th>
-            <th className="text-right py-2 px-2 font-medium">Balance (worst→best)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {model.buckets.map((b, i) => {
-            const pt = model.series[i + 1];
-            const net = (b.netBest + b.netWorst) / 2;
-            return (
-              <tr key={i} className="border-b border-stone-100 last:border-0">
-                <td className="py-1.5 px-2 text-stone-600">{MONTHS_SHORT[i]}</td>
-                <td className="py-1.5 px-2 text-right text-green-700 tabular-nums">
-                  {b.inBest ? formatCurrency((b.inBest + b.inWorst) / 2) : "—"}
-                </td>
-                <td className="py-1.5 px-2 text-right text-red-600 tabular-nums">
-                  {b.outBest ? formatCurrency((b.outBest + b.outWorst) / 2) : "—"}
-                </td>
-                <td
-                  className={cn(
-                    "py-1.5 px-2 text-right tabular-nums",
-                    net >= 0 ? "text-green-700" : "text-red-600",
-                  )}
-                >
-                  {net >= 0 ? "+" : ""}
-                  {formatCurrency(net)}
-                </td>
-                <td className="py-1.5 px-2 text-right tabular-nums text-stone-600">
-                  {formatCurrency(pt.worst)} → {formatCurrency(pt.best)}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="overflow-x-auto pb-1">
+      <div className="grid grid-flow-col auto-cols-[minmax(116px,1fr)] gap-2 min-w-full">
+        {MONTHS_FULL.map((label, i) => {
+          const month = i + 1;
+          const entries = flows.filter(
+            (f) => f.enabled !== false && f.months.includes(month),
+          );
+          return (
+            <div
+              key={month}
+              className="bg-white rounded-lg p-2 border border-stone-200/70"
+            >
+              <h4 className="text-xs font-bold text-stone-600 text-center pb-1.5 mb-2 border-b-2 border-stone-200">
+                {label}
+              </h4>
+              {entries.length === 0 ? (
+                <p className="text-[10px] text-stone-300 text-center py-2">
+                  No payments
+                </p>
+              ) : (
+                entries.map((f) => {
+                  const amount = f.uncertain
+                    ? `${formatCurrency(Math.min(f.lowValue ?? 0, f.highValue ?? 0))} – ${formatCurrency(Math.max(f.lowValue ?? 0, f.highValue ?? 0))}`
+                    : formatCurrency(Math.abs(f.value ?? 0));
+                  return (
+                    <div
+                      key={f.id}
+                      className={cn(
+                        "rounded-md px-2 py-1.5 mb-1.5 border-l-[3px]",
+                        f.type === "in"
+                          ? "bg-green-50 border-green-500"
+                          : "bg-red-50 border-red-500",
+                        f.uncertain && "border-dashed opacity-80",
+                      )}
+                    >
+                      <div className="text-[11px] font-semibold text-stone-700 leading-tight break-words flex items-center gap-1">
+                        {f.name || (f.type === "in" ? "Inflow" : "Outflow")}
+                        {f.isGhost && (
+                          <Ghost className="w-3 h-3 text-violet-400 shrink-0" />
+                        )}
+                      </div>
+                      <div className="text-[10px] font-mono text-stone-500 mt-0.5">
+                        {f.type === "in" ? "+" : "−"}
+                        {amount}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
