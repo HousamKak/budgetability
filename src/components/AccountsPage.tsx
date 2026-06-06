@@ -12,7 +12,6 @@ import {
   Wallet,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { AccountCard } from "./accounts/AccountCard";
 import { readAccountDrag } from "./accounts/accountDrag";
 import { AccountForm } from "./accounts/AccountForm";
 import { AccountGroupBand } from "./accounts/AccountGroupBand";
@@ -506,19 +505,21 @@ export default function AccountsPage() {
             </div>
           </div>
         ) : viewMode === "flat" ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {accounts.map((account) => (
-              <AccountCard
-                key={account.id}
-                account={account}
-                onClick={cardClick}
-                onEdit={editAccount}
-                onDelete={handleDeleteAccount}
-                onTransfer={transferFrom}
-                onDeposit={depositTo}
-                onSetDefault={handleSetDefault}
-              />
-            ))}
+          <div className="rounded-xl border border-stone-200/70 bg-white/50 p-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-2">
+              {accounts.map((account) => (
+                <AccountRow
+                  key={account.id}
+                  account={account}
+                  onClick={cardClick}
+                  onEdit={editAccount}
+                  onDelete={handleDeleteAccount}
+                  onTransfer={transferFrom}
+                  onDeposit={depositTo}
+                  onSetDefault={handleSetDefault}
+                />
+              ))}
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
