@@ -17,6 +17,7 @@ import { dialogStyles } from "@/styles";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CategoryIcon } from "@/components/budget/CategoryIcon";
+import { groupTotal, signedBalance } from "./accountMath";
 
 interface GroupSummaryDialogProps {
   open: boolean;
@@ -119,7 +120,8 @@ export function GroupSummaryDialog({
     }
   }
 
-  const combined = members.reduce((sum, a) => sum + a.currentBalance, 0);
+  const combined = groupTotal(members);
+  const maxAbs = Math.max(1, ...members.map((m) => Math.abs(signedBalance(m))));
   const accent = group?.color || "#f59e0b";
 
   if (!group) return null;
@@ -189,10 +191,9 @@ export function GroupSummaryDialog({
                   ) : (
                     <div className="space-y-2">
                       {members.map((m) => {
-                        const pct =
-                          combined !== 0
-                            ? (m.currentBalance / combined) * 100
-                            : 0;
+                        const signed = signedBalance(m);
+                        const isLiability = m.accountType === "credit";
+                        const pct = (Math.abs(signed) / maxAbs) * 100;
                         return (
                           <div key={m.id} className="space-y-1">
                             <div className="flex items-center justify-between gap-2">
@@ -206,25 +207,33 @@ export function GroupSummaryDialog({
                                 <span className="text-sm text-stone-700 handwriting truncate">
                                   {m.name}
                                 </span>
+                                {isLiability && (
+                                  <span className="text-[10px] text-red-500 px-1.5 py-0.5 rounded bg-red-50 shrink-0">
+                                    liability
+                                  </span>
+                                )}
                               </div>
                               <span
                                 className={cn(
                                   "text-sm font-bold handwriting shrink-0",
-                                  m.currentBalance >= 0
+                                  signed >= 0
                                     ? "text-green-700"
                                     : "text-red-600",
                                 )}
                               >
-                                ${formatNumber(m.currentBalance)}
+                                {signed < 0 ? "-" : ""}$
+                                {formatNumber(Math.abs(signed))}
                               </span>
                             </div>
-                            {/* Share bar */}
+                            {/* Contribution bar (magnitude) */}
                             <div className="h-1.5 rounded-full bg-stone-200/60 overflow-hidden">
                               <div
                                 className="h-full rounded-full"
                                 style={{
                                   width: `${Math.max(0, Math.min(100, pct))}%`,
-                                  backgroundColor: accent,
+                                  backgroundColor: isLiability
+                                    ? "#ef4444"
+                                    : accent,
                                 }}
                               />
                             </div>

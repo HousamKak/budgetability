@@ -37,7 +37,7 @@ export default function AccountsPage() {
   // Dialog states
   const [showAccountForm, setShowAccountForm] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | undefined>();
-  const [formGroupId, setFormGroupId] = useState<string | null>(null);
+  const [formGroupIds, setFormGroupIds] = useState<string[]>([]);
 
   // Group dialog states
   const [showGroupForm, setShowGroupForm] = useState(false);
@@ -78,7 +78,10 @@ export default function AccountsPage() {
     account: Omit<Account, "id" | "currentBalance">,
   ) => {
     try {
-      await dataService.addAccount(account);
+      const { groupIds = [], ...rest } = account;
+      const created = await dataService.addAccount(rest);
+      if (groupIds.length > 0)
+        await dataService.setAccountGroups(created.id, groupIds);
       await loadData();
     } catch (error) {
       console.error("Failed to create account:", error);
@@ -90,7 +93,9 @@ export default function AccountsPage() {
   ) => {
     if (!editingAccount) return;
     try {
-      await dataService.updateAccount(editingAccount.id, account);
+      const { groupIds = [], ...rest } = account;
+      await dataService.updateAccount(editingAccount.id, rest);
+      await dataService.setAccountGroups(editingAccount.id, groupIds);
       await loadData();
       setEditingAccount(undefined);
     } catch (error) {
@@ -186,30 +191,59 @@ export default function AccountsPage() {
 
   const openNewAccount = (groupId: string | null = null) => {
     setEditingAccount(undefined);
-    setFormGroupId(groupId);
+    setFormGroupIds(groupId ? [groupId] : []);
     setShowAccountForm(true);
   };
 
-  // Move an account into a group (or out, with targetGroupId = null).
-  // Optimistic: update UI immediately, persist, and revert from server on error.
-  const moveAccountToGroup = async (
+  // Optimistic membership mutation helper: apply `updater` to the account's
+  // groupIds locally, persist via `persist`, revert from server on failure.
+  const mutateMembership = async (
     accountId: string,
-    targetGroupId: string | null,
+    updater: (groupIds: string[]) => string[],
+    persist: () => Promise<void>,
   ) => {
-    const acct = accounts.find((a) => a.id === accountId);
-    if (!acct) return;
-    if ((acct.groupId ?? null) === targetGroupId) return; // no-op
     setAccounts((prev) =>
       prev.map((a) =>
-        a.id === accountId ? { ...a, groupId: targetGroupId } : a,
+        a.id === accountId
+          ? { ...a, groupIds: updater(a.groupIds ?? []) }
+          : a,
       ),
     );
     try {
-      await dataService.assignAccountToGroup(accountId, targetGroupId);
+      await persist();
     } catch (error) {
-      console.error("Failed to move account:", error);
+      console.error("Failed to update membership:", error);
       await loadData(); // revert to source of truth
     }
+  };
+
+  // Drag an account onto a group band → add it to that group (keep others).
+  const addAccountToGroup = (groupId: string, accountId: string) => {
+    const acct = accounts.find((a) => a.id === accountId);
+    if (acct?.groupIds?.includes(groupId)) return; // already a member
+    mutateMembership(
+      accountId,
+      (ids) => [...ids, groupId],
+      () => dataService.addAccountToGroup(accountId, groupId),
+    );
+  };
+
+  // Remove an account from a single group (keeps its other memberships).
+  const removeFromGroup = (groupId: string, accountId: string) => {
+    mutateMembership(
+      accountId,
+      (ids) => ids.filter((g) => g !== groupId),
+      () => dataService.removeAccountFromGroup(accountId, groupId),
+    );
+  };
+
+  // Drop onto the Ungrouped zone → detach from every group.
+  const detachFromAllGroups = (accountId: string) => {
+    mutateMembership(
+      accountId,
+      () => [],
+      () => dataService.removeAccountFromAllGroups(accountId),
+    );
   };
 
   // Per-account card actions (shared by flat grid and group bands)
@@ -219,7 +253,7 @@ export default function AccountsPage() {
   };
   const editAccount = (a: Account) => {
     setEditingAccount(a);
-    setFormGroupId(a.groupId ?? null);
+    setFormGroupIds(a.groupIds ?? []);
     setShowAccountForm(true);
   };
   const transferFrom = (a: Account) => {
@@ -233,17 +267,15 @@ export default function AccountsPage() {
 
   const totalBalance = accounts.reduce((sum, a) => sum + a.currentBalance, 0);
 
-  // Members of a group, ordered; and accounts with no (or stale) group.
+  // Members of each group (an account can appear in several); and accounts
+  // that belong to no group at all.
   const groupedAccounts = groups.map((g) => ({
     group: g,
-    members: accounts.filter((a) => a.groupId === g.id),
+    members: accounts.filter((a) => a.groupIds?.includes(g.id)),
   }));
-  const groupIds = new Set(groups.map((g) => g.id));
-  const ungroupedAccounts = accounts.filter(
-    (a) => !a.groupId || !groupIds.has(a.groupId),
-  );
+  const ungroupedAccounts = accounts.filter((a) => !a.groupIds?.length);
   const summaryMembers = summaryGroup
-    ? accounts.filter((a) => a.groupId === summaryGroup.id)
+    ? accounts.filter((a) => a.groupIds?.includes(summaryGroup.id))
     : [];
 
   return (
@@ -505,7 +537,8 @@ export default function AccountsPage() {
                 }}
                 onDeleteGroup={handleDeleteGroup}
                 onAddAccount={(g) => openNewAccount(g.id)}
-                onAccountDrop={moveAccountToGroup}
+                onAccountDrop={addAccountToGroup}
+                onRemoveFromGroup={removeFromGroup}
                 onCardClick={cardClick}
                 onEditAccount={editAccount}
                 onDeleteAccount={handleDeleteAccount}
@@ -556,7 +589,7 @@ export default function AccountsPage() {
                 e.preventDefault();
                 setUngroupedOver(false);
                 const id = readAccountDrag(e);
-                if (id) moveAccountToGroup(id, null);
+                if (id) detachFromAllGroups(id);
               }}
               className={cn(
                 "mt-2 rounded-2xl p-3 transition-all",
@@ -618,13 +651,13 @@ export default function AccountsPage() {
             setShowAccountForm(open);
             if (!open) {
               setEditingAccount(undefined);
-              setFormGroupId(null);
+              setFormGroupIds([]);
             }
           }}
           onSubmit={editingAccount ? handleUpdateAccount : handleCreateAccount}
           editingAccount={editingAccount}
           groups={groups}
-          defaultGroupId={formGroupId}
+          defaultGroupIds={formGroupIds}
         />
 
         <GroupForm

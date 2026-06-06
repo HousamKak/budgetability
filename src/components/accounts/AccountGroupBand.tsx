@@ -7,11 +7,19 @@ import {
 import type { Account, AccountGroup } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
-import { ChevronRight, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  ChevronRight,
+  MoreVertical,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useState } from "react";
 import { CategoryIcon } from "@/components/budget/CategoryIcon";
 import { AccountCard } from "./AccountCard";
 import { readAccountDrag, startAccountDrag } from "./accountDrag";
+import { groupTotal } from "./accountMath";
 
 interface AccountGroupBandProps {
   group: AccountGroup;
@@ -22,6 +30,8 @@ interface AccountGroupBandProps {
   onAddAccount: (group: AccountGroup) => void;
   // Fired when an account card is dropped onto this group band
   onAccountDrop: (groupId: string, accountId: string) => void;
+  // Remove a single account from THIS group (keeps its other memberships)
+  onRemoveFromGroup: (groupId: string, accountId: string) => void;
   // Per-account actions (forwarded to each member's AccountCard)
   onCardClick: (account: Account) => void;
   onEditAccount: (account: Account) => void;
@@ -43,6 +53,7 @@ export function AccountGroupBand({
   onDeleteGroup,
   onAddAccount,
   onAccountDrop,
+  onRemoveFromGroup,
   onCardClick,
   onEditAccount,
   onDeleteAccount,
@@ -50,7 +61,7 @@ export function AccountGroupBand({
   onDeposit,
   onSetDefault,
 }: AccountGroupBandProps) {
-  const combined = members.reduce((sum, a) => sum + a.currentBalance, 0);
+  const combined = groupTotal(members);
   const accent = group.color || "#f59e0b";
   const [isOver, setIsOver] = useState(false);
 
@@ -212,9 +223,21 @@ export function AccountGroupBand({
                 key={account.id}
                 draggable
                 onDragStart={(e) => startAccountDrag(e, account.id)}
-                className="w-72 shrink-0 cursor-grab active:cursor-grabbing"
-                title="Drag to move this account to another group"
+                className="group/member relative w-72 shrink-0 cursor-grab active:cursor-grabbing"
+                title="Drag to add this account to another group"
               >
+                {/* Remove from THIS group (keeps other memberships) */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemoveFromGroup(group.id, account.id);
+                  }}
+                  title={`Remove from ${group.name}`}
+                  className="absolute -top-1.5 -right-1.5 z-20 w-6 h-6 rounded-full bg-white shadow-md border border-stone-200 flex items-center justify-center text-stone-400 hover:text-red-600 hover:border-red-200 opacity-0 group-hover/member:opacity-100 focus:opacity-100 transition-opacity cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
                 <AccountCard
                   account={account}
                   onClick={onCardClick}
