@@ -13,6 +13,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Rows3,
   Table as TableIcon,
   Trash2,
   TrendingUp,
@@ -27,10 +28,11 @@ import {
   MONTHS_FULL,
   MONTHS_SHORT,
   computeForecast,
+  flowBounds,
   flowDisplayAmount,
 } from "@/utils/forecast";
 
-type View = "line" | "bars" | "table" | "calendar";
+type View = "line" | "bars" | "table" | "calendar" | "ledger";
 
 const BASE_YEAR = new Date().getFullYear();
 
@@ -147,9 +149,10 @@ export default function ForecastPage() {
 
   const VIEWS: { key: View; label: string; icon: typeof LineChartIcon }[] = [
     { key: "line", label: "Balance", icon: LineChartIcon },
-    { key: "bars", label: "Monthly", icon: BarChart3 },
-    { key: "table", label: "Table", icon: TableIcon },
+    { key: "bars", label: "Bars", icon: BarChart3 },
+    { key: "table", label: "Columns", icon: TableIcon },
     { key: "calendar", label: "Calendar", icon: CalendarDays },
+    { key: "ledger", label: "By Month", icon: Rows3 },
   ];
 
   return (
@@ -309,8 +312,10 @@ export default function ForecastPage() {
             <ForecastBars buckets={model.buckets} />
           ) : view === "table" ? (
             <MonthlyPaymentsTable flows={yearFlows} />
-          ) : (
+          ) : view === "calendar" ? (
             <CalendarView model={model} />
+          ) : (
+            <MonthlyLedger flows={yearFlows} />
           )}
         </div>
 
@@ -544,6 +549,95 @@ function MonthlyPaymentsTable({ flows }: { flows: ForecastFlow[] }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// "By Month" — a vertical agenda: each month with flows, its individual
+// payments listed beneath, and a per-month total (range when uncertain).
+function MonthlyLedger({ flows }: { flows: ForecastFlow[] }) {
+  const monthsWithFlows = Array.from({ length: 12 }, (_, i) => i + 1)
+    .map((month) => ({
+      month,
+      entries: flows.filter(
+        (f) => f.enabled !== false && f.months.includes(month),
+      ),
+    }))
+    .filter((m) => m.entries.length > 0);
+
+  if (monthsWithFlows.length === 0) {
+    return (
+      <div className="text-center py-10 text-stone-400 text-sm">
+        No payments scheduled this year.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+      {monthsWithFlows.map(({ month, entries }) => {
+        const total = entries.reduce(
+          (acc, f) => {
+            const b = flowBounds(f);
+            return { best: acc.best + b.best, worst: acc.worst + b.worst };
+          },
+          { best: 0, worst: 0 },
+        );
+        const sameTotal = Math.abs(total.best - total.worst) < 0.005;
+        return (
+          <div
+            key={month}
+            className="rounded-xl border border-stone-200/70 bg-white/70 overflow-hidden"
+          >
+            <div className="flex items-center justify-between px-3 py-2 bg-amber-50/60 border-b border-stone-100">
+              <span className={cn("text-sm font-bold text-stone-700", "handwriting")}>
+                {MONTHS_FULL[month - 1]}
+              </span>
+              <span
+                className={cn(
+                  "text-sm font-bold tabular-nums",
+                  total.best >= 0 ? "text-green-700" : "text-red-600",
+                )}
+              >
+                {sameTotal
+                  ? `${total.best >= 0 ? "+" : ""}${formatCurrency(total.best)}`
+                  : `${formatCurrency(total.worst)} → ${formatCurrency(total.best)}`}
+              </span>
+            </div>
+            <div className="divide-y divide-stone-100">
+              {entries.map((f) => {
+                const amount = f.uncertain
+                  ? `${formatCurrency(Math.min(f.lowValue ?? 0, f.highValue ?? 0))} – ${formatCurrency(Math.max(f.lowValue ?? 0, f.highValue ?? 0))}`
+                  : formatCurrency(Math.abs(f.value ?? 0));
+                return (
+                  <div key={f.id} className="flex items-center gap-2 px-3 py-1.5">
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: f.type === "in" ? "#22c55e" : "#ef4444" }}
+                    />
+                    <span className="flex-1 min-w-0 text-sm text-stone-700 truncate flex items-center gap-1">
+                      {f.name || (f.type === "in" ? "Inflow" : "Outflow")}
+                      {f.isGhost && <Ghost className="w-3.5 h-3.5 text-violet-400 shrink-0" />}
+                      {f.uncertain && (
+                        <span className="text-[10px] text-amber-600 bg-amber-50 px-1 rounded shrink-0">±</span>
+                      )}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-sm font-bold tabular-nums shrink-0",
+                        f.type === "in" ? "text-green-700" : "text-red-600",
+                      )}
+                    >
+                      {f.type === "in" ? "+" : "−"}
+                      {amount}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
