@@ -33,9 +33,9 @@ interface AccountRowProps {
 }
 
 /**
- * One account rendered as a dense, draggable single-line row.
- * Click opens details; hover reveals a quick ⋮ menu and (in a group) a × to
- * detach from that group.
+ * One account as a dense, draggable single-line row with always-visible
+ * Deposit / Transfer actions. Click opens details; ⋮ holds the rest; in a
+ * group context, × detaches it from that group.
  */
 export function AccountRow({
   account,
@@ -61,7 +61,7 @@ export function AccountRow({
     >
       {/* Type icon */}
       <div
-        className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
         style={{ backgroundColor: typeColor + "22" }}
       >
         <CategoryIcon
@@ -71,58 +71,76 @@ export function AccountRow({
         />
       </div>
 
-      {/* Name */}
-      <div className="flex-1 min-w-0 flex items-center gap-1">
-        <span className="text-sm font-medium text-stone-700 truncate">
-          {account.name}
+      {/* Name + balance (stacked, tight) */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1">
+          <span className="text-sm font-medium text-stone-700 truncate">
+            {account.name}
+          </span>
+          {account.isDefault && (
+            <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
+          )}
+        </div>
+        <span
+          className={cn(
+            "text-sm font-bold tabular-nums leading-tight",
+            account.currentBalance >= 0 ? "text-green-700" : "text-red-600",
+          )}
+        >
+          {formatCurrency(account.currentBalance)}
         </span>
-        {account.isDefault && (
-          <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
-        )}
       </div>
 
-      {/* Balance */}
-      <span
-        className={cn(
-          "text-sm font-bold tabular-nums shrink-0",
-          account.currentBalance >= 0 ? "text-green-700" : "text-red-600",
-        )}
-      >
-        {formatCurrency(account.currentBalance)}
-      </span>
+      {/* Always-visible actions */}
+      <div className="flex items-center gap-0.5 shrink-0">
+        <IconButton
+          title="Deposit"
+          onClick={() => onDeposit(account)}
+          className="text-emerald-600 hover:bg-emerald-50"
+        >
+          <ArrowUpRight className="w-4 h-4" />
+        </IconButton>
+        <IconButton
+          title="Transfer"
+          onClick={() => onTransfer(account)}
+          className="text-sky-600 hover:bg-sky-50"
+        >
+          <ArrowRightLeft className="w-4 h-4" />
+        </IconButton>
 
-      {/* Hover actions (reserve space so layout stays stable) */}
-      <div className="flex items-center shrink-0 invisible group-hover/row:visible">
-        {onRemove && (
-          <button
-            type="button"
-            title={removeLabel}
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove();
-            }}
-            className="w-6 h-6 rounded-md flex items-center justify-center text-stone-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        )}
         <HoverCard openDelay={0} closeDelay={80}>
           <HoverCardTrigger asChild>
             <button
               type="button"
               onClick={(e) => e.stopPropagation()}
-              className="w-6 h-6 rounded-md flex items-center justify-center text-stone-400 hover:text-stone-700 hover:bg-stone-100 cursor-pointer"
+              className="w-7 h-7 rounded-md flex items-center justify-center text-stone-400 hover:text-stone-700 hover:bg-stone-100 cursor-pointer"
             >
-              <MoreVertical className="w-3.5 h-3.5" />
+              <MoreVertical className="w-4 h-4" />
             </button>
           </HoverCardTrigger>
           <HoverCardContent align="end" className="w-40 p-1">
-            <div className="flex flex-col gap-0.5" onClick={(e) => e.stopPropagation()}>
-              <MenuItem icon={ArrowUpRight} label="Deposit" onClick={() => onDeposit(account)} />
-              <MenuItem icon={ArrowRightLeft} label="Transfer" onClick={() => onTransfer(account)} />
-              <MenuItem icon={Pencil} label="Edit" onClick={() => onEdit(account)} />
+            <div
+              className="flex flex-col gap-0.5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MenuItem
+                icon={Pencil}
+                label="Edit"
+                onClick={() => onEdit(account)}
+              />
               {!account.isDefault && (
-                <MenuItem icon={Star} label="Set Default" onClick={() => onSetDefault(account)} />
+                <MenuItem
+                  icon={Star}
+                  label="Set Default"
+                  onClick={() => onSetDefault(account)}
+                />
+              )}
+              {onRemove && (
+                <MenuItem
+                  icon={X}
+                  label={removeLabel}
+                  onClick={onRemove}
+                />
               )}
               <MenuItem
                 icon={Trash2}
@@ -133,8 +151,48 @@ export function AccountRow({
             </div>
           </HoverCardContent>
         </HoverCard>
+
+        {/* Quick detach (group context) */}
+        {onRemove && (
+          <IconButton
+            title={removeLabel}
+            onClick={onRemove}
+            className="text-stone-300 hover:text-red-600 hover:bg-red-50 invisible group-hover/row:visible"
+          >
+            <X className="w-3.5 h-3.5" />
+          </IconButton>
+        )}
       </div>
     </div>
+  );
+}
+
+function IconButton({
+  title,
+  onClick,
+  className,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={cn(
+        "w-7 h-7 rounded-md flex items-center justify-center text-stone-400 cursor-pointer transition-colors",
+        className,
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
