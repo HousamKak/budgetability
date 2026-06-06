@@ -1,15 +1,27 @@
 import { Button } from "@/components/ui/button";
-import type { Account } from "@/lib/data-service";
+import type { Account, AccountGroup } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
-import { ArrowRightLeft, Plus, RefreshCw, Wallet } from "lucide-react";
+import {
+  ArrowRightLeft,
+  LayoutGrid,
+  Layers,
+  Plus,
+  RefreshCw,
+  Wallet,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { AccountCard } from "./accounts/AccountCard";
 import { AccountForm } from "./accounts/AccountForm";
+import { AccountGroupBand } from "./accounts/AccountGroupBand";
 import { AccountTransactionsDialog } from "./accounts/AccountTransactionsDialog";
 import { DepositDialog } from "./accounts/DepositDialog";
+import { GroupForm } from "./accounts/GroupForm";
+import { GroupSummaryDialog } from "./accounts/GroupSummaryDialog";
 import { TransferDialog } from "./accounts/TransferDialog";
+
+type ViewMode = "flat" | "grouped";
 
 /**
  * Main accounts management page
@@ -17,11 +29,20 @@ import { TransferDialog } from "./accounts/TransferDialog";
  */
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [groups, setGroups] = useState<AccountGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>("flat");
 
   // Dialog states
   const [showAccountForm, setShowAccountForm] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | undefined>();
+  const [formGroupId, setFormGroupId] = useState<string | null>(null);
+
+  // Group dialog states
+  const [showGroupForm, setShowGroupForm] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<AccountGroup | undefined>();
+  const [showGroupSummary, setShowGroupSummary] = useState(false);
+  const [summaryGroup, setSummaryGroup] = useState<AccountGroup | null>(null);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
   const [transferSourceAccount, setTransferSourceAccount] = useState<
     Account | undefined
@@ -38,8 +59,12 @@ export default function AccountsPage() {
   async function loadData() {
     try {
       setLoading(true);
-      const accts = await dataService.getAccounts();
+      const [accts, grps] = await Promise.all([
+        dataService.getAccounts(),
+        dataService.getAccountGroups(),
+      ]);
       setAccounts(accts);
+      setGroups(grps);
     } catch (error) {
       console.error("Failed to load accounts:", error);
     } finally {
@@ -118,7 +143,84 @@ export default function AccountsPage() {
     }
   };
 
+  const handleCreateGroup = async (
+    group: Omit<AccountGroup, "id" | "sortOrder">,
+  ) => {
+    try {
+      await dataService.addAccountGroup({ ...group, sortOrder: groups.length });
+      await loadData();
+    } catch (error) {
+      console.error("Failed to create group:", error);
+    }
+  };
+
+  const handleUpdateGroup = async (
+    group: Omit<AccountGroup, "id" | "sortOrder">,
+  ) => {
+    if (!editingGroup) return;
+    try {
+      await dataService.updateAccountGroup(editingGroup.id, group);
+      await loadData();
+      setEditingGroup(undefined);
+    } catch (error) {
+      console.error("Failed to update group:", error);
+    }
+  };
+
+  const handleDeleteGroup = async (group: AccountGroup) => {
+    if (
+      !confirm(
+        `Delete group "${group.name}"? Its accounts will not be deleted — they just become ungrouped.`,
+      )
+    )
+      return;
+    try {
+      await dataService.removeAccountGroup(group.id);
+      await loadData();
+    } catch (error) {
+      console.error("Failed to delete group:", error);
+    }
+  };
+
+  const openNewAccount = (groupId: string | null = null) => {
+    setEditingAccount(undefined);
+    setFormGroupId(groupId);
+    setShowAccountForm(true);
+  };
+
+  // Per-account card actions (shared by flat grid and group bands)
+  const cardClick = (a: Account) => {
+    setTransactionsAccount(a);
+    setShowTransactionsDialog(true);
+  };
+  const editAccount = (a: Account) => {
+    setEditingAccount(a);
+    setFormGroupId(a.groupId ?? null);
+    setShowAccountForm(true);
+  };
+  const transferFrom = (a: Account) => {
+    setTransferSourceAccount(a);
+    setShowTransferDialog(true);
+  };
+  const depositTo = (a: Account) => {
+    setDepositAccount(a);
+    setShowDepositDialog(true);
+  };
+
   const totalBalance = accounts.reduce((sum, a) => sum + a.currentBalance, 0);
+
+  // Members of a group, ordered; and accounts with no (or stale) group.
+  const groupedAccounts = groups.map((g) => ({
+    group: g,
+    members: accounts.filter((a) => a.groupId === g.id),
+  }));
+  const groupIds = new Set(groups.map((g) => g.id));
+  const ungroupedAccounts = accounts.filter(
+    (a) => !a.groupId || !groupIds.has(a.groupId),
+  );
+  const summaryMembers = summaryGroup
+    ? accounts.filter((a) => a.groupId === summaryGroup.id)
+    : [];
 
   return (
     <div className="min-h-screen w-full p-4 md:p-8 bg-[repeating-linear-gradient(0deg,#fbf6e9,#fbf6e9_28px,#f2e8cf_28px,#f2e8cf_29px)]">
@@ -161,7 +263,43 @@ export default function AccountsPage() {
               </div>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap items-center">
+              {/* View toggle: Flat <-> Grouped */}
+              <div
+                className={cn(
+                  "flex items-center rounded-xl border-2 p-0.5",
+                  paperTheme.colors.borders.amber,
+                  paperTheme.colors.background.white,
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => setViewMode("flat")}
+                  className={cn(
+                    "flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-colors cursor-pointer",
+                    viewMode === "flat"
+                      ? "bg-amber-500 text-white"
+                      : "text-stone-500 hover:bg-amber-50",
+                  )}
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  Flat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("grouped")}
+                  className={cn(
+                    "flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-colors cursor-pointer",
+                    viewMode === "grouped"
+                      ? "bg-amber-500 text-white"
+                      : "text-stone-500 hover:bg-amber-50",
+                  )}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  Grouped
+                </button>
+              </div>
+
               <Button
                 variant="outline"
                 size="sm"
@@ -174,12 +312,23 @@ export default function AccountsPage() {
                 />
                 Refresh
               </Button>
+              {viewMode === "grouped" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setEditingGroup(undefined);
+                    setShowGroupForm(true);
+                  }}
+                  className={cn(paperTheme.colors.borders.amber)}
+                >
+                  <Layers className="w-4 h-4 mr-1" />
+                  New Group
+                </Button>
+              )}
               <Button
                 size="sm"
-                onClick={() => {
-                  setEditingAccount(undefined);
-                  setShowAccountForm(true);
-                }}
+                onClick={() => openNewAccount(null)}
                 className="bg-amber-500 hover:bg-amber-600 text-white"
               >
                 <Plus className="w-4 h-4 mr-1" />
@@ -299,32 +448,101 @@ export default function AccountsPage() {
               </Button>
             </div>
           </div>
-        ) : (
+        ) : viewMode === "flat" ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {accounts.map((account) => (
               <AccountCard
                 key={account.id}
                 account={account}
-                onClick={(a) => {
-                  setTransactionsAccount(a);
-                  setShowTransactionsDialog(true);
-                }}
-                onEdit={(a) => {
-                  setEditingAccount(a);
-                  setShowAccountForm(true);
-                }}
+                onClick={cardClick}
+                onEdit={editAccount}
                 onDelete={handleDeleteAccount}
-                onTransfer={(a) => {
-                  setTransferSourceAccount(a);
-                  setShowTransferDialog(true);
-                }}
-                onDeposit={(a) => {
-                  setDepositAccount(a);
-                  setShowDepositDialog(true);
-                }}
+                onTransfer={transferFrom}
+                onDeposit={depositTo}
                 onSetDefault={handleSetDefault}
               />
             ))}
+          </div>
+        ) : (
+          <div>
+            {/* Group bands ("mother accounts") */}
+            {groupedAccounts.map(({ group, members }) => (
+              <AccountGroupBand
+                key={group.id}
+                group={group}
+                members={members}
+                onOpenSummary={(g) => {
+                  setSummaryGroup(g);
+                  setShowGroupSummary(true);
+                }}
+                onEditGroup={(g) => {
+                  setEditingGroup(g);
+                  setShowGroupForm(true);
+                }}
+                onDeleteGroup={handleDeleteGroup}
+                onAddAccount={(g) => openNewAccount(g.id)}
+                onCardClick={cardClick}
+                onEditAccount={editAccount}
+                onDeleteAccount={handleDeleteAccount}
+                onTransfer={transferFrom}
+                onDeposit={depositTo}
+                onSetDefault={handleSetDefault}
+              />
+            ))}
+
+            {groups.length === 0 && (
+              <div
+                className={cn(
+                  "mb-5 p-6 rounded-2xl border-2 border-dashed text-center",
+                  paperTheme.colors.borders.amber,
+                )}
+              >
+                <Layers className="w-8 h-8 text-amber-300 mx-auto mb-2" />
+                <p className="text-stone-500 text-sm mb-3">
+                  No groups yet. Create a mother account to combine related
+                  accounts (e.g. "Global Savings").
+                </p>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setEditingGroup(undefined);
+                    setShowGroupForm(true);
+                  }}
+                  className="bg-amber-500 hover:bg-amber-600 text-white"
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  New Group
+                </Button>
+              </div>
+            )}
+
+            {/* Ungrouped accounts */}
+            {ungroupedAccounts.length > 0 && (
+              <div className="mt-2">
+                <h2
+                  className={cn(
+                    "text-lg font-bold mb-3 text-stone-500",
+                    paperTheme.fonts.handwriting,
+                  )}
+                >
+                  Ungrouped
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {ungroupedAccounts.map((account) => (
+                    <AccountCard
+                      key={account.id}
+                      account={account}
+                      onClick={cardClick}
+                      onEdit={editAccount}
+                      onDelete={handleDeleteAccount}
+                      onTransfer={transferFrom}
+                      onDeposit={depositTo}
+                      onSetDefault={handleSetDefault}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -333,10 +551,36 @@ export default function AccountsPage() {
           open={showAccountForm}
           onOpenChange={(open) => {
             setShowAccountForm(open);
-            if (!open) setEditingAccount(undefined);
+            if (!open) {
+              setEditingAccount(undefined);
+              setFormGroupId(null);
+            }
           }}
           onSubmit={editingAccount ? handleUpdateAccount : handleCreateAccount}
           editingAccount={editingAccount}
+          groups={groups}
+          defaultGroupId={formGroupId}
+        />
+
+        <GroupForm
+          open={showGroupForm}
+          onOpenChange={(open) => {
+            setShowGroupForm(open);
+            if (!open) setEditingGroup(undefined);
+          }}
+          onSubmit={editingGroup ? handleUpdateGroup : handleCreateGroup}
+          editingGroup={editingGroup}
+        />
+
+        <GroupSummaryDialog
+          open={showGroupSummary}
+          onOpenChange={(open) => {
+            setShowGroupSummary(open);
+            if (!open) setSummaryGroup(null);
+          }}
+          group={summaryGroup}
+          members={summaryMembers}
+          accounts={accounts}
         />
 
         <TransferDialog

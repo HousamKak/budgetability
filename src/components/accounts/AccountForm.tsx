@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Account } from "@/lib/data-service";
+import type { Account, AccountGroup } from "@/lib/data-service";
 import { cn } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import { useEffect, useState } from "react";
@@ -38,11 +38,17 @@ function getDefaultIconForType(type: Account["accountType"]): string {
   return DEFAULT_ICONS[type] || "wallet";
 }
 
+const NO_GROUP = "__none__";
+
 interface AccountFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (account: Omit<Account, "id" | "currentBalance">) => void;
   editingAccount?: Account;
+  /** Available groups to assign this account to ("mother accounts"). */
+  groups?: AccountGroup[];
+  /** Pre-select a group (e.g. when adding from a group band). */
+  defaultGroupId?: string | null;
 }
 
 /**
@@ -53,6 +59,8 @@ export function AccountForm({
   onOpenChange,
   onSubmit,
   editingAccount,
+  groups = [],
+  defaultGroupId = null,
 }: AccountFormProps) {
   const [name, setName] = useState("");
   const [accountType, setAccountType] =
@@ -60,6 +68,7 @@ export function AccountForm({
   const [initialBalance, setInitialBalance] = useState("");
   const [isDefault, setIsDefault] = useState(false);
   const [icon, setIcon] = useState("");
+  const [groupId, setGroupId] = useState<string | null>(null);
 
   const isEditing = !!editingAccount;
 
@@ -72,15 +81,17 @@ export function AccountForm({
         setInitialBalance(editingAccount.initialBalance.toString());
         setIsDefault(editingAccount.isDefault);
         setIcon(editingAccount.icon || "");
+        setGroupId(editingAccount.groupId ?? null);
       } else {
         setName("");
         setAccountType("checking");
         setInitialBalance("");
         setIsDefault(false);
         setIcon("");
+        setGroupId(defaultGroupId ?? null);
       }
     }
-  }, [open, editingAccount]);
+  }, [open, editingAccount, defaultGroupId]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,6 +105,7 @@ export function AccountForm({
       isDefault,
       icon: icon || undefined,
       sortOrder: 0,
+      groupId,
     });
 
     onOpenChange(false);
@@ -191,6 +203,37 @@ export function AccountForm({
               </SelectContent>
             </Select>
           </div>
+
+          {/* Group (mother account) */}
+          {groups.length > 0 && (
+            <div className="space-y-2">
+              <Label className={cn("text-base", paperTheme.fonts.handwriting)}>
+                Group
+              </Label>
+              <Select
+                value={groupId ?? NO_GROUP}
+                onValueChange={(v) => setGroupId(v === NO_GROUP ? null : v)}
+              >
+                <SelectTrigger
+                  className={cn(
+                    "w-full rounded-xl border-2 shadow-sm",
+                    paperTheme.colors.borders.amber,
+                    paperTheme.colors.background.white,
+                  )}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_GROUP}>No group</SelectItem>
+                  {groups.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Account Icon */}
           <div className="space-y-2">

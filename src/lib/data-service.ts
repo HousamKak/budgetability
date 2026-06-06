@@ -26,6 +26,18 @@ export type Account = {
   color?: string;
   icon?: string;
   sortOrder: number;
+  // Optional parent group ("mother account"). null/undefined = ungrouped.
+  groupId?: string | null;
+};
+
+// Account Group type - a non-transactable "mother account" that groups several
+// real accounts. Its balance is always derived (sum of member currentBalance).
+export type AccountGroup = {
+  id: string;
+  name: string;
+  color?: string;
+  icon?: string;
+  sortOrder: number;
 };
 
 // Account Transaction type - tracks money movement
@@ -120,6 +132,7 @@ export type Store = {
   drafts: DraftItem[];
   categories: Category[];
   accounts: Account[];
+  accountGroups: AccountGroup[];
   accountTransactions: AccountTransaction[];
   budgetAllocations: Record<string, BudgetAllocation[]>;
   savingsGoals: SavingsGoal[];
@@ -197,6 +210,7 @@ const defaultStore: Store = {
   drafts: [],
   categories: [],
   accounts: [],
+  accountGroups: [],
   accountTransactions: [],
   budgetAllocations: {},
   savingsGoals: [],
@@ -219,6 +233,7 @@ function loadStoreFromLocalStorage(): Store {
           drafts: oldParsed.drafts ?? [],
           categories: [],
           accounts: [],
+          accountGroups: [],
           accountTransactions: [],
           budgetAllocations: {},
           savingsGoals: [],
@@ -238,6 +253,7 @@ function loadStoreFromLocalStorage(): Store {
       drafts: parsed.drafts ?? [],
       categories: parsed.categories ?? [],
       accounts: parsed.accounts ?? [],
+      accountGroups: parsed.accountGroups ?? [],
       accountTransactions: parsed.accountTransactions ?? [],
       budgetAllocations: parsed.budgetAllocations ?? {},
       savingsGoals: parsed.savingsGoals ?? [],
@@ -1213,6 +1229,8 @@ export class DataService {
             color: row.color || undefined,
             icon: row.icon || undefined,
             sortOrder: row.sort_order,
+            groupId:
+              (row as { group_id?: string | null }).group_id || null,
           })) || [];
 
         this.localStore.accounts = accounts;
@@ -1256,7 +1274,8 @@ export class DataService {
             color: account.color,
             icon: account.icon,
             sort_order: account.sortOrder,
-          });
+            group_id: account.groupId ?? null,
+          } as never);
 
           if (error) throw error;
           return newAccount;
@@ -1289,6 +1308,8 @@ export class DataService {
         if (updates.icon !== undefined) dbUpdates.icon = updates.icon;
         if (updates.sortOrder !== undefined)
           dbUpdates.sort_order = updates.sortOrder;
+        if (updates.groupId !== undefined)
+          dbUpdates.group_id = updates.groupId ?? null;
 
         const { error } = await supabase
           .from("accounts")
@@ -1380,6 +1401,155 @@ export class DataService {
   async getDefaultAccount(): Promise<Account | null> {
     const accounts = await this.getAccounts();
     return accounts.find((a) => a.isDefault) || accounts[0] || null;
+  }
+
+  // ============================================
+  // ACCOUNT GROUP OPERATIONS ("mother accounts")
+  // ============================================
+  async getAccountGroups(): Promise<AccountGroup[]> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("account_groups")
+          .select("*")
+          .order("sort_order", { ascending: true });
+
+        if (error) throw error;
+
+        const groups =
+          (data as Array<Record<string, unknown>> | null)?.map((row) => ({
+            id: row.id as string,
+            name: row.name as string,
+            color: (row.color as string) || undefined,
+            icon: (row.icon as string) || undefined,
+            sortOrder: (row.sort_order as number) ?? 0,
+          })) || [];
+
+        this.localStore.accountGroups = groups;
+        saveStoreToLocalStorage(this.localStore);
+
+        return groups;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    return this.localStore.accountGroups ?? [];
+  }
+
+  async addAccountGroup(
+    group: Omit<AccountGroup, "id">,
+  ): Promise<AccountGroup> {
+    const id = crypto.randomUUID();
+    const newGroup: AccountGroup = { id, ...group };
+
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser();
+        if (!user) {
+          console.warn("User not authenticated, falling back to localStorage");
+          this.useSupabase = false;
+        } else {
+          const { error } = await supabase.from("account_groups").insert({
+            id,
+            user_id: user.id,
+            name: group.name,
+            color: group.color,
+            icon: group.icon,
+            sort_order: group.sortOrder,
+          } as never);
+
+          if (error) throw error;
+          return newGroup;
+        }
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    this.localStore.accountGroups = [
+      ...this.localStore.accountGroups,
+      newGroup,
+    ];
+    saveStoreToLocalStorage(this.localStore);
+    return newGroup;
+  }
+
+  async updateAccountGroup(
+    id: string,
+    updates: Partial<Omit<AccountGroup, "id">>,
+  ): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const dbUpdates: Record<string, unknown> = {};
+        if (updates.name !== undefined) dbUpdates.name = updates.name;
+        if (updates.color !== undefined) dbUpdates.color = updates.color;
+        if (updates.icon !== undefined) dbUpdates.icon = updates.icon;
+        if (updates.sortOrder !== undefined)
+          dbUpdates.sort_order = updates.sortOrder;
+
+        const { error } = await supabase
+          .from("account_groups")
+          .update(dbUpdates as never)
+          .eq("id", id);
+
+        if (error) throw error;
+        return;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    this.localStore.accountGroups = this.localStore.accountGroups.map((g) =>
+      g.id === id ? { ...g, ...updates } : g,
+    );
+    saveStoreToLocalStorage(this.localStore);
+  }
+
+  // Deleting a group never deletes its accounts — members simply become
+  // ungrouped (group_id is set to NULL by the DB FK / locally below).
+  async removeAccountGroup(id: string): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { error } = await supabase
+          .from("account_groups")
+          .delete()
+          .eq("id", id);
+
+        if (error) throw error;
+        // FK ON DELETE SET NULL already detached members in the DB.
+        this.localStore.accountGroups = this.localStore.accountGroups.filter(
+          (g) => g.id !== id,
+        );
+        this.localStore.accounts = this.localStore.accounts.map((a) =>
+          a.groupId === id ? { ...a, groupId: null } : a,
+        );
+        saveStoreToLocalStorage(this.localStore);
+        return;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        this.useSupabase = false;
+      }
+    }
+
+    this.localStore.accountGroups = this.localStore.accountGroups.filter(
+      (g) => g.id !== id,
+    );
+    this.localStore.accounts = this.localStore.accounts.map((a) =>
+      a.groupId === id ? { ...a, groupId: null } : a,
+    );
+    saveStoreToLocalStorage(this.localStore);
+  }
+
+  // Assign (or clear, with groupId = null) an account's parent group.
+  async assignAccountToGroup(
+    accountId: string,
+    groupId: string | null,
+  ): Promise<void> {
+    await this.updateAccount(accountId, { groupId });
   }
 
   async depositToAccount(
