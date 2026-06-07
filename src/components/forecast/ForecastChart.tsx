@@ -79,18 +79,7 @@ export function ForecastChart({ series, startBalance, todayIndex = -1 }: Forecas
           axisLine={false}
           width={56}
         />
-        <Tooltip
-          formatter={(value: number, name: string) => [
-            formatCurrency(value),
-            name === "best" ? "Best" : name === "worst" ? "Worst" : "Expected",
-          ]}
-          labelClassName="font-bold"
-          contentStyle={{
-            borderRadius: 12,
-            border: "1px solid #e7e1d3",
-            fontSize: 12,
-          }}
-        />
+        <Tooltip content={<BestWorstTooltip />} />
         <ReferenceLine
           y={startBalance}
           stroke="#a8a29e"
@@ -149,6 +138,43 @@ export function ForecastChart({ series, startBalance, todayIndex = -1 }: Forecas
         />
       </ComposedChart>
     </ResponsiveContainer>
+    </div>
+  );
+}
+
+// Tooltip showing only Best and Worst for the hovered month.
+function BestWorstTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ dataKey?: string | number; value?: number }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  const get = (k: string) => payload.find((p) => p.dataKey === k)?.value;
+  const best = get("best");
+  const worst = get("worst");
+  if (best == null && worst == null) return null;
+  return (
+    <div
+      className="rounded-xl border bg-white px-3 py-2 text-xs shadow-md"
+      style={{ borderColor: "#e7e1d3" }}
+    >
+      <div className="font-bold text-stone-700 mb-1">{label}</div>
+      <div className="flex items-center justify-between gap-5">
+        <span className="text-green-600">Best</span>
+        <span className="font-bold tabular-nums text-stone-700">
+          {formatCurrency(best ?? 0)}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-5">
+        <span className="text-red-600">Worst</span>
+        <span className="font-bold tabular-nums text-stone-700">
+          {formatCurrency(worst ?? 0)}
+        </span>
+      </div>
     </div>
   );
 }
