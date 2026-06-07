@@ -51,6 +51,7 @@ export default function ForecastPage() {
   const [showFlowDialog, setShowFlowDialog] = useState(false);
   const [editingFlow, setEditingFlow] = useState<ForecastFlow | undefined>();
   const [showImport, setShowImport] = useState(false);
+  const [flowsView, setFlowsView] = useState<"flow" | "month">("flow");
 
   useEffect(() => {
     loadData();
@@ -89,6 +90,19 @@ export default function ForecastPage() {
         .filter((f) => f.year === year)
         .sort((a, b) => a.sortOrder - b.sortOrder),
     [flows, year],
+  );
+
+  // The same flows grouped under each month they occur in (for the by-month
+  // flows list). A multi-month flow appears under each of its months.
+  const flowsByMonth = useMemo(
+    () =>
+      Array.from({ length: 12 }, (_, i) => i + 1)
+        .map((month) => ({
+          month,
+          entries: yearFlows.filter((f) => f.months.includes(month)),
+        }))
+        .filter((m) => m.entries.length > 0),
+    [yearFlows],
   );
 
   // ---- handlers ----
@@ -142,6 +156,11 @@ export default function ForecastPage() {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const editFlow = (f: ForecastFlow) => {
+    setEditingFlow(f);
+    setShowFlowDialog(true);
   };
 
   const netBest = model.yearEnd.best - model.start.best;
@@ -328,30 +347,77 @@ export default function ForecastPage() {
             paperTheme.effects.shadow.md,
           )}
         >
-          <div className="flex items-center justify-between px-1 py-1 mb-1">
+          <div className="flex items-center justify-between px-1 py-1 mb-1 gap-2 flex-wrap">
             <h2 className={cn("text-lg font-bold text-stone-600", paperTheme.fonts.handwriting)}>
               Flows · {year}
             </h2>
-            <span className="text-xs text-stone-400">{yearFlows.length} flows</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-stone-400">{yearFlows.length} flows</span>
+              <div className="flex items-center rounded-lg border-2 border-amber-200 bg-white p-0.5">
+                <button
+                  onClick={() => setFlowsView("flow")}
+                  className={cn(
+                    "px-2 py-0.5 rounded-md text-xs transition-colors cursor-pointer",
+                    flowsView === "flow" ? "bg-amber-500 text-white" : "text-stone-500 hover:bg-amber-50",
+                  )}
+                >
+                  By flow
+                </button>
+                <button
+                  onClick={() => setFlowsView("month")}
+                  className={cn(
+                    "px-2 py-0.5 rounded-md text-xs transition-colors cursor-pointer",
+                    flowsView === "month" ? "bg-amber-500 text-white" : "text-stone-500 hover:bg-amber-50",
+                  )}
+                >
+                  By month
+                </button>
+              </div>
+            </div>
           </div>
 
           {yearFlows.length === 0 ? (
             <div className="text-center py-10 text-stone-400 text-sm">
               No flows for {year}. Add one or import your data.
             </div>
-          ) : (
+          ) : flowsView === "flow" ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3">
               {yearFlows.map((f) => (
                 <FlowRow
                   key={f.id}
                   flow={f}
                   onToggle={() => toggleFlow(f)}
-                  onEdit={() => {
-                    setEditingFlow(f);
-                    setShowFlowDialog(true);
-                  }}
+                  onEdit={() => editFlow(f)}
                   onDelete={() => deleteFlow(f)}
                 />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+              {flowsByMonth.map(({ month, entries }) => (
+                <div
+                  key={month}
+                  className="rounded-xl border border-stone-200/70 bg-white/60 overflow-hidden"
+                >
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-amber-50/60 border-b border-stone-100">
+                    <span className={cn("text-sm font-bold text-stone-700", paperTheme.fonts.handwriting)}>
+                      {MONTHS_FULL[month - 1]}
+                    </span>
+                    <span className="text-[11px] text-stone-400">{entries.length}</span>
+                  </div>
+                  <div>
+                    {entries.map((f) => (
+                      <FlowRow
+                        key={`${month}-${f.id}`}
+                        flow={f}
+                        hideMonths
+                        onToggle={() => toggleFlow(f)}
+                        onEdit={() => editFlow(f)}
+                        onDelete={() => deleteFlow(f)}
+                      />
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           )}
@@ -418,11 +484,13 @@ function FlowRow({
   onToggle,
   onEdit,
   onDelete,
+  hideMonths,
 }: {
   flow: ForecastFlow;
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  hideMonths?: boolean;
 }) {
   const amount = flowDisplayAmount(flow);
   const amountLabel = flow.uncertain
@@ -460,7 +528,9 @@ function FlowRow({
             </span>
           )}
         </div>
-        <span className="text-[11px] text-stone-400">{monthsLabel(flow.months)}</span>
+        {!hideMonths && (
+          <span className="text-[11px] text-stone-400">{monthsLabel(flow.months)}</span>
+        )}
       </div>
       <span
         className={cn(
