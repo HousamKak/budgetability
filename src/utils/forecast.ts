@@ -80,18 +80,31 @@ export function yearNet(flows: ForecastFlow[], year: number): Bounds {
   );
 }
 
-// Starting balance for `year`, grounded to the real accounts total at `baseYear`.
-// For years after the base year we roll the anchor forward through the
-// intervening years' net flows; the base year itself starts at the anchor.
+// Starting balance for `year`, grounded to the real accounts total which
+// represents money on hand *today* (month `todayMonth` of `baseYear`).
+//
+// Because the anchor is today's balance, flows earlier in the base year have
+// already happened and are baked into it — they must NOT be re-added. So:
+//  - base year: start = anchor (applied at today's month, not January);
+//  - later year: roll the anchor forward through the *remaining* base-year
+//    months (today..Dec) plus the full net of any intervening years.
 export function startingBalance(
   flows: ForecastFlow[],
   year: number,
   anchor: number,
   baseYear: number,
+  todayMonth: number,
 ): Bounds {
   const start: Bounds = { best: anchor, worst: anchor };
   if (year > baseYear) {
-    for (let y = baseYear; y < year; y++) {
+    // remaining of the base year, from today's month forward
+    const baseBuckets = monthlyBuckets(flows, baseYear);
+    for (let i = todayMonth - 1; i < 12; i++) {
+      start.best += baseBuckets[i].netBest;
+      start.worst += baseBuckets[i].netWorst;
+    }
+    // full net of any years strictly between the base year and `year`
+    for (let y = baseYear + 1; y < year; y++) {
       const n = yearNet(flows, y);
       start.best += n.best;
       start.worst += n.worst;
@@ -109,17 +122,28 @@ export type CumulativePoint = {
   netWorst: number;
 };
 
-// Running end-of-month balance band, prefixed with the starting point.
+// Running end-of-month balance band, starting at `startIndex` (0-based month
+// the anchor applies at) and prefixed with the anchor ("Now"/"Start") point.
+// Months before `startIndex` are in the past and are not projected.
 export function cumulativeSeries(
   buckets: MonthBucket[],
   start: Bounds,
+  startIndex: number,
+  isBaseYear: boolean,
 ): CumulativePoint[] {
   const points: CumulativePoint[] = [
-    { label: "Start", monthIndex: -1, best: start.best, worst: start.worst, netBest: 0, netWorst: 0 },
+    {
+      label: isBaseYear ? "Now" : "Start",
+      monthIndex: startIndex - 1,
+      best: start.best,
+      worst: start.worst,
+      netBest: 0,
+      netWorst: 0,
+    },
   ];
   let runBest = start.best;
   let runWorst = start.worst;
-  for (let i = 0; i < 12; i++) {
+  for (let i = startIndex; i < 12; i++) {
     runBest += buckets[i].netBest;
     runWorst += buckets[i].netWorst;
     points.push({
@@ -140,6 +164,7 @@ export type ForecastModel = {
   buckets: MonthBucket[];
   series: CumulativePoint[];
   yearEnd: Bounds;
+  startIndex: number; // 0-based month the projection begins at
 };
 
 export function computeForecast(
@@ -147,12 +172,24 @@ export function computeForecast(
   year: number,
   anchor: number,
   baseYear: number,
+  todayMonth: number,
 ): ForecastModel {
   const buckets = monthlyBuckets(flows, year);
-  const start = startingBalance(flows, year, anchor, baseYear);
-  const series = cumulativeSeries(buckets, start);
+  const isBaseYear = year === baseYear;
+  // Past years aren't grounded forward; treat them as starting in January.
+  const startIndex = isBaseYear
+    ? Math.max(0, Math.min(11, todayMonth - 1))
+    : 0;
+  const start = startingBalance(flows, year, anchor, baseYear, todayMonth);
+  const series = cumulativeSeries(buckets, start, startIndex, isBaseYear);
   const last = series[series.length - 1];
-  return { start, buckets, series, yearEnd: { best: last.best, worst: last.worst } };
+  return {
+    start,
+    buckets,
+    series,
+    yearEnd: { best: last.best, worst: last.worst },
+    startIndex,
+  };
 }
 
 // ---- Import from the standalone cashflow-uncertainty tool ----
