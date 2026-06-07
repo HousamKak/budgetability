@@ -14,12 +14,14 @@ import {
   Plus,
   RefreshCw,
   Rows3,
+  Settings2,
   Table as TableIcon,
   Trash2,
   TrendingUp,
   Upload,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { ForecastAnchorDialog } from "./forecast/ForecastAnchorDialog";
 import { ForecastBars } from "./forecast/ForecastBars";
 import { ForecastChart } from "./forecast/ForecastChart";
 import { ForecastFlowDialog } from "./forecast/ForecastFlowDialog";
@@ -35,6 +37,19 @@ import {
 type View = "line" | "bars" | "table" | "calendar" | "ledger";
 
 const BASE_YEAR = new Date().getFullYear();
+const ANCHOR_KEY = "forecast-anchor-accounts";
+
+// null = all accounts feed the starting balance
+function loadAnchorIds(): string[] | null {
+  try {
+    const raw = localStorage.getItem(ANCHOR_KEY);
+    if (!raw) return null;
+    const ids = JSON.parse(raw);
+    return Array.isArray(ids) ? ids : null;
+  } catch {
+    return null;
+  }
+}
 
 function monthsLabel(months: number[]): string {
   if (months.length === 12) return "All year";
@@ -52,6 +67,8 @@ export default function ForecastPage() {
   const [editingFlow, setEditingFlow] = useState<ForecastFlow | undefined>();
   const [showImport, setShowImport] = useState(false);
   const [flowsView, setFlowsView] = useState<"flow" | "month">("flow");
+  const [anchorIds, setAnchorIds] = useState<string[] | null>(loadAnchorIds);
+  const [showAnchorDialog, setShowAnchorDialog] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -73,11 +90,30 @@ export default function ForecastPage() {
     }
   }
 
-  // Anchor = current real accounts total (the "today" balance).
-  const anchor = useMemo(
-    () => accounts.reduce((s, a) => s + a.currentBalance, 0),
-    [accounts],
+  // Accounts that feed the starting balance (null selection = all of them).
+  const anchorAccounts = useMemo(
+    () =>
+      anchorIds == null
+        ? accounts
+        : accounts.filter((a) => anchorIds.includes(a.id)),
+    [accounts, anchorIds],
   );
+
+  // Anchor = selected accounts' total (the "today" balance).
+  const anchor = useMemo(
+    () => anchorAccounts.reduce((s, a) => s + a.currentBalance, 0),
+    [anchorAccounts],
+  );
+
+  const saveAnchorIds = (ids: string[] | null) => {
+    setAnchorIds(ids);
+    try {
+      if (ids == null) localStorage.removeItem(ANCHOR_KEY);
+      else localStorage.setItem(ANCHOR_KEY, JSON.stringify(ids));
+    } catch {
+      /* ignore */
+    }
+  };
 
   const model = useMemo(
     () => computeForecast(flows, year, anchor, BASE_YEAR),
@@ -264,8 +300,13 @@ export default function ForecastPage() {
           <SummaryCard
             label={`Starting (${year})`}
             value={formatCurrency(model.start.best)}
-            hint="from your accounts"
+            hint={
+              anchorIds == null
+                ? "from all accounts · edit"
+                : `from ${anchorAccounts.length} of ${accounts.length} accounts · edit`
+            }
             tone="neutral"
+            onClick={() => setShowAnchorDialog(true)}
           />
           <SummaryCard
             label={`Best case · end ${year}`}
@@ -438,6 +479,13 @@ export default function ForecastPage() {
           onOpenChange={setShowImport}
           onImport={handleImport}
         />
+        <ForecastAnchorDialog
+          open={showAnchorDialog}
+          onOpenChange={setShowAnchorDialog}
+          accounts={accounts}
+          selectedIds={anchorIds}
+          onSave={saveAnchorIds}
+        />
       </div>
     </div>
   );
@@ -462,16 +510,27 @@ function SummaryCard({
   value,
   hint,
   tone,
+  onClick,
 }: {
   label: string;
   value: string;
   hint: string;
   tone: "best" | "worst" | "neutral";
+  onClick?: () => void;
 }) {
   const valueColor =
     tone === "best" ? "text-green-700" : tone === "worst" ? "text-red-600" : "text-stone-700";
   return (
-    <div className="rounded-xl border border-stone-200/70 bg-white/70 p-3">
+    <div
+      onClick={onClick}
+      className={cn(
+        "rounded-xl border border-stone-200/70 bg-white/70 p-3 relative",
+        onClick && "cursor-pointer hover:border-amber-300 hover:bg-amber-50/40 transition-colors",
+      )}
+    >
+      {onClick && (
+        <Settings2 className="w-3.5 h-3.5 text-stone-300 absolute top-2.5 right-2.5" />
+      )}
       <p className="text-xs text-stone-500">{label}</p>
       <p className={cn("text-xl font-bold tabular-nums", valueColor)}>{value}</p>
       <p className="text-[11px] text-stone-400">{hint}</p>
