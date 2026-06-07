@@ -37,6 +37,7 @@ import {
 type View = "line" | "bars" | "table" | "calendar" | "ledger";
 
 const BASE_YEAR = new Date().getFullYear();
+const TODAY_MONTH = new Date().getMonth() + 1; // 1..12, "today"
 const ANCHOR_KEY = "forecast-anchor-accounts";
 
 // null = all accounts feed the starting balance
@@ -116,7 +117,7 @@ export default function ForecastPage() {
   };
 
   const model = useMemo(
-    () => computeForecast(flows, year, anchor, BASE_YEAR),
+    () => computeForecast(flows, year, anchor, BASE_YEAR, TODAY_MONTH),
     [flows, year, anchor],
   );
 
@@ -298,7 +299,11 @@ export default function ForecastPage() {
         {/* Summary cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           <SummaryCard
-            label={`Starting (${year})`}
+            label={
+              year === BASE_YEAR
+                ? `Balance today (${MONTHS_SHORT[TODAY_MONTH - 1]})`
+                : `Start of ${year}`
+            }
             value={formatCurrency(model.start.best)}
             hint={
               anchorIds == null
