@@ -40,8 +40,121 @@ export function DashboardHeader({
 
   return (
     <div className="mx-auto max-w-7xl px-2 sm:px-4 pt-4 pb-4">
-      {/* 4 Sections Grid: A (Month + Buttons) | Budget | Spent | Planned */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.3fr_1fr_1fr_1fr] gap-4 text-sm">
+      {/* ───────── Phone layout (below lg) ───────── */}
+      <div className="lg:hidden flex flex-col gap-2.5 text-sm">
+        {/* Row 1: month navigator (to the side) + budget beside it */}
+        <div className="flex items-stretch gap-2">
+          <div className="flex items-center gap-0.5 rounded-2xl border-2 border-amber-200 bg-white/70 shadow-sm px-1 shrink-0">
+            <Button
+              variant="ghost"
+              onClick={onGotoPrev}
+              className="rounded-xl h-8 w-8 p-0"
+              aria-label="Previous month"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <h1 className="text-base font-bold tracking-wide text-stone-800 handwriting whitespace-nowrap">
+              {monthLabel}
+            </h1>
+            <Button
+              variant="ghost"
+              onClick={onGotoNext}
+              className="rounded-xl h-8 w-8 p-0"
+              aria-label="Next month"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <div className="flex-1 min-w-0 rounded-2xl border-2 border-amber-200 shadow-sm bg-gradient-to-br from-amber-50/80 to-white/80 overflow-hidden flex items-center">
+            <div className="flex flex-col justify-center px-2 py-1.5 flex-1 min-w-0">
+              <p className="text-[10px] text-stone-400 text-center font-medium uppercase tracking-wider">Budget</p>
+              <div className="flex items-center justify-center gap-0.5">
+                <span
+                  className="text-lg font-bold tracking-wide text-stone-700"
+                  style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+                >
+                  $
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={budgetInput}
+                  onChange={(e) => onBudgetInputChange(e.target.value)}
+                  className={cn(
+                    "w-16 text-lg font-bold tracking-wide bg-transparent border-none outline-none text-center text-stone-800",
+                    "focus:bg-white/50 rounded transition-colors"
+                  )}
+                  style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+            <div
+              onClick={onOpenBudgetDetails}
+              className="flex flex-col items-center justify-center px-2 self-stretch border-l border-dashed border-amber-300/70 cursor-pointer hover:bg-amber-100/60 transition-colors"
+              title="View budget & account details"
+            >
+              <ClipboardList className="w-4 h-4 text-amber-600" />
+              <span
+                className="text-[9px] font-bold text-amber-700 mt-0.5"
+                style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+              >
+                Details
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Row 2: action buttons */}
+        <div className="flex items-center gap-1.5">
+          <Button
+            onClick={onOpenQuickAdd}
+            className="flex-1 rounded-lg bg-amber-200/80 hover:bg-amber-300/80 text-stone-900 border border-amber-300 shadow-sm h-8 px-2"
+          >
+            <Plus className="w-3.5 h-3.5 mr-0.5" />
+            <span className="text-xs font-medium">Quick Add</span>
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={onOpenMonthlyBook}
+            className="flex-1 rounded-lg bg-amber-100/60 hover:bg-amber-200/80 border border-amber-300/50 h-8 px-2"
+          >
+            <Book className="h-3.5 w-3.5 text-amber-700" />
+            <span className="ml-0.5 text-xs font-medium text-amber-700">Book</span>
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={onOpenClearDialog}
+            className="flex-1 rounded-lg bg-red-50 hover:bg-red-100 border border-red-200/50 h-8 px-2"
+          >
+            <Trash className="h-3.5 w-3.5 text-red-600" />
+            <span className="ml-0.5 text-xs font-medium text-red-600">Clear</span>
+          </Button>
+        </div>
+
+        {/* Row 3: Spent + Planned side by side */}
+        <div className="grid grid-cols-2 gap-2">
+          <SummaryCard
+            title="Spent so far"
+            value={totalSpent}
+            red
+            leftAmount={leftNow}
+            leftLabel="left now"
+          />
+          <SummaryCard
+            title="Planned so far"
+            value={totalPlanned}
+            blue
+            leftAmount={leftAfterPlanned}
+            leftLabel="left after"
+            leftAmountRed={leftAfterPlanned < 0}
+          />
+        </div>
+      </div>
+
+      {/* ───────── Desktop layout (lg+) — unchanged ───────── */}
+      <div className="hidden lg:grid lg:grid-cols-[1.3fr_1fr_1fr_1fr] gap-4 text-sm">
         {/* Section A: Month Navigation + Action Buttons */}
         <div className="flex flex-col gap-3">
           {/* Month Navigation */}

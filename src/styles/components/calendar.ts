@@ -42,8 +42,9 @@ export const calendarStyles = {
   weekdayHeader: `hidden lg:grid grid-cols-7 gap-0.5 xs:gap-1 sm:gap-2 px-1 text-center font-medium ${paperTheme.colors.text.muted}`,
   weekdayCell: 'py-0.5 xs:py-1 sm:py-1.5 text-xs xs:text-sm md:text-base',
 
-  // Calendar grid — day-card flow on phones (3 across, scrolls), 7-col on desktop.
+  // Calendar grid — day-card flow on phones (3 across), 7-col on desktop.
+  // Flows naturally (single page scroll); no inner scroll on phones.
   calendarGrid:
-    'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-1.5 sm:gap-2 flex-1 content-start overflow-y-auto lg:overflow-visible pb-2 lg:pb-0',
+    'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-1.5 sm:gap-2 flex-1 content-start overflow-visible pb-2 lg:pb-0',
 } as const;
 
