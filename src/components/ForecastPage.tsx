@@ -797,7 +797,7 @@ function CalendarView({ model }: { model: ReturnType<typeof computeForecast> }) 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
       {model.buckets.map((b, i) => {
-        const pt = model.series[i + 1];
+        const pt = model.series[i];
         const net = (b.netBest + b.netWorst) / 2;
         const has = b.inBest !== 0 || b.outBest !== 0 || b.inWorst !== 0 || b.outWorst !== 0;
         return (
