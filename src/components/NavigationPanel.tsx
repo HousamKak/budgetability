@@ -20,7 +20,7 @@ export function NavigationPanel() {
   const isForecast = location.pathname === "/forecast";
 
   return (
-    <div className="fixed left-1 top-1/2 -translate-y-1/2 z-40">
+    <div className="hidden lg:block fixed left-1 top-1/2 -translate-y-1/2 z-40">
       {/* Main panel container with paper theme styling */}
       <div className={`relative ${paperTheme.colors.background.cardGradient} ${paperTheme.colors.borders.paper} ${paperTheme.radius.lg} p-3 ${paperTheme.effects.shadow.md} overflow-hidden`}>
         {/* Paper texture overlay */}

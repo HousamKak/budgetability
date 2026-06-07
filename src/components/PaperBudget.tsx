@@ -706,8 +706,8 @@ export default function PaperBudget() {
           </div>
         </div>
 
-        {/* Mobile-only bottom tabs - sticky navigation */}
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t-2 border-amber-200 p-2 z-50 safe-area-inset-bottom shadow-lg">
+        {/* Home view switcher (Calendar / Planner) — sits just above the global mobile nav */}
+        <div className="lg:hidden fixed bottom-[3.75rem] left-0 right-0 px-2 pb-1 z-50">
           <div className="relative bg-amber-100/50 rounded-lg p-1 max-w-md mx-auto">
             {/* Sliding indicator */}
             <div

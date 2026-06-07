@@ -576,18 +576,18 @@
     .mobile-content-area {
       height: calc(100vh - 80px); /* Account for header */
       overflow: hidden; /* Prevent double scrolling */
-      padding-bottom: 70px; /* Space for sticky bottom nav */
+      padding-bottom: 118px; /* Space for the view switcher + global mobile nav */
     }
 
     .mobile-calendar-area {
-      height: calc(100vh - 150px); /* Account for header + bottom nav */
+      height: calc(100vh - 200px); /* header + view switcher + global nav */
       display: flex;
       flex-direction: column;
       overflow: hidden;
     }
 
     .mobile-planner-area {
-      height: calc(100vh - 150px); /* Account for header + bottom nav */
+      height: calc(100vh - 200px); /* header + view switcher + global nav */
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
     }
@@ -601,7 +601,7 @@
   /* Extra small phone adjustments */
   @media (max-width: 479px) {
     .mobile-calendar-area {
-      height: calc(100vh - 240px); /* Tighter spacing on very small screens */
+      height: calc(100vh - 280px); /* Tighter spacing on very small screens */
     }
   }
 

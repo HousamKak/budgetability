@@ -7,6 +7,7 @@ import AccountsPage from './components/AccountsPage'
 import SpreadsheetPage from './components/spreadsheet/SpreadsheetPage'
 import ForecastPage from './components/ForecastPage'
 import { NavigationPanel } from './components/NavigationPanel'
+import { MobileNav } from './components/MobileNav'
 import { ProfilePanel } from './components/ProfilePanel'
 import { EmailConfirmation } from './components/EmailConfirmation'
 import { EmailVerificationWaiting } from './components/EmailVerificationWaiting'
@@ -20,6 +21,7 @@ function App() {
       <Router basename={basename}>
         <div className="relative">
           <NavigationPanel />
+          <MobileNav />
           <ProfilePanel />
           <Routes>
             <Route path="/" element={<PaperBudget />} />

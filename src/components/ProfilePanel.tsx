@@ -54,7 +54,7 @@ export function ProfilePanel({ onOpenAuthDialog }: ProfilePanelProps) {
   };
 
   return (
-    <div ref={menuRef} className="fixed bottom-4 left-4 z-40">
+    <div ref={menuRef} className="fixed left-4 bottom-4 max-lg:bottom-[5.5rem] z-[70]">
       {/* Profile Button */}
       <Button
         onClick={() => setIsMenuOpen(!isMenuOpen)}
