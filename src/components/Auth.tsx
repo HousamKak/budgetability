@@ -166,7 +166,7 @@ export function AuthDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="sm:max-w-[425px] mx-2 sm:mx-auto"
+        className="sm:max-w-[425px] sm:mx-auto"
         aria-describedby={undefined}
       >
         <div className={dialogStyles.paperDialog}>

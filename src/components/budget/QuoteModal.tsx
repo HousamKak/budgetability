@@ -17,7 +17,7 @@ export function QuoteModal({ open, onOpenChange, quote }: QuoteModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-md mx-2 sm:mx-auto"
+        className="sm:max-w-md sm:mx-auto"
         aria-describedby={undefined}
       >
         <div className={dialogStyles.paperDialog}>
