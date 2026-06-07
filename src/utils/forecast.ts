@@ -80,35 +80,20 @@ export function yearNet(flows: ForecastFlow[], year: number): Bounds {
   );
 }
 
-// Starting balance for `year`, grounded to the real accounts total which
-// represents money on hand *today* (month `todayMonth` of `baseYear`).
-//
-// Because the anchor is today's balance, flows earlier in the base year have
-// already happened and are baked into it — they must NOT be re-added. So:
-//  - base year: start = anchor (applied at today's month, not January);
-//  - later year: roll the anchor forward through the *remaining* base-year
-//    months (today..Dec) plus the full net of any intervening years.
+// January opening balance for `year`: the manual base opening rolled forward
+// through the full net of every year before it. Independent of any accounts —
+// only the flows (plus the manual opening) shape the result.
 export function startingBalance(
   flows: ForecastFlow[],
   year: number,
-  anchor: number,
+  openingBalance: number,
   baseYear: number,
-  todayMonth: number,
 ): Bounds {
-  const start: Bounds = { best: anchor, worst: anchor };
-  if (year > baseYear) {
-    // remaining of the base year, from today's month forward
-    const baseBuckets = monthlyBuckets(flows, baseYear);
-    for (let i = todayMonth - 1; i < 12; i++) {
-      start.best += baseBuckets[i].netBest;
-      start.worst += baseBuckets[i].netWorst;
-    }
-    // full net of any years strictly between the base year and `year`
-    for (let y = baseYear + 1; y < year; y++) {
-      const n = yearNet(flows, y);
-      start.best += n.best;
-      start.worst += n.worst;
-    }
+  const start: Bounds = { best: openingBalance, worst: openingBalance };
+  for (let y = baseYear; y < year; y++) {
+    const n = yearNet(flows, y);
+    start.best += n.best;
+    start.worst += n.worst;
   }
   return start;
 }
@@ -160,60 +145,29 @@ export function cumulativeSeries(
 
 // Full computed model for one year.
 export type ForecastModel = {
-  start: Bounds; // headline starting balance (today's anchor for the base year)
+  start: Bounds; // January opening balance for the year
   buckets: MonthBucket[];
   series: CumulativePoint[]; // full Jan→Dec
   yearEnd: Bounds;
-  todayIndex: number; // 0-based current month for the base year, else -1
 };
 
+// The graph is shaped only by the flows plus a manual `openingBalance` at the
+// base year — no accounts, no "today" anchoring. Each year carries forward.
 export function computeForecast(
   flows: ForecastFlow[],
   year: number,
-  anchor: number,
+  openingBalance: number,
   baseYear: number,
-  todayMonth: number,
 ): ForecastModel {
   const buckets = monthlyBuckets(flows, year);
-  const isBaseYear = year === baseYear;
-  const todayIndex = Math.max(0, Math.min(11, todayMonth - 1));
-
-  let janOpen: Bounds;
-  let bandFromIndex: number;
-  let headlineStart: Bounds;
-
-  if (isBaseYear) {
-    // The anchor is today's balance (at month `todayIndex`). Reconstruct the
-    // January opening by removing the already-happened months, so the full-year
-    // curve passes through the real balance "now".
-    let jan = anchor;
-    for (let i = 0; i < todayIndex; i++) {
-      jan -= (buckets[i].netBest + buckets[i].netWorst) / 2;
-    }
-    janOpen = { best: jan, worst: jan };
-    bandFromIndex = todayIndex; // uncertainty only from today forward
-    headlineStart = { best: anchor, worst: anchor };
-  } else if (year > baseYear) {
-    // Whole year is in the future: open at the rolled-forward anchor in January.
-    const rolled = startingBalance(flows, year, anchor, baseYear, todayMonth);
-    janOpen = rolled;
-    bandFromIndex = 0;
-    headlineStart = rolled;
-  } else {
-    // Past year (not grounded forward): plain January-start projection.
-    janOpen = { best: anchor, worst: anchor };
-    bandFromIndex = 0;
-    headlineStart = { best: anchor, worst: anchor };
-  }
-
-  const series = cumulativeSeries(buckets, janOpen, bandFromIndex);
+  const janOpen = startingBalance(flows, year, openingBalance, baseYear);
+  const series = cumulativeSeries(buckets, janOpen, 0);
   const last = series[series.length - 1];
   return {
-    start: headlineStart,
+    start: janOpen,
     buckets,
     series,
     yearEnd: { best: last.best, worst: last.worst },
-    todayIndex: isBaseYear ? todayIndex : -1,
   };
 }
 
