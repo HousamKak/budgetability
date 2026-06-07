@@ -26,7 +26,7 @@ export function SummaryCard({ title, value, highlight = false, red = false, blue
       variant(cardVariant, summaryCardStyles.variants),
       "flex items-center justify-center"
     )}>
-      <div className="grid grid-cols-2 gap-1 place-items-center">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-1 place-items-center">
         {/* Left section */}
         <div className="flex flex-col items-center text-center">
           {/* Upper left: Main label */}
@@ -60,7 +60,7 @@ export function SummaryCard({ title, value, highlight = false, red = false, blue
 
         {/* Right section */}
         {leftAmount !== undefined && leftLabel && (
-          <div className="flex flex-col items-center text-center hidden lg:flex">
+          <div className="flex flex-col items-center text-center">
             {/* Upper right: Right label */}
             <div className="flex items-center gap-1 mb-0.5">
               <div className="text-xs opacity-60 font-medium">{leftLabel}</div>
