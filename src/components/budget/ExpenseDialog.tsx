@@ -448,7 +448,7 @@ export function ExpenseDialog({
                         placeholder="0.00"
                         value={amount}
                         onChange={(e) => onAmountChange(e.target.value)}
-                        autoFocus
+                        autoFocus={typeof window !== "undefined" && window.innerWidth >= 1024}
                         inputMode="decimal"
                         className={dialogStyles.form.input}
                       />

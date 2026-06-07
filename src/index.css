@@ -538,16 +538,18 @@
     border-radius: 8px;
   }
 
-  /* Prevent zoom on input focus (iOS) */
-  @media (max-width: 767px) {
+  /* Prevent zoom on input focus (iOS): inputs must be >= 16px on touch widths.
+     !important so Tailwind's text-sm on inputs can't shrink them below 16px. */
+  @media (max-width: 1023px) {
     input[type="text"],
     input[type="number"],
     input[type="email"],
     input[type="password"],
     input[type="date"],
+    input:not([type]),
     select,
     textarea {
-      font-size: 16px;
+      font-size: 16px !important;
     }
   }
 }
