@@ -125,27 +125,27 @@ export type CumulativePoint = {
 // Running end-of-month balance band, starting at `startIndex` (0-based month
 // the anchor applies at) and prefixed with the anchor ("Now"/"Start") point.
 // Months before `startIndex` are in the past and are not projected.
+// Build the full Jan→Dec running-balance series from a January opening balance.
+// Months before `bandFromIndex` are treated as already-happened (their net is
+// applied to both bounds via the mid-point, so the band has zero width — a known
+// single line); from `bandFromIndex` onward the best/worst band fans out.
 export function cumulativeSeries(
   buckets: MonthBucket[],
-  start: Bounds,
-  startIndex: number,
-  isBaseYear: boolean,
+  janOpen: Bounds,
+  bandFromIndex: number,
 ): CumulativePoint[] {
-  const points: CumulativePoint[] = [
-    {
-      label: isBaseYear ? "Now" : "Start",
-      monthIndex: startIndex - 1,
-      best: start.best,
-      worst: start.worst,
-      netBest: 0,
-      netWorst: 0,
-    },
-  ];
-  let runBest = start.best;
-  let runWorst = start.worst;
-  for (let i = startIndex; i < 12; i++) {
-    runBest += buckets[i].netBest;
-    runWorst += buckets[i].netWorst;
+  const points: CumulativePoint[] = [];
+  let runBest = janOpen.best;
+  let runWorst = janOpen.worst;
+  for (let i = 0; i < 12; i++) {
+    if (i < bandFromIndex) {
+      const mid = (buckets[i].netBest + buckets[i].netWorst) / 2;
+      runBest += mid;
+      runWorst += mid;
+    } else {
+      runBest += buckets[i].netBest;
+      runWorst += buckets[i].netWorst;
+    }
     points.push({
       label: MONTHS_SHORT[i],
       monthIndex: i,
@@ -160,11 +160,11 @@ export function cumulativeSeries(
 
 // Full computed model for one year.
 export type ForecastModel = {
-  start: Bounds;
+  start: Bounds; // headline starting balance (today's anchor for the base year)
   buckets: MonthBucket[];
-  series: CumulativePoint[];
+  series: CumulativePoint[]; // full Jan→Dec
   yearEnd: Bounds;
-  startIndex: number; // 0-based month the projection begins at
+  todayIndex: number; // 0-based current month for the base year, else -1
 };
 
 export function computeForecast(
@@ -176,19 +176,44 @@ export function computeForecast(
 ): ForecastModel {
   const buckets = monthlyBuckets(flows, year);
   const isBaseYear = year === baseYear;
-  // Past years aren't grounded forward; treat them as starting in January.
-  const startIndex = isBaseYear
-    ? Math.max(0, Math.min(11, todayMonth - 1))
-    : 0;
-  const start = startingBalance(flows, year, anchor, baseYear, todayMonth);
-  const series = cumulativeSeries(buckets, start, startIndex, isBaseYear);
+  const todayIndex = Math.max(0, Math.min(11, todayMonth - 1));
+
+  let janOpen: Bounds;
+  let bandFromIndex: number;
+  let headlineStart: Bounds;
+
+  if (isBaseYear) {
+    // The anchor is today's balance (at month `todayIndex`). Reconstruct the
+    // January opening by removing the already-happened months, so the full-year
+    // curve passes through the real balance "now".
+    let jan = anchor;
+    for (let i = 0; i < todayIndex; i++) {
+      jan -= (buckets[i].netBest + buckets[i].netWorst) / 2;
+    }
+    janOpen = { best: jan, worst: jan };
+    bandFromIndex = todayIndex; // uncertainty only from today forward
+    headlineStart = { best: anchor, worst: anchor };
+  } else if (year > baseYear) {
+    // Whole year is in the future: open at the rolled-forward anchor in January.
+    const rolled = startingBalance(flows, year, anchor, baseYear, todayMonth);
+    janOpen = rolled;
+    bandFromIndex = 0;
+    headlineStart = rolled;
+  } else {
+    // Past year (not grounded forward): plain January-start projection.
+    janOpen = { best: anchor, worst: anchor };
+    bandFromIndex = 0;
+    headlineStart = { best: anchor, worst: anchor };
+  }
+
+  const series = cumulativeSeries(buckets, janOpen, bandFromIndex);
   const last = series[series.length - 1];
   return {
-    start,
+    start: headlineStart,
     buckets,
     series,
     yearEnd: { best: last.best, worst: last.worst },
-    startIndex,
+    todayIndex: isBaseYear ? todayIndex : -1,
   };
 }
 

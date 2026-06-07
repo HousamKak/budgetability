@@ -372,7 +372,11 @@ export default function ForecastPage() {
               <RefreshCw className="w-7 h-7 text-amber-500 animate-spin" />
             </div>
           ) : view === "line" ? (
-            <ForecastChart series={model.series} startBalance={model.start.best} />
+            <ForecastChart
+              series={model.series}
+              startBalance={model.start.best}
+              todayIndex={model.todayIndex}
+            />
           ) : view === "bars" ? (
             <ForecastBars buckets={model.buckets} />
           ) : view === "table" ? (
