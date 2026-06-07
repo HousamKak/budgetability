@@ -544,31 +544,31 @@ export function ExpenseDialog({
                   </div>
 
                   {/* Action buttons */}
-                  <div className="flex justify-between items-center">
+                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between sm:items-center">
                     {!isEditing ? (
                       <Button
                         variant="outline"
                         onClick={openBook}
-                        className="handwriting text-amber-700 border-amber-300 hover:bg-amber-50 cursor-pointer"
+                        className="w-full sm:w-auto handwriting text-amber-700 border-amber-300 hover:bg-amber-50 cursor-pointer"
                       >
                         📖 Open Book
                       </Button>
                     ) : (
-                      <div /> /* Spacer */
+                      <div className="hidden sm:block" /> /* Spacer */
                     )}
 
-                    <div className="flex gap-3">
+                    <div className="flex gap-2 w-full sm:w-auto">
                       <Button
                         variant="outline"
                         onClick={() => onOpenChange(false)}
-                        className={dialogStyles.buttons.secondary}
+                        className={cn(dialogStyles.buttons.secondary, "flex-1 sm:flex-none")}
                       >
                         Cancel
                       </Button>
                       <Button
                         onClick={handleSubmit}
                         className={cn(
-                          "cursor-pointer handwriting",
+                          "cursor-pointer handwriting flex-1 sm:flex-none",
                           currentStyles.buttonColor
                         )}
                       >
