@@ -133,23 +133,31 @@ export function DashboardHeader({
           </Button>
         </div>
 
-        {/* Row 3: Spent + Planned side by side */}
-        <div className="grid grid-cols-2 gap-2">
-          <SummaryCard
-            title="Spent so far"
-            value={totalSpent}
-            red
-            leftAmount={leftNow}
-            leftLabel="left now"
-          />
-          <SummaryCard
-            title="Planned so far"
-            value={totalPlanned}
-            blue
-            leftAmount={leftAfterPlanned}
-            leftLabel="left after"
-            leftAmountRed={leftAfterPlanned < 0}
-          />
+        {/* Row 3: Spent + Planned — matched to the native app's cards */}
+        <div className="grid grid-cols-2 gap-2.5">
+          <div className="rounded-2xl border-2 border-amber-200 bg-white/70 shadow-sm px-3.5 py-3 min-h-[88px]">
+            <div className="text-[13px] text-stone-600 handwriting leading-none">Spent so far</div>
+            <div className="text-2xl font-bold text-red-600 handwriting leading-tight mt-1">
+              ${formatNumber(totalSpent)}
+            </div>
+            <div className="text-xs text-stone-600 handwriting leading-none mt-1.5">
+              ${formatNumber(leftNow)} left now
+            </div>
+          </div>
+          <div className="rounded-2xl border-2 border-amber-200 bg-white/70 shadow-sm px-3.5 py-3 min-h-[88px]">
+            <div className="text-[13px] text-stone-600 handwriting leading-none">Planned so far</div>
+            <div className="text-2xl font-bold text-blue-600 handwriting leading-tight mt-1">
+              ${formatNumber(totalPlanned)}
+            </div>
+            <div
+              className={cn(
+                "text-xs handwriting leading-none mt-1.5",
+                leftAfterPlanned >= 0 ? "text-emerald-600" : "text-red-600"
+              )}
+            >
+              ${formatNumber(leftAfterPlanned)} left after
+            </div>
+          </div>
         </div>
       </div>
 
