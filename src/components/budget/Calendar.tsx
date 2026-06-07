@@ -252,8 +252,10 @@ export function Calendar({
       </div>
 
       <div className={calendarStyles.calendarGrid}>
+        {/* Leading offset blanks only align the 7-column desktop grid; on phones
+            the days flow as cards so the blanks are hidden. */}
         {blanks.map((_, i) => (
-          <div key={`blank-${i}`} />
+          <div key={`blank-${i}`} className="hidden lg:block" />
         ))}
         {days.map((d) => {
           const dayDate = `${monthKey}-${pad2(d)}`;
@@ -262,6 +264,10 @@ export function Calendar({
 
           const isEditing = listFor(d).some((e) => editingExpenseId === e.id) ||
             plannedFor(d).some((p) => editingPlanId === p.id);
+
+          const dow = new Date(year, month, d).getDay(); // 0 Sun .. 6 Sat
+          const isWeekend = dow === 0 || dow === 6;
+          const weekdayShort = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dow];
 
           return (
             <HoverCard
@@ -275,6 +281,7 @@ export function Calendar({
                 <button
                   className={cn(
                     calendarStyles.dayCell,
+                    conditional(isWeekend, calendarStyles.dayCellWeekend),
                     conditional(
                       ymd(today) === dayDate,
                       calendarStyles.todayHighlight
@@ -294,9 +301,18 @@ export function Calendar({
                   {/* torn paper top edge */}
                   <div className={calendarStyles.dayTornEdge} />
                   <div className="p-0.5 xs:p-1 sm:p-2 md:p-2.5 h-full flex flex-col items-start">
-                    <div className="flex items-center gap-0.5 xs:gap-1 sm:gap-2">
-                      <span className="text-xs xs:text-sm sm:text-lg md:text-xl font-bold handwriting">
+                    <div className="flex items-center justify-between w-full gap-1">
+                      <span className="text-lg sm:text-base md:text-lg lg:text-xl font-bold handwriting">
                         {d}
+                      </span>
+                      {/* weekday shown per-card on phones only */}
+                      <span
+                        className={cn(
+                          "lg:hidden text-[11px] font-bold leading-none",
+                          isWeekend ? "text-sky-600" : "text-stone-400"
+                        )}
+                      >
+                        {weekdayShort}
                       </span>
                     </div>
 
@@ -318,7 +334,7 @@ export function Calendar({
                           <div className={calendarStyles.dayStats.label}>
                             spent
                           </div>
-                          <div className="text-[7px] xs:text-[8px] sm:text-[9px] md:text-[10px] font-bold mt-0.5 text-red-600">
+                          <div className={calendarStyles.dayStats.spent}>
                             ${formatNumber(spentOn(d))}
                           </div>
                         </div>
@@ -326,7 +342,7 @@ export function Calendar({
                           <div className={calendarStyles.dayStats.label}>
                             rem
                           </div>
-                          <div className="text-[7px] xs:text-[8px] sm:text-[9px] md:text-[10px] font-bold mt-0.5 text-emerald-600">
+                          <div className={calendarStyles.dayStats.remaining}>
                             ${formatNumber(leftAfter(d))}
                           </div>
                         </div>
@@ -335,7 +351,7 @@ export function Calendar({
                         <div className={calendarStyles.dayStats.label}>
                           planned
                         </div>
-                        <div className="text-[7px] xs:text-[8px] sm:text-[9px] md:text-[10px] font-bold mt-0.5 text-blue-600">
+                        <div className={calendarStyles.dayStats.planned}>
                           ${formatNumber(plannedAmountOn(d))}
                         </div>
                       </div>
