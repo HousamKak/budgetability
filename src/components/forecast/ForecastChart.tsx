@@ -11,7 +11,9 @@ import {
 } from "recharts";
 import type { CumulativePoint } from "@/utils/forecast";
 import { MONTHS_SHORT } from "@/utils/forecast";
-import { formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
+import { Activity, Spline } from "lucide-react";
+import { useState } from "react";
 
 function compact(n: number): string {
   const abs = Math.abs(n);
@@ -30,6 +32,8 @@ interface ForecastChartProps {
  * Cumulative balance over the year as a best/worst band with an expected line.
  */
 export function ForecastChart({ series, startBalance, todayIndex = -1 }: ForecastChartProps) {
+  const [discrete, setDiscrete] = useState(false);
+  const lineType = discrete ? "linear" : "monotone";
   const data = series.map((p) => ({
     label: p.label,
     worst: p.worst,
@@ -39,7 +43,21 @@ export function ForecastChart({ series, startBalance, todayIndex = -1 }: Forecas
   }));
 
   return (
-    <ResponsiveContainer width="100%" height={340}>
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setDiscrete((d) => !d)}
+        title={discrete ? "Curved lines" : "Straight lines with points"}
+        className={cn(
+          "absolute right-0 -top-1 z-10 w-7 h-7 rounded-md flex items-center justify-center border transition-colors cursor-pointer",
+          discrete
+            ? "bg-amber-500 text-white border-amber-500"
+            : "bg-white text-stone-500 border-stone-200 hover:border-amber-300",
+        )}
+      >
+        {discrete ? <Activity className="w-4 h-4" /> : <Spline className="w-4 h-4" />}
+      </button>
+      <ResponsiveContainer width="100%" height={340}>
       <ComposedChart data={data} margin={{ top: 10, right: 16, bottom: 0, left: 4 }}>
         <defs>
           <linearGradient id="bandFill" x1="0" y1="0" x2="0" y2="1">
@@ -88,7 +106,7 @@ export function ForecastChart({ series, startBalance, todayIndex = -1 }: Forecas
         )}
         {/* Invisible base + shaded band = best/worst range */}
         <Area
-          type="monotone"
+          type={lineType}
           dataKey="worst"
           stackId="band"
           stroke="none"
@@ -98,7 +116,7 @@ export function ForecastChart({ series, startBalance, todayIndex = -1 }: Forecas
           activeDot={false}
         />
         <Area
-          type="monotone"
+          type={lineType}
           dataKey="band"
           stackId="band"
           stroke="none"
@@ -108,29 +126,30 @@ export function ForecastChart({ series, startBalance, todayIndex = -1 }: Forecas
           activeDot={false}
         />
         <Line
-          type="monotone"
+          type={lineType}
           dataKey="best"
           stroke="#16a34a"
           strokeWidth={2.5}
-          dot={false}
+          dot={discrete}
         />
         <Line
-          type="monotone"
+          type={lineType}
           dataKey="worst"
           stroke="#dc2626"
           strokeWidth={2.5}
-          dot={false}
+          dot={discrete}
         />
         <Line
-          type="monotone"
+          type={lineType}
           dataKey="expected"
           stroke="#6b7280"
           strokeWidth={1.5}
           strokeDasharray="5 4"
-          dot={false}
+          dot={discrete}
         />
       </ComposedChart>
     </ResponsiveContainer>
+    </div>
   );
 }
 
