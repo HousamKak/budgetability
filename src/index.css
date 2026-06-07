@@ -573,23 +573,15 @@
 
   /* Mobile content area with sticky bottom nav */
   @media (max-width: 1023px) {
+    /* Single page scroll on phones — the app container scrolls, not inner panes. */
     .mobile-content-area {
-      height: calc(100vh - 80px); /* Account for header */
-      overflow: hidden; /* Prevent double scrolling */
-      padding-bottom: 118px; /* Space for the view switcher + global mobile nav */
+      padding-bottom: 88px; /* clear the fixed global mobile nav */
     }
 
-    .mobile-calendar-area {
-      height: calc(100vh - 200px); /* header + view switcher + global nav */
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
+    .mobile-calendar-area,
     .mobile-planner-area {
-      height: calc(100vh - 200px); /* header + view switcher + global nav */
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
+      height: auto;
+      overflow: visible;
     }
 
     /* Safe area support for devices with home indicators */
@@ -598,12 +590,6 @@
     }
   }
 
-  /* Extra small phone adjustments */
-  @media (max-width: 479px) {
-    .mobile-calendar-area {
-      height: calc(100vh - 280px); /* Tighter spacing on very small screens */
-    }
-  }
 
   /* Mobile tab switching logic */
   @media (max-width: 1023px) {

@@ -635,11 +635,42 @@ export default function PaperBudget() {
         </DialogContent>
       </Dialog>
 
+      {/* Calendar / Planner switcher — phones only, at the top under the cards */}
+      <div className="lg:hidden mx-auto max-w-7xl px-2 sm:px-4 pb-2">
+        <div className="relative bg-amber-100/50 rounded-lg p-1">
+          <div
+            className={`absolute top-1 h-10 w-[calc(50%-0.25rem)] bg-white shadow-sm rounded-md transition-all duration-300 ease-in-out ${
+              activeTab === "calendar" ? "left-1" : "left-[calc(50%+0.125rem)]"
+            }`}
+          />
+          <div className="relative flex">
+            <button
+              onClick={() => setActiveTab("calendar")}
+              className={`relative z-10 flex-1 h-10 text-sm font-medium rounded-md transition-colors duration-200 cursor-pointer flex items-center justify-center gap-2 ${
+                activeTab === "calendar" ? "text-stone-900" : "text-stone-600 hover:text-stone-800"
+              }`}
+            >
+              <CalendarIcon className="w-4 h-4" />
+              Calendar
+            </button>
+            <button
+              onClick={() => setActiveTab("planner")}
+              className={`relative z-10 flex-1 h-10 text-sm font-medium rounded-md transition-colors duration-200 cursor-pointer flex items-center justify-center gap-2 ${
+                activeTab === "planner" ? "text-stone-900" : "text-stone-600 hover:text-stone-800"
+              }`}
+            >
+              <Wallet className="w-4 h-4" />
+              Planner
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* layout: calendar + planner */}
       <div
         className={`mx-auto max-w-7xl px-2 sm:px-4 pb-2 lg:pb-12 mobile-content-area lg:flex-1 mobile-tab-${activeTab}`}
       >
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_520px] gap-4 items-start h-full lg:h-auto">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_520px] gap-4 items-start h-auto">
           {/* Left column: Calendar */}
           <div className="space-y-4">
             {/* Calendar - show on mobile only when calendar tab active, always show on desktop */}
@@ -706,42 +737,6 @@ export default function PaperBudget() {
           </div>
         </div>
 
-        {/* Home view switcher (Calendar / Planner) — sits just above the global mobile nav */}
-        <div className="lg:hidden fixed bottom-[3.75rem] left-0 right-0 px-2 pb-1 z-50">
-          <div className="relative bg-amber-100/50 rounded-lg p-1 max-w-md mx-auto">
-            {/* Sliding indicator */}
-            <div
-              className={`absolute top-1 h-10 w-1/2 bg-white shadow-sm rounded-md transition-all duration-300 ease-in-out ${
-                activeTab === "calendar" ? "left-1" : "left-1/2"
-              }`}
-            />
-            {/* Tabs */}
-            <div className="relative flex">
-              <button
-                onClick={() => setActiveTab("calendar")}
-                className={`relative z-10 flex-1 h-10 text-sm font-medium rounded-md transition-colors duration-200 cursor-pointer flex items-center justify-center gap-2 ${
-                  activeTab === "calendar"
-                    ? "text-stone-900"
-                    : "text-stone-600 hover:text-stone-800"
-                }`}
-              >
-                <CalendarIcon className="w-4 h-4" />
-                Calendar
-              </button>
-              <button
-                onClick={() => setActiveTab("planner")}
-                className={`relative z-10 flex-1 h-10 text-sm font-medium rounded-md transition-colors duration-200 cursor-pointer flex items-center justify-center gap-2 ${
-                  activeTab === "planner"
-                    ? "text-stone-900"
-                    : "text-stone-600 hover:text-stone-800"
-                }`}
-              >
-                <Wallet className="w-4 h-4" />
-                Planner
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Quote of the Day Modal */}
