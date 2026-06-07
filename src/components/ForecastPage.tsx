@@ -64,7 +64,7 @@ export default function ForecastPage() {
   const [showFlowDialog, setShowFlowDialog] = useState(false);
   const [editingFlow, setEditingFlow] = useState<ForecastFlow | undefined>();
   const [showImport, setShowImport] = useState(false);
-  const [flowsView, setFlowsView] = useState<"flow" | "month">("flow");
+  const [flowsView, setFlowsView] = useState<"flow" | "month">("month");
   const [startBalance, setStartBalance] = useState<number>(loadStartBalance);
   const [showStartDialog, setShowStartDialog] = useState(false);
 
@@ -530,6 +530,38 @@ function SummaryCard({
   );
 }
 
+// iOS-style slider toggle (matches the original tool's on/off switch)
+function ToggleSwitch({
+  on,
+  onChange,
+  title,
+}: {
+  on: boolean;
+  onChange: () => void;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      title={title}
+      onClick={onChange}
+      className={cn(
+        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors cursor-pointer",
+        on ? "bg-green-500" : "bg-stone-300",
+      )}
+    >
+      <span
+        className={cn(
+          "inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform",
+          on ? "translate-x-4" : "translate-x-0.5",
+        )}
+      />
+    </button>
+  );
+}
+
 function FlowRow({
   flow,
   onToggle,
@@ -554,12 +586,10 @@ function FlowRow({
         !flow.enabled && "opacity-50",
       )}
     >
-      <input
-        type="checkbox"
-        checked={flow.enabled}
+      <ToggleSwitch
+        on={flow.enabled}
         onChange={onToggle}
         title={flow.enabled ? "Enabled" : "Disabled"}
-        className="w-4 h-4 rounded border-2 border-amber-300 text-amber-500 cursor-pointer shrink-0"
       />
       <span
         className="w-2 h-2 rounded-full shrink-0"
