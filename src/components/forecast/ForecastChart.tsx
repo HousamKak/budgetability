@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import type { CumulativePoint } from "@/utils/forecast";
+import { MONTHS_SHORT } from "@/utils/forecast";
 import { formatCurrency } from "@/lib/utils";
 
 function compact(n: number): string {
@@ -21,12 +22,14 @@ function compact(n: number): string {
 interface ForecastChartProps {
   series: CumulativePoint[];
   startBalance: number;
+  /** 0-based current month for the base year; -1 to hide the marker. */
+  todayIndex?: number;
 }
 
 /**
  * Cumulative balance over the year as a best/worst band with an expected line.
  */
-export function ForecastChart({ series, startBalance }: ForecastChartProps) {
+export function ForecastChart({ series, startBalance, todayIndex = -1 }: ForecastChartProps) {
   const data = series.map((p) => ({
     label: p.label,
     worst: p.worst,
@@ -74,8 +77,15 @@ export function ForecastChart({ series, startBalance }: ForecastChartProps) {
           y={startBalance}
           stroke="#a8a29e"
           strokeDasharray="4 4"
-          label={{ value: "today", position: "insideTopLeft", fontSize: 10, fill: "#a8a29e" }}
         />
+        {todayIndex >= 0 && (
+          <ReferenceLine
+            x={MONTHS_SHORT[todayIndex]}
+            stroke="#f59e0b"
+            strokeDasharray="3 3"
+            label={{ value: "now", position: "top", fontSize: 10, fill: "#f59e0b" }}
+          />
+        )}
         {/* Invisible base + shaded band = best/worst range */}
         <Area
           type="monotone"
