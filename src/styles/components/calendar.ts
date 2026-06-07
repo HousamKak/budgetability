@@ -6,9 +6,6 @@ export const calendarStyles = {
   // Desktop (lg+): the classic square 7-column grid cell — unchanged.
   dayCell: `calendar-day group relative min-h-[96px] lg:min-h-0 lg:aspect-square w-full ${paperTheme.radius.md} ${paperTheme.colors.borders.paper} bg-[radial-gradient(circle_at_20%_0%,#fff,rgba(255,255,255,0.92))] ${paperTheme.effects.shadow.sm}`,
 
-  // Weekend day card tint (phones only — desktop columns already group weeks).
-  dayCellWeekend: 'lg:!bg-none lg:!bg-transparent !bg-sky-50 border-sky-200/80',
-
   // Today highlight
   todayHighlight: 'ring-2 ring-amber-400 ring-offset-1',
 

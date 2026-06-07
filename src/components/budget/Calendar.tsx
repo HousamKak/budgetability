@@ -266,7 +266,6 @@ export function Calendar({
             plannedFor(d).some((p) => editingPlanId === p.id);
 
           const dow = new Date(year, month, d).getDay(); // 0 Sun .. 6 Sat
-          const isWeekend = dow === 0 || dow === 6;
           const weekdayShort = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dow];
 
           return (
@@ -281,7 +280,6 @@ export function Calendar({
                 <button
                   className={cn(
                     calendarStyles.dayCell,
-                    conditional(isWeekend, calendarStyles.dayCellWeekend),
                     conditional(
                       ymd(today) === dayDate,
                       calendarStyles.todayHighlight
@@ -306,12 +304,7 @@ export function Calendar({
                         {d}
                       </span>
                       {/* weekday shown per-card on phones only */}
-                      <span
-                        className={cn(
-                          "lg:hidden text-[11px] font-bold leading-none",
-                          isWeekend ? "text-sky-600" : "text-stone-400"
-                        )}
-                      >
+                      <span className="lg:hidden text-[11px] font-bold leading-none text-stone-400">
                         {weekdayShort}
                       </span>
                     </div>
