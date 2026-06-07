@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import type { Account, ForecastFlow } from "@/lib/data-service";
+import type { ForecastFlow } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
@@ -21,11 +21,11 @@ import {
   Upload,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { ForecastAnchorDialog } from "./forecast/ForecastAnchorDialog";
 import { ForecastBars } from "./forecast/ForecastBars";
 import { ForecastChart } from "./forecast/ForecastChart";
 import { ForecastFlowDialog } from "./forecast/ForecastFlowDialog";
 import { ForecastImportDialog } from "./forecast/ForecastImportDialog";
+import { ForecastStartDialog } from "./forecast/ForecastStartDialog";
 import {
   MONTHS_FULL,
   MONTHS_SHORT,
@@ -36,19 +36,17 @@ import {
 
 type View = "line" | "bars" | "table" | "calendar" | "ledger";
 
-const BASE_YEAR = new Date().getFullYear();
-const TODAY_MONTH = new Date().getMonth() + 1; // 1..12, "today"
-const ANCHOR_KEY = "forecast-anchor-accounts";
+const CURRENT_YEAR = new Date().getFullYear();
+const CURRENT_MONTH_IDX = new Date().getMonth(); // 0..11, for the "now" marker
+const START_KEY = "forecast-opening-balance";
 
-// null = all accounts feed the starting balance
-function loadAnchorIds(): string[] | null {
+function loadStartBalance(): number {
   try {
-    const raw = localStorage.getItem(ANCHOR_KEY);
-    if (!raw) return null;
-    const ids = JSON.parse(raw);
-    return Array.isArray(ids) ? ids : null;
+    const raw = localStorage.getItem(START_KEY);
+    const n = raw == null ? 0 : parseFloat(raw);
+    return Number.isFinite(n) ? n : 0;
   } catch {
-    return null;
+    return 0;
   }
 }
 
@@ -58,18 +56,17 @@ function monthsLabel(months: number[]): string {
 }
 
 export default function ForecastPage() {
-  const [accounts, setAccounts] = useState<Account[]>([]);
   const [flows, setFlows] = useState<ForecastFlow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [year, setYear] = useState(BASE_YEAR);
+  const [year, setYear] = useState(CURRENT_YEAR);
   const [view, setView] = useState<View>("line");
 
   const [showFlowDialog, setShowFlowDialog] = useState(false);
   const [editingFlow, setEditingFlow] = useState<ForecastFlow | undefined>();
   const [showImport, setShowImport] = useState(false);
   const [flowsView, setFlowsView] = useState<"flow" | "month">("flow");
-  const [anchorIds, setAnchorIds] = useState<string[] | null>(loadAnchorIds);
-  const [showAnchorDialog, setShowAnchorDialog] = useState(false);
+  const [startBalance, setStartBalance] = useState<number>(loadStartBalance);
+  const [showStartDialog, setShowStartDialog] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -78,11 +75,7 @@ export default function ForecastPage() {
   async function loadData() {
     try {
       setLoading(true);
-      const [accts, fl] = await Promise.all([
-        dataService.getAccounts(),
-        dataService.getForecastFlows(),
-      ]);
-      setAccounts(accts);
+      const fl = await dataService.getForecastFlows();
       setFlows(fl);
     } catch (e) {
       console.error("Failed to load forecast:", e);
@@ -91,35 +84,29 @@ export default function ForecastPage() {
     }
   }
 
-  // Accounts that feed the starting balance (null selection = all of them).
-  const anchorAccounts = useMemo(
-    () =>
-      anchorIds == null
-        ? accounts
-        : accounts.filter((a) => anchorIds.includes(a.id)),
-    [accounts, anchorIds],
-  );
+  // The opening balance applies at the earliest year we have flows for; each
+  // later year carries forward from the previous. Independent of accounts.
+  const baseYear = useMemo(() => {
+    if (flows.length === 0) return CURRENT_YEAR;
+    return Math.min(...flows.map((f) => f.year));
+  }, [flows]);
 
-  // Anchor = selected accounts' total (the "today" balance).
-  const anchor = useMemo(
-    () => anchorAccounts.reduce((s, a) => s + a.currentBalance, 0),
-    [anchorAccounts],
-  );
-
-  const saveAnchorIds = (ids: string[] | null) => {
-    setAnchorIds(ids);
+  const saveStartBalance = (value: number) => {
+    setStartBalance(value);
     try {
-      if (ids == null) localStorage.removeItem(ANCHOR_KEY);
-      else localStorage.setItem(ANCHOR_KEY, JSON.stringify(ids));
+      localStorage.setItem(START_KEY, String(value));
     } catch {
       /* ignore */
     }
   };
 
   const model = useMemo(
-    () => computeForecast(flows, year, anchor, BASE_YEAR, TODAY_MONTH),
-    [flows, year, anchor],
+    () => computeForecast(flows, year, startBalance, baseYear),
+    [flows, year, startBalance, baseYear],
   );
+
+  // Purely-visual "now" marker (only when viewing the current calendar year).
+  const todayIndex = year === CURRENT_YEAR ? CURRENT_MONTH_IDX : -1;
 
   const yearFlows = useMemo(
     () =>
@@ -299,19 +286,15 @@ export default function ForecastPage() {
         {/* Summary cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           <SummaryCard
-            label={
-              year === BASE_YEAR
-                ? `Balance today (${MONTHS_SHORT[TODAY_MONTH - 1]})`
-                : `Start of ${year}`
-            }
+            label={year === baseYear ? "Opening balance" : `Start of ${year}`}
             value={formatCurrency(model.start.best)}
             hint={
-              anchorIds == null
-                ? "from all accounts · edit"
-                : `from ${anchorAccounts.length} of ${accounts.length} accounts · edit`
+              year === baseYear
+                ? `Jan ${baseYear} · edit`
+                : `carried from ${baseYear} · edit`
             }
             tone="neutral"
-            onClick={() => setShowAnchorDialog(true)}
+            onClick={() => setShowStartDialog(true)}
           />
           <SummaryCard
             label={`Best case · end ${year}`}
@@ -375,7 +358,7 @@ export default function ForecastPage() {
             <ForecastChart
               series={model.series}
               startBalance={model.start.best}
-              todayIndex={model.todayIndex}
+              todayIndex={todayIndex}
             />
           ) : view === "bars" ? (
             <ForecastBars buckets={model.buckets} />
@@ -488,12 +471,12 @@ export default function ForecastPage() {
           onOpenChange={setShowImport}
           onImport={handleImport}
         />
-        <ForecastAnchorDialog
-          open={showAnchorDialog}
-          onOpenChange={setShowAnchorDialog}
-          accounts={accounts}
-          selectedIds={anchorIds}
-          onSave={saveAnchorIds}
+        <ForecastStartDialog
+          open={showStartDialog}
+          onOpenChange={setShowStartDialog}
+          value={startBalance}
+          baseYear={baseYear}
+          onSave={saveStartBalance}
         />
       </div>
     </div>
