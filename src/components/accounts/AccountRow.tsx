@@ -71,28 +71,25 @@ export function AccountRow({
         />
       </div>
 
-      {/* Name (absorbs the row's slack) */}
-      <div className="flex-1 min-w-0 flex items-center gap-1.5">
-        <span className="text-sm font-medium text-stone-700 truncate">
-          {account.name}
-        </span>
-        {account.isDefault && (
-          <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
-        )}
-        <span className="text-[11px] text-stone-400 capitalize shrink-0 hidden sm:inline">
-          {account.accountType}
+      {/* Name + balance (stacked, tight) */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1">
+          <span className="text-sm font-medium text-stone-700 truncate">
+            {account.name}
+          </span>
+          {account.isDefault && (
+            <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
+          )}
+        </div>
+        <span
+          className={cn(
+            "text-sm font-bold tabular-nums leading-tight",
+            account.currentBalance >= 0 ? "text-green-700" : "text-red-600",
+          )}
+        >
+          {formatCurrency(account.currentBalance)}
         </span>
       </div>
-
-      {/* Balance (anchored right, next to actions) */}
-      <span
-        className={cn(
-          "text-sm font-bold tabular-nums shrink-0",
-          account.currentBalance >= 0 ? "text-green-700" : "text-red-600",
-        )}
-      >
-        {formatCurrency(account.currentBalance)}
-      </span>
 
       {/* Always-visible actions */}
       <div className="flex items-center gap-0.5 shrink-0">
