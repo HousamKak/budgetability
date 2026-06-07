@@ -13,6 +13,10 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
+// Drill-down bucket key for expenses with no matching current category.
+// Not a real category id, so it can't collide with one.
+const UNCATEGORIZED_KEY = "__uncategorized__";
+
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
@@ -157,6 +161,7 @@ export function useSpreadsheetData(
           // fall back to legacy text category only when the expense has
           // no categoryId.
           const expenses: Expense[] = expensesByMonth[monthKey] ?? [];
+          const matched = new Set<Expense>();
           let paymentTotal = 0;
           for (const cat of cats) {
             const colKey = paymentColumnKey(cat.name);
@@ -165,6 +170,7 @@ export function useSpreadsheetData(
                 ? e.categoryId === cat.id
                 : (e.category ?? "") === cat.name,
             );
+            for (const e of catExpenses) matched.add(e);
             const sum = catExpenses.reduce((s, e) => s + e.amount, 0);
             values[colKey] = sum > 0 ? -sum : 0;
             paymentTotal += sum;
@@ -173,6 +179,21 @@ export function useSpreadsheetData(
               expensesByMonthCategory.set(`${monthKey}:${cat.id}`, catExpenses);
             }
           }
+
+          // Uncategorized — every expense that matched no current category
+          // (deleted/renamed category, or blank text). These would otherwise
+          // vanish from Payments and overstate Net.
+          const orphanExpenses = expenses.filter((e) => !matched.has(e));
+          const orphanSum = orphanExpenses.reduce((s, e) => s + e.amount, 0);
+          values.payment_uncategorized = orphanSum > 0 ? -orphanSum : 0;
+          paymentTotal += orphanSum;
+          if (orphanExpenses.length > 0) {
+            expensesByMonthCategory.set(
+              `${monthKey}:${UNCATEGORIZED_KEY}`,
+              orphanExpenses,
+            );
+          }
+
           values.payment_total = paymentTotal > 0 ? -paymentTotal : 0;
 
           // Net = Income + Payments (payments already negative).
@@ -243,6 +264,15 @@ export function useSpreadsheetData(
         const list = depositsByMonthRef.current.get(monthKey) ?? [];
         return list.length
           ? list.map((tx) => ({ kind: "deposit", tx }) as DrillDownItem)
+          : null;
+      }
+      if (columnKey === "payment_uncategorized") {
+        const list =
+          expensesByMonthCategoryRef.current.get(
+            `${monthKey}:${UNCATEGORIZED_KEY}`,
+          ) ?? [];
+        return list.length
+          ? list.map((expense) => ({ kind: "expense", expense }) as DrillDownItem)
           : null;
       }
       if (columnKey.startsWith("payment_") && columnKey !== "payment_total") {

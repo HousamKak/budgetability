@@ -15,8 +15,12 @@ const incomeColumns: ColumnDef[] = [
   { key: "income_total", label: "Income", type: "computed", editable: false, width: 110 },
 ];
 
-// Payment columns will be dynamically built from user categories + these fixed ones
+// Payment columns will be dynamically built from user categories + these fixed ones.
+// "Uncategorized" captures expenses that match no current category (deleted /
+// renamed / blank category) so the Total — and therefore Net — reconciles to
+// the real sum of the month's expenses instead of silently dropping them.
 const fixedPaymentColumns: ColumnDef[] = [
+  { key: "payment_uncategorized", label: "Uncategorized", type: "computed", editable: false, width: 120 },
   { key: "payment_total", label: "Total Payments", type: "computed", editable: false, width: 120 },
 ];
 

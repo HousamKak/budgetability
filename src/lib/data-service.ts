@@ -1214,8 +1214,30 @@ export class DataService {
   }
 
   async removeCategory(id: string): Promise<void> {
+    // Name is needed to also clear legacy text-only references (expenses that
+    // carry the category name but no categoryId).
+    const removedName = this.localStore.categories.find((c) => c.id === id)?.name;
+
     if (this.useSupabase && supabase) {
       try {
+        // Detach expenses BEFORE deleting the category so none are left with a
+        // dangling reference (which would make them silently uncategorized in
+        // an uncontrolled way, and could trip a FK constraint on delete).
+        const { error: idErr } = await supabase
+          .from("expenses")
+          .update({ category_id: null })
+          .eq("category_id", id);
+        if (idErr) throw idErr;
+
+        if (removedName) {
+          const { error: nameErr } = await supabase
+            .from("expenses")
+            .update({ category: null })
+            .eq("category", removedName)
+            .is("category_id", null);
+          if (nameErr) throw nameErr;
+        }
+
         const { error } = await supabase
           .from("categories")
           .delete()
@@ -1229,6 +1251,17 @@ export class DataService {
       }
     }
 
+    // Detach references in every month's expense list, then drop the category.
+    for (const monthKey of Object.keys(this.localStore.expenses)) {
+      this.localStore.expenses[monthKey] = this.localStore.expenses[monthKey].map(
+        (e) => {
+          if (e.categoryId === id) return { ...e, categoryId: undefined };
+          if (!e.categoryId && removedName && e.category === removedName)
+            return { ...e, category: undefined };
+          return e;
+        },
+      );
+    }
     this.localStore.categories = this.localStore.categories.filter(
       (c) => c.id !== id,
     );
