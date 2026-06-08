@@ -41,10 +41,12 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        // Phones: slide-up bottom sheet (like the native app)
-        "fixed inset-x-0 bottom-0 z-[101] grid w-full max-h-[88vh] overflow-y-auto gap-4 p-6 text-stone-900 rounded-t-2xl rounded-b-none shadow-lg duration-300 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:slide-out-to-bottom-[100%] data-[state=open]:slide-in-from-bottom-[100%]",
-        // Desktop (lg+): the original centered modal — unchanged
-        "lg:inset-x-auto lg:bottom-auto lg:left-[50%] lg:top-[50%] lg:max-w-lg lg:max-h-none lg:overflow-hidden lg:translate-x-[-50%] lg:translate-y-[-50%] lg:rounded-2xl lg:data-[state=closed]:zoom-out-95 lg:data-[state=open]:zoom-in-95 lg:data-[state=closed]:slide-out-to-left-1/2 lg:data-[state=closed]:slide-out-to-top-[48%] lg:data-[state=open]:slide-in-from-left-1/2 lg:data-[state=open]:slide-in-from-top-[48%]",
+        // Shared base — stock shadcn sizing so each dialog's own sm:max-w-* still wins on desktop
+        "fixed z-[101] grid w-full max-w-lg gap-4 p-6 text-stone-900 shadow-lg duration-300 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+        // Phones only (< lg): full-width slide-up bottom sheet (like the native app)
+        "max-lg:inset-x-0 max-lg:bottom-0 max-lg:max-w-none max-lg:max-h-[88vh] max-lg:overflow-y-auto max-lg:rounded-t-2xl max-lg:rounded-b-none max-lg:data-[state=closed]:slide-out-to-bottom-[100%] max-lg:data-[state=open]:slide-in-from-bottom-[100%]",
+        // Desktop only (lg+): the original centered modal — stock shadcn, fully isolated
+        "lg:left-[50%] lg:top-[50%] lg:translate-x-[-50%] lg:translate-y-[-50%] lg:rounded-2xl lg:data-[state=closed]:zoom-out-95 lg:data-[state=open]:zoom-in-95 lg:data-[state=closed]:slide-out-to-left-1/2 lg:data-[state=closed]:slide-out-to-top-[48%] lg:data-[state=open]:slide-in-from-left-1/2 lg:data-[state=open]:slide-in-from-top-[48%]",
         className
       )}
       {...props}
