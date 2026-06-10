@@ -28,42 +28,22 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
-        with:
-          version: latest
-
-      - name: Link Supabase project and run migrations
-        run: |
-          echo "Linking to Supabase project..."
-          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password ${{ secrets.SUPABASE_DB_PASSWORD }}
-          echo "Running database migrations..."
-          supabase db push --linked || echo "⚠️ Migration failed, continuing with build..."
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-
-      - name: Generate TypeScript types
-        run: |
-          echo "Generating TypeScript types..."
-          mkdir -p src/types
-          supabase gen types typescript --linked > src/types/database.types.ts || echo "⚠️ Type generation failed, using existing types..."
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-
+      # Database migrations and type generation are owned by the
+      # database-migration workflow (triggered by supabase/migrations changes),
+      # which commits the regenerated types. The deploy builds against the
+      # committed src/types/database.types.ts.
       - name: Build with Vite
         run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_APP_ENV: production
-
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

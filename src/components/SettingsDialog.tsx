@@ -22,7 +22,6 @@ import {
   Database,
   Download,
   GripVertical,
-  Moon,
   Pencil,
   Plus,
   Quote,
@@ -92,7 +91,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [defaultBudget, setDefaultBudget] = useState("");
 
   // Display state (placeholders)
-  const [darkMode, setDarkMode] = useState(false);
   const [showQuotes, setShowQuotes] = useState(true);
 
   useEffect(() => {
@@ -581,18 +579,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         <h3 className="text-lg font-semibold handwriting text-stone-700 mb-4">
           Display
         </h3>
-
-        {/* Dark mode */}
-        <SettingRow
-          icon={darkMode ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-          label="Dark mode"
-          description="Switch between light and dark theme"
-        >
-          <div className="flex items-center gap-2">
-            <Toggle enabled={darkMode} onChange={setDarkMode} />
-            <ComingSoonBadge />
-          </div>
-        </SettingRow>
 
         {/* Show daily quotes */}
         <SettingRow

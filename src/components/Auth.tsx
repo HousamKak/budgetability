@@ -105,7 +105,9 @@ export function AuthDialog({
           // Close dialog and redirect to verification waiting page
           onOpenChange(false);
           resetForm();
-          navigate(`/auth/verify-email?email=${encodeURIComponent(email)}`);
+          // Pass the email via router state so it never lands in the URL /
+          // browser history (PII)
+          navigate("/auth/verify-email", { state: { email } });
         }
       } else {
         const { error } = await signIn(email, password);

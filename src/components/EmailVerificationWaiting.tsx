@@ -1,11 +1,17 @@
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { paperTheme, paperStyles } from '@/styles'
 
 export function EmailVerificationWaiting() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
-  const email = searchParams.get('email') || 'your email'
+  // Email arrives via router state (keeps PII out of the URL); fall back to
+  // the legacy ?email= query param so old links still work.
+  const email =
+    (location.state as { email?: string } | null)?.email ||
+    searchParams.get('email') ||
+    'your email'
 
   const handleReturnHome = () => {
     navigate('/', { replace: true })

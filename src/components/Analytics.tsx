@@ -126,7 +126,7 @@ export default function Analytics() {
       </div>
 
       {/* Main content area */}
-      <div className="mx-auto max-w-7xl px-1 sm:px-2 pb-12 space-y-8">
+      <div className="mx-auto max-w-7xl px-1 sm:px-2 pb-12 max-lg:pb-24 space-y-8">
 
         {/* Summary Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -9,7 +9,7 @@ import type { Account, Expense, PlanItem } from "@/lib/data-service";
 import { formatNumber } from "@/lib/utils";
 import { calendarStyles, cn, conditional } from "@/styles";
 import { Check, GripVertical, Pencil, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   AccountInlineSelect,
   renderAccountLabel,
@@ -17,6 +17,28 @@ import {
 import { CategoryPicker } from "./CategoryPicker";
 import { Plus, Trash } from "./Icons";
 import { daysInMonth, firstWeekday, pad2, ymd } from "./utils";
+
+// Tracks the lg (1024px) breakpoint so hover-only UI (the day HoverCard)
+// can be skipped on touch/phone layouts. SSR-safe default: desktop.
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window === "undefined" || typeof window.matchMedia !== "function"
+      ? true
+      : window.matchMedia("(min-width: 1024px)").matches
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function")
+      return;
+    const mql = window.matchMedia("(min-width: 1024px)");
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    setIsDesktop(mql.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+
+  return isDesktop;
+}
 
 interface CalendarProps {
   year: number;
@@ -59,6 +81,7 @@ export function Calendar({
   onUpdateExpense,
   onUpdatePlan,
 }: CalendarProps) {
+  const isDesktop = useIsDesktop();
   const today = new Date();
   const nDays = daysInMonth(year, month);
   const startOn = firstWeekday(year, month); // 0=Sun ...
@@ -268,15 +291,7 @@ export function Calendar({
           const dow = new Date(year, month, d).getDay(); // 0 Sun .. 6 Sat
           const weekdayShort = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dow];
 
-          return (
-            <HoverCard
-              key={d}
-              openDelay={200}
-              closeDelay={200}
-              open={isDragging ? false : isEditing ? true : undefined}
-              onOpenChange={isDragging || isEditing ? () => {} : undefined}
-            >
-              <HoverCardTrigger asChild>
+          const dayButton = (
                 <button
                   className={cn(
                     calendarStyles.dayCell,
@@ -354,7 +369,23 @@ export function Calendar({
                     <Plus className="w-3.5 h-3.5 text-stone-600" />
                   </div>
                 </button>
-              </HoverCardTrigger>
+          );
+
+          // Touch/phone layouts: skip the hover popup entirely so a tap
+          // only opens the day dialog (otherwise both could open stacked).
+          if (!isDesktop) {
+            return <Fragment key={d}>{dayButton}</Fragment>;
+          }
+
+          return (
+            <HoverCard
+              key={d}
+              openDelay={200}
+              closeDelay={200}
+              open={isDragging ? false : isEditing ? true : undefined}
+              onOpenChange={isDragging || isEditing ? () => {} : undefined}
+            >
+              <HoverCardTrigger asChild>{dayButton}</HoverCardTrigger>
               <HoverCardContent className="w-80">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
