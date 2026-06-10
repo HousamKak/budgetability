@@ -6,41 +6,34 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
-
     steps:
     - uses: actions/checkout@v4
 
-    - name: Use Node.js ${{ matrix.node-version }}
+    - name: Use Node.js 22
       uses: actions/setup-node@v4
       with:
-        node-version: ${{ matrix.node-version }}
+        node-version: 22
         cache: 'npm'
 
     - name: Install dependencies
       run: npm ci
 
     - name: Run linting
-      run: npm run lint || true # Continue even if linting fails
+      run: npm run lint || true # TODO: remove `|| true` once existing lint errors are fixed
 
-    - name: Run type checking
-      run: npm run build
-
-    - name: Run tests
-      run: npm test || echo "No tests configured"
-
+    # Type checking happens inside the build (tsc -b && vite build)
     - name: Build application
       run: npm run build
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
-      if: matrix.node-version == '18.x'
       with:
         name: build-files
         path: dist/

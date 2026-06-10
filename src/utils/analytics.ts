@@ -83,7 +83,9 @@ export function getDailySpending(expenses: Expense[]): DailySpending[] {
 
   return Array.from(dailyTotals.entries())
     .map(([date, amount]) => {
-      const dateObj = new Date(date);
+      // Parse "YYYY-MM-DD" in local time (new Date(string) would be UTC midnight)
+      const [y, m, d] = date.split('-').map(Number);
+      const dateObj = new Date(y, m - 1, d);
       return {
         date,
         amount,
@@ -127,7 +129,9 @@ export function getWeeklyPatterns(expenses: Expense[]): WeeklyPattern[] {
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   expenses.forEach(expense => {
-    const dayOfWeek = new Date(expense.date).getDay();
+    // Parse "YYYY-MM-DD" in local time (new Date(string) would be UTC midnight)
+    const [y, m, d] = expense.date.split('-').map(Number);
+    const dayOfWeek = new Date(y, m - 1, d).getDay();
     const dayName = dayNames[dayOfWeek];
     const current = weeklyData.get(dayName) || { total: 0, count: 0 };
     weeklyData.set(dayName, {
@@ -231,6 +235,12 @@ export function getBudgetHealthScore(expenses: Expense[], budget: number, daysIn
   message: string;
 } {
   const totalSpent = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+
+  // Guard against division by zero/NaN when no budget is set
+  if (budget <= 0) {
+    return { score: 0, status: 'warning', message: 'No budget set' };
+  }
+
   const currentDay = new Date().getDate();
   const expectedSpending = (budget / daysInMonth) * currentDay;
   const spendingRatio = totalSpent / expectedSpending;

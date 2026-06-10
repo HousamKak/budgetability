@@ -360,29 +360,35 @@ export class DataService {
   async getBudget(monthKey: string): Promise<number> {
     if (this.useSupabase && supabase) {
       try {
-        const { data, error } = await supabase
-          .from("budgets")
-          .select("amount")
-          .eq("month_key", monthKey)
-          .single();
+        const user = await this.getCurrentUser();
+        if (!user) {
+          console.warn("User not authenticated, falling back to localStorage");
+        } else {
+          const { data, error } = await supabase
+            .from("budgets")
+            .select("amount")
+            .eq("user_id", user.id)
+            .eq("month_key", monthKey)
+            .single();
 
-        if (error && error.code !== "PGRST116") {
-          console.error("Supabase budget fetch error:", error);
-          throw error;
+          if (error && error.code !== "PGRST116") {
+            console.error("Supabase budget fetch error:", error);
+            throw error;
+          }
+
+          const budget = data?.amount ? Number(data.amount) : 0;
+          console.log("Budget loaded from Supabase:", monthKey, budget);
+
+          // Update local store to stay in sync
+          this.localStore.budgets[monthKey] = budget;
+          saveStoreToLocalStorage(this.localStore);
+
+          return budget;
         }
-
-        const budget = data?.amount ? Number(data.amount) : 0;
-        console.log("Budget loaded from Supabase:", monthKey, budget);
-
-        // Update local store to stay in sync
-        this.localStore.budgets[monthKey] = budget;
-        saveStoreToLocalStorage(this.localStore);
-
-        return budget;
       } catch (error) {
+        // Do NOT overwrite the locally cached budget on unexpected errors —
+        // just return the cached value for this call.
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
-        return this.localStore.budgets[monthKey] ?? 0;
       }
     }
     return this.localStore.budgets[monthKey] ?? 0;
@@ -394,7 +400,6 @@ export class DataService {
         const user = await this.getCurrentUser();
         if (!user) {
           console.warn("User not authenticated, falling back to localStorage");
-          this.useSupabase = false;
         } else {
           const { error } = await supabase.from("budgets").upsert(
             {
@@ -424,10 +429,6 @@ export class DataService {
         }
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        // Don't disable Supabase for budget conflicts, might be temporary
-        if ((error as any)?.code !== "23505") {
-          this.useSupabase = false;
-        }
       }
     }
 
@@ -446,19 +447,24 @@ export class DataService {
           .order("date", { ascending: true });
 
         if (error) throw error;
-        return (
+        const expenses =
           data?.map((row) => ({
             id: row.id,
             date: row.date,
             amount: Number(row.amount),
             category: row.category || undefined,
+            categoryId: row.category_id || undefined,
             accountId: row.account_id || undefined,
             note: row.note || undefined,
-          })) || []
-        );
+          })) || [];
+
+        // Update local store to stay in sync
+        this.localStore.expenses[monthKey] = expenses;
+        saveStoreToLocalStorage(this.localStore);
+
+        return expenses;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
         return (this.localStore.expenses[monthKey] ?? [])
           .slice()
           .sort((a, b) => a.date.localeCompare(b.date));
@@ -484,7 +490,6 @@ export class DataService {
         const user = await this.getCurrentUser();
         if (!user) {
           console.warn("User not authenticated, falling back to localStorage");
-          this.useSupabase = false;
         } else {
           const { error } = await supabase.from("expenses").insert({
             id: expense.id,
@@ -493,6 +498,7 @@ export class DataService {
             date: expense.date,
             amount: expense.amount,
             category: expense.category,
+            category_id: expense.categoryId || null,
             account_id: expense.accountId || null,
             note: expense.note,
           });
@@ -502,21 +508,23 @@ export class DataService {
           // Deduct from account if specified
           if (expense.accountId) {
             const txId = crypto.randomUUID();
-            await supabase.from("account_transactions").insert({
-              id: txId,
-              user_id: user.id,
-              from_account_id: expense.accountId,
-              amount: expense.amount,
-              transaction_type: "expense",
-              month_key: monthKey,
-              note: expense.note || expense.category || "Expense",
-            });
+            const { error: txError } = await supabase
+              .from("account_transactions")
+              .insert({
+                id: txId,
+                user_id: user.id,
+                from_account_id: expense.accountId,
+                amount: expense.amount,
+                transaction_type: "expense",
+                month_key: monthKey,
+                note: expense.note || expense.category || "Expense",
+              });
+            if (txError) throw txError;
           }
           return;
         }
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -568,21 +576,23 @@ export class DataService {
           const user = await this.getCurrentUser();
           if (user) {
             const txId = crypto.randomUUID();
-            await supabase.from("account_transactions").insert({
-              id: txId,
-              user_id: user.id,
-              to_account_id: expenseData.account_id,
-              amount: Number(expenseData.amount),
-              transaction_type: "expense",
-              month_key: monthKey,
-              note: `Refund: ${expenseData.note || expenseData.category || "Expense deleted"}`,
-            });
+            const { error: txError } = await supabase
+              .from("account_transactions")
+              .insert({
+                id: txId,
+                user_id: user.id,
+                to_account_id: expenseData.account_id,
+                amount: Number(expenseData.amount),
+                transaction_type: "expense",
+                month_key: monthKey,
+                note: `Refund: ${expenseData.note || expenseData.category || "Expense deleted"}`,
+              });
+            if (txError) throw txError;
           }
         }
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -635,7 +645,7 @@ export class DataService {
           throw error;
         }
         console.log("Plans loaded from Supabase:", data?.length || 0, "items");
-        return (
+        const plans =
           data?.map((row) => ({
             id: row.id,
             monthKey: row.month_key,
@@ -645,11 +655,15 @@ export class DataService {
             accountId: row.account_id || undefined,
             note: row.note || undefined,
             targetDate: row.target_date || undefined,
-          })) || []
-        );
+          })) || [];
+
+        // Update local store to stay in sync
+        this.localStore.plans[monthKey] = plans;
+        saveStoreToLocalStorage(this.localStore);
+
+        return plans;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
         return this.localStore.plans[monthKey] ?? [];
       }
     }
@@ -663,7 +677,6 @@ export class DataService {
         const user = await this.getCurrentUser();
         if (!user) {
           console.warn("User not authenticated, falling back to localStorage");
-          this.useSupabase = false;
         } else {
           const { error } = await supabase.from("plans").insert({
             id: plan.id,
@@ -686,7 +699,6 @@ export class DataService {
         }
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -726,7 +738,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -746,7 +757,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -769,15 +779,18 @@ export class DataService {
         for (const alloc of allocations) {
           if (alloc.amount > 0 && user) {
             const refundTxId = crypto.randomUUID();
-            await supabase.from("account_transactions").insert({
-              id: refundTxId,
-              user_id: user.id,
-              to_account_id: alloc.accountId,
-              amount: alloc.amount,
-              transaction_type: "budget_allocation",
-              month_key: monthKey,
-              note: "Month cleared - allocation refunded",
-            });
+            const { error: refundError } = await supabase
+              .from("account_transactions")
+              .insert({
+                id: refundTxId,
+                user_id: user.id,
+                to_account_id: alloc.accountId,
+                amount: alloc.amount,
+                transaction_type: "budget_allocation",
+                month_key: monthKey,
+                note: "Month cleared - allocation refunded",
+              });
+            if (refundError) throw refundError;
           }
         }
 
@@ -794,7 +807,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -857,7 +869,6 @@ export class DataService {
         );
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
         return this.localStore.drafts ?? [];
       }
     }
@@ -871,7 +882,6 @@ export class DataService {
         const user = await this.getCurrentUser();
         if (!user) {
           console.warn("User not authenticated, falling back to localStorage");
-          this.useSupabase = false;
         } else {
           const { error } = await supabase.from("drafts").insert({
             id: draft.id,
@@ -892,7 +902,6 @@ export class DataService {
         }
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -923,7 +932,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -943,7 +951,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -955,16 +962,18 @@ export class DataService {
   async clearAllDrafts(): Promise<void> {
     if (this.useSupabase && supabase) {
       try {
+        const user = await this.getCurrentUser();
+        if (!user) throw new Error("Not authenticated");
+
         const { error } = await supabase
           .from("drafts")
           .delete()
-          .neq("id", "00000000-0000-0000-0000-000000000000"); // Delete all
+          .eq("user_id", user.id); // Delete all of this user's drafts
 
         if (error) throw error;
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1017,33 +1026,38 @@ export class DataService {
 
           // Refund old account
           if (oldAccountId) {
-            await supabase.from("account_transactions").insert({
-              id: crypto.randomUUID(),
-              user_id: user.id,
-              to_account_id: oldAccountId,
-              amount: oldAmount,
-              transaction_type: "expense",
-              month_key: monthKey,
-              note: "Expense updated - old amount refunded",
-            });
+            const { error: refundTxError } = await supabase
+              .from("account_transactions")
+              .insert({
+                id: crypto.randomUUID(),
+                user_id: user.id,
+                to_account_id: oldAccountId,
+                amount: oldAmount,
+                transaction_type: "expense",
+                month_key: monthKey,
+                note: "Expense updated - old amount refunded",
+              });
+            if (refundTxError) throw refundTxError;
           }
           // Deduct from new account
           if (newAccountId) {
-            await supabase.from("account_transactions").insert({
-              id: crypto.randomUUID(),
-              user_id: user.id,
-              from_account_id: newAccountId,
-              amount: newAmount,
-              transaction_type: "expense",
-              month_key: monthKey,
-              note: "Expense updated - new amount deducted",
-            });
+            const { error: deductTxError } = await supabase
+              .from("account_transactions")
+              .insert({
+                id: crypto.randomUUID(),
+                user_id: user.id,
+                from_account_id: newAccountId,
+                amount: newAmount,
+                transaction_type: "expense",
+                month_key: monthKey,
+                note: "Expense updated - new amount deducted",
+              });
+            if (deductTxError) throw deductTxError;
           }
         }
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1114,7 +1128,6 @@ export class DataService {
         return categories;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1130,7 +1143,6 @@ export class DataService {
         const user = await this.getCurrentUser();
         if (!user) {
           console.warn("User not authenticated, falling back to localStorage");
-          this.useSupabase = false;
         } else {
           const { error } = await supabase.from("categories").insert({
             id,
@@ -1147,7 +1159,6 @@ export class DataService {
         }
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1175,7 +1186,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1200,7 +1210,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1247,7 +1256,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1322,7 +1330,6 @@ export class DataService {
         return accounts;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1351,7 +1358,6 @@ export class DataService {
         const user = await this.getCurrentUser();
         if (!user) {
           console.warn("User not authenticated, falling back to localStorage");
-          this.useSupabase = false;
         } else {
           const { error } = await supabase.from("accounts").insert({
             id,
@@ -1371,7 +1377,6 @@ export class DataService {
         }
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1407,7 +1412,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1438,7 +1442,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1479,7 +1482,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1523,7 +1525,6 @@ export class DataService {
         return groups;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1541,7 +1542,6 @@ export class DataService {
         const user = await this.getCurrentUser();
         if (!user) {
           console.warn("User not authenticated, falling back to localStorage");
-          this.useSupabase = false;
         } else {
           const { error } = await supabase.from("account_groups").insert({
             id,
@@ -1557,7 +1557,6 @@ export class DataService {
         }
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1591,7 +1590,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1622,7 +1620,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1657,7 +1654,6 @@ export class DataService {
         return members;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1689,7 +1685,6 @@ export class DataService {
         if (error) throw error;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1718,7 +1713,6 @@ export class DataService {
         if (error) throw error;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1785,7 +1779,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1842,7 +1835,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1905,6 +1897,21 @@ export class DataService {
           return;
         }
 
+        // Create new allocation FIRST (INSERT not UPSERT to avoid replacing)
+        // so the balance-mutating transaction only happens once the
+        // allocation row exists.
+        const { error: allocError } = await supabase
+          .from("budget_allocations")
+          .insert({
+            id: allocationId,
+            user_id: user.id,
+            account_id: accountId,
+            month_key: monthKey,
+            amount,
+          });
+
+        if (allocError) throw allocError;
+
         // Create transaction (trigger will update account balance)
         const { error: txError } = await supabase
           .from("account_transactions")
@@ -1918,23 +1925,9 @@ export class DataService {
           });
 
         if (txError) throw txError;
-
-        // Create new allocation (INSERT not UPSERT to avoid replacing)
-        const { error: allocError } = await supabase
-          .from("budget_allocations")
-          .insert({
-            id: allocationId,
-            user_id: user.id,
-            account_id: accountId,
-            month_key: monthKey,
-            amount,
-          });
-
-        if (allocError) throw allocError;
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -1994,7 +1987,6 @@ export class DataService {
         );
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2032,7 +2024,6 @@ export class DataService {
         );
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2073,7 +2064,6 @@ export class DataService {
         );
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2138,7 +2128,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2229,7 +2218,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2298,7 +2286,6 @@ export class DataService {
         );
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2354,7 +2341,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2419,7 +2405,6 @@ export class DataService {
         );
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2464,7 +2449,6 @@ export class DataService {
         return goals;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2506,7 +2490,6 @@ export class DataService {
         return newGoal;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2540,7 +2523,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2562,7 +2544,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2617,7 +2598,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2696,7 +2676,6 @@ export class DataService {
         );
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2714,12 +2693,16 @@ export class DataService {
         const user = await this.getCurrentUser();
         if (!user) throw new Error("Not authenticated");
 
-        const fileExt = file.name.split(".").pop();
+        const ALLOWED_IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif"];
+        const fileExt = file.name.split(".").pop()?.toLowerCase();
+        if (!fileExt || !ALLOWED_IMAGE_EXTENSIONS.includes(fileExt)) {
+          throw new Error("Unsupported image type");
+        }
         const fileName = `${user.id}/${crypto.randomUUID()}.${fileExt}`;
 
         const { error: uploadError } = await supabase.storage
           .from("savings-goal-images")
-          .upload(fileName, file);
+          .upload(fileName, file, { contentType: file.type });
 
         if (uploadError) throw uploadError;
 
@@ -2799,7 +2782,6 @@ export class DataService {
         return result;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2833,7 +2815,6 @@ export class DataService {
         return result;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -2868,7 +2849,6 @@ export class DataService {
         );
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -3003,7 +2983,6 @@ export class DataService {
         return flows;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -3021,7 +3000,6 @@ export class DataService {
         const user = await this.getCurrentUser();
         if (!user) {
           console.warn("User not authenticated, falling back to localStorage");
-          this.useSupabase = false;
         } else {
           const { error } = await supabase
             .from("forecast_flows")
@@ -3031,7 +3009,6 @@ export class DataService {
         }
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -3075,7 +3052,6 @@ export class DataService {
         return;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -3095,7 +3071,6 @@ export class DataService {
         if (error) throw error;
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 
@@ -3120,7 +3095,6 @@ export class DataService {
         const user = await this.getCurrentUser();
         if (!user) {
           console.warn("User not authenticated, falling back to localStorage");
-          this.useSupabase = false;
         } else {
           const { error } = await supabase
             .from("forecast_flows")
@@ -3132,7 +3106,6 @@ export class DataService {
         }
       } catch (error) {
         console.warn("Supabase error, falling back to localStorage:", error);
-        this.useSupabase = false;
       }
     }
 

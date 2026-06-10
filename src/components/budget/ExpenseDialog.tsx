@@ -30,6 +30,18 @@ import {
 
 type DialogMode = "expense" | "plan";
 
+// Deterministic per-item tilt for the handwritten note cards. Derived from a
+// stable id so the angle doesn't change on every render (unlike Math.random).
+// Produces 0.5–1.0deg with a sign that alternates by index.
+function noteRotation(id: string, index: number): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  }
+  const magnitude = 0.5 + (Math.abs(hash) % 101) / 200; // 0.5–1.0
+  return (index % 2 === 0 ? 1 : -1) * magnitude;
+}
+
 interface ExpenseDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -296,8 +308,14 @@ export function ExpenseDialog({
         open={open}
         onOpenChange={(newOpen) => {
           onOpenChange(newOpen);
-          // Clear any lingering focus when dialog closes
           if (!newOpen) {
+            // Reset internal state so the dialog reopens fresh
+            setMode("expense");
+            setBookMode(false);
+            setCurrentPage(0);
+            setInlineEditingExpenseId(null);
+            setInlineEditingPlanId(null);
+            // Clear any lingering focus when dialog closes
             setTimeout(() => document.body.focus(), 0);
           }
         }}
@@ -588,7 +606,7 @@ export function ExpenseDialog({
                   {/* Book View */}
                   <div className="relative min-h-[500px] p-4">
                     {/* Book binding spine */}
-                    <div className="absolute left-1/2 top-0 bottom-0 w-2 bg-stone-400/20 transform -translate-x-1/2 shadow-inner rounded-full"></div>
+                    <div className="hidden sm:block absolute left-1/2 top-0 bottom-0 w-2 bg-stone-400/20 transform -translate-x-1/2 shadow-inner rounded-full"></div>
 
                     {/* Book pages with flip animation */}
                     <div className="relative w-full h-full">
@@ -596,7 +614,7 @@ export function ExpenseDialog({
                       {currentPage === 0 && (
                         <div
                           className={cn(
-                            "grid grid-cols-2 gap-8 min-h-[450px] transition-all duration-300 transform",
+                            "grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8 min-h-[450px] transition-all duration-300 transform",
                             isFlipping
                               ? "rotateY-90 opacity-0"
                               : "rotateY-0 opacity-100"
@@ -790,7 +808,7 @@ export function ExpenseDialog({
                       {currentPage === 1 && (
                         <div
                           className={cn(
-                            "grid grid-cols-2 gap-8 min-h-[450px] transition-all duration-300 transform",
+                            "grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8 min-h-[450px] transition-all duration-300 transform",
                             isFlipping
                               ? "rotateY-90 opacity-0"
                               : "rotateY-0 opacity-100"
@@ -889,10 +907,10 @@ export function ExpenseDialog({
                                         <div
                                           className="bg-white/80 p-3 rounded-sm shadow-sm transform rotate-1 hover:rotate-0 transition-transform duration-200"
                                           style={{
-                                            transform: `rotate(${
-                                              (index % 2 === 0 ? 1 : -1) *
-                                              (0.5 + Math.random() * 0.5)
-                                            }deg)`,
+                                            transform: `rotate(${noteRotation(
+                                              expense.id,
+                                              index
+                                            )}deg)`,
                                           }}
                                         >
                                           <div className="flex justify-between items-start">
@@ -1059,10 +1077,10 @@ export function ExpenseDialog({
                                         <div
                                           className="bg-white/80 p-3 rounded-sm shadow-sm transform hover:rotate-0 transition-transform duration-200"
                                           style={{
-                                            transform: `rotate(${
-                                              (index % 2 === 0 ? -1 : 1) *
-                                              (0.5 + Math.random() * 0.5)
-                                            }deg)`,
+                                            transform: `rotate(${-noteRotation(
+                                              plan.id,
+                                              index
+                                            )}deg)`,
                                           }}
                                         >
                                           <div className="flex justify-between items-start">

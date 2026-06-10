@@ -16,6 +16,9 @@ on:
           - production
           - staging
 
+permissions:
+  contents: write # commits regenerated database types back to the repo
+
 jobs:
   migrate:
     runs-on: ubuntu-latest
@@ -29,7 +32,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
@@ -38,7 +41,9 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pinned: "latest" does a GitHub API release lookup on every run,
+          # which hits rate limits on shared runners and flakes the deploy.
+          version: 2.105.0
 
       - name: Verify Supabase project connection
         run: |
@@ -46,11 +51,12 @@ jobs:
           supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
       - name: Run database migrations
         run: |
           echo "Running migrations..."
-          supabase db push --linked --debug
+          supabase db push --linked
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -59,7 +65,7 @@ jobs:
         run: |
           echo "Generating TypeScript types..."
           mkdir -p src/types
-          supabase gen types typescript --linked --debug > src/types/database.types.ts
+          supabase gen types typescript --linked > src/types/database.types.ts
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}

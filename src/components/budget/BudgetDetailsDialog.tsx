@@ -66,10 +66,10 @@ export function BudgetDetailsDialog({
               </div>
 
               {/* Book binding spine */}
-              <div className="absolute left-1/2 top-24 bottom-0 w-2 bg-stone-400/20 transform -translate-x-1/2 shadow-inner rounded-full"></div>
+              <div className="hidden sm:block absolute left-1/2 top-24 bottom-0 w-2 bg-stone-400/20 transform -translate-x-1/2 shadow-inner rounded-full"></div>
 
               {/* Two-page layout */}
-              <div className="grid grid-cols-2 gap-12 min-h-[360px]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-12 min-h-[360px]">
                 {/* Left page - Budget Breakdown */}
                 <div className="relative bg-gradient-to-br from-amber-50 via-white to-amber-100 rounded-l-lg border-r border-stone-200/50 shadow-inner p-6">
                   <div className="absolute left-4 top-0 bottom-0 flex flex-col justify-evenly">

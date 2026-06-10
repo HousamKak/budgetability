@@ -30,3 +30,10 @@ dist-ssr
 # Private/personal data — NEVER commit to this public repo
 *.private.json
 private/
+Budget.xlsx
+
+# Crash dumps
+*.stackdump
+
+# The mobile app lives in its own repository (HousamKak/budgetability-mobile)
+budgetability-mobile/

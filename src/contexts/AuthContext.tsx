@@ -28,18 +28,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Get initial session
     if (supabase) {
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        setSession(session)
-        setUser(session?.user ?? null)
-        setLoading(false)
-      })
-
-      // Listen for auth changes
+      // onAuthStateChange fires INITIAL_SESSION with the current session on
+      // subscribe (supabase-js v2), so a separate getSession() call is not
+      // needed and would race this listener on setLoading(false).
       const {
         data: { subscription },
-      } = supabase.auth.onAuthStateChange((_event, session) => {
+      } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_OUT') {
+          // Clear cached financial data so the previous user's budgets and
+          // expenses don't bleed into the next account on a shared browser.
+          // Mirrors STORAGE_KEY in src/lib/data-service.ts.
+          localStorage.removeItem('paper-budget-cartoon-v2')
+        }
         setSession(session)
         setUser(session?.user ?? null)
         setLoading(false)
@@ -112,7 +113,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: new Error('Supabase not available') }
     }
 
-    return await supabase.auth.resetPasswordForEmail(email)
+    // Send the user back to our reset page so they can actually set a new
+    // password. Includes the Vite base path (same pattern as signUp above).
+    const basePath = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '')
+    return await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}${basePath}/auth/reset-password`,
+    })
   }
 
   const value = {

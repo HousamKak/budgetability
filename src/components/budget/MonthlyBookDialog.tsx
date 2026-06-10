@@ -161,7 +161,7 @@ export function MonthlyBookDialog({
               </div>
 
               {/* Book binding spine - positioned after title */}
-              <div className="absolute left-1/2 top-24 bottom-0 w-2 bg-stone-400/20 transform -translate-x-1/2 shadow-inner rounded-full"></div>
+              <div className="hidden sm:block absolute left-1/2 top-24 bottom-0 w-2 bg-stone-400/20 transform -translate-x-1/2 shadow-inner rounded-full"></div>
 
               {/* Book pages with flip animation */}
               <div className="relative w-full h-full">
@@ -169,7 +169,7 @@ export function MonthlyBookDialog({
                 {currentPage === 0 && (
                   <div
                     className={cn(
-                      "grid grid-cols-2 gap-12 min-h-[480px] transition-all duration-300 transform",
+                      "grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-12 min-h-[480px] transition-all duration-300 transform",
                       isFlipping
                         ? "rotateY-90 opacity-0"
                         : "rotateY-0 opacity-100"

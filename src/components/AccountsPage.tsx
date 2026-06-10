@@ -279,7 +279,7 @@ export default function AccountsPage() {
     : [];
 
   return (
-    <div className="min-h-screen w-full p-4 md:p-8 bg-[repeating-linear-gradient(0deg,#fbf6e9,#fbf6e9_28px,#f2e8cf_28px,#f2e8cf_29px)]">
+    <div className="min-h-screen w-full p-4 md:p-8 max-lg:pb-24 bg-[repeating-linear-gradient(0deg,#fbf6e9,#fbf6e9_28px,#f2e8cf_28px,#f2e8cf_29px)]">
       {/* Background texture */}
       <div
         className={cn(
