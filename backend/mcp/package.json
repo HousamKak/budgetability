@@ -1,0 +1,24 @@
+{
+  "name": "budgetability-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server exposing Budgetability tools over the standalone backend API. Not wired to the apps.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "budgetability-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  }
+}
