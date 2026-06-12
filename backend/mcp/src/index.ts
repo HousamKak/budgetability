@@ -8,15 +8,39 @@
  *   BUDGETABILITY_TOKEN     personal access token, or
  *   BUDGETABILITY_EMAIL / BUDGETABILITY_PASSWORD
  */
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, type ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { api, currentMonthKey } from "./client.js";
+import { startRegistryAnnouncer, type ToolMeta } from "./registry.js";
+
+const SERVER_NAME = "budgetability";
+const SERVER_VERSION = "0.1.0";
 
 const server = new McpServer({
-  name: "budgetability",
-  version: "0.1.0",
+  name: SERVER_NAME,
+  version: SERVER_VERSION,
 });
+
+/**
+ * Register a tool on the MCP server AND record its metadata so the server
+ * can announce its components to an MCP registry (see registry.ts).
+ */
+const toolMetas: ToolMeta[] = [];
+function tool<Args extends z.ZodRawShape>(
+  name: string,
+  description: string,
+  shape: Args,
+  handler: ToolCallback<Args>,
+): void {
+  toolMetas.push({
+    name,
+    description,
+    inputSchema: zodToJsonSchema(z.object(shape)),
+  });
+  server.tool(name, description, shape, handler);
+}
 
 const monthKeySchema = z
   .string()
@@ -37,14 +61,14 @@ const mk = (m?: string) => m ?? currentMonthKey();
 
 // ------------------------------------------------------------- month / budget
 
-server.tool(
+tool(
   "get_month_summary",
   "Get the full summary for a month: budget, total spent, total planned, money left now, money left after planned expenses, and spending grouped by category.",
   { monthKey: monthKeySchema },
   async ({ monthKey }) => json(await api("GET", `/months/${mk(monthKey)}/summary`)),
 );
 
-server.tool(
+tool(
   "set_budget",
   "Set the total budget amount for a month.",
   { monthKey: monthKeySchema, amount: z.number().min(0).describe("Budget amount") },
@@ -54,14 +78,14 @@ server.tool(
 
 // ----------------------------------------------------------------- expenses
 
-server.tool(
+tool(
   "list_expenses",
   "List all expenses recorded in a month.",
   { monthKey: monthKeySchema },
   async ({ monthKey }) => json(await api("GET", `/months/${mk(monthKey)}/expenses`)),
 );
 
-server.tool(
+tool(
   "add_expense",
   "Record an expense. If accountId is given, the amount is deducted from that account's balance.",
   {
@@ -76,7 +100,7 @@ server.tool(
     json(await api("POST", `/months/${args.date.slice(0, 7)}/expenses`, args)),
 );
 
-server.tool(
+tool(
   "update_expense",
   "Update an existing expense. Account balances are reconciled automatically when amount or account changes.",
   {
@@ -93,7 +117,7 @@ server.tool(
     json(await api("PATCH", `/months/${mk(monthKey)}/expenses/${expenseId}`, updates)),
 );
 
-server.tool(
+tool(
   "delete_expense",
   "Delete an expense. If it was paid from an account, the amount is refunded to that account.",
   { monthKey: monthKeySchema, expenseId: z.string().uuid() },
@@ -103,7 +127,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "search_expenses",
   'Search expenses across months by note/category text (e.g. "when did I last pay the mechanic"). Returns newest first.',
   {
@@ -122,14 +146,14 @@ server.tool(
 
 // -------------------------------------------------------------------- plans
 
-server.tool(
+tool(
   "list_plans",
   "List planned (not yet paid) expenses for a month.",
   { monthKey: monthKeySchema },
   async ({ monthKey }) => json(await api("GET", `/months/${mk(monthKey)}/plans`)),
 );
 
-server.tool(
+tool(
   "add_plan",
   "Add a planned expense to a month (something you intend to pay but haven't yet).",
   {
@@ -146,7 +170,7 @@ server.tool(
     json(await api("POST", `/months/${mk(monthKey)}/plans`, body)),
 );
 
-server.tool(
+tool(
   "mark_plan_paid",
   "Convert a plan into a real expense (atomically: creates the expense, deducts the account if set, removes the plan).",
   {
@@ -158,7 +182,7 @@ server.tool(
     json(await api("POST", `/months/${mk(monthKey)}/plans/${planId}/mark-paid`, { date })),
 );
 
-server.tool(
+tool(
   "delete_plan",
   "Delete a planned expense.",
   { monthKey: monthKeySchema, planId: z.string().uuid() },
@@ -170,14 +194,14 @@ server.tool(
 
 // --------------------------------------------------------------- categories
 
-server.tool(
+tool(
   "list_categories",
   "List the user's expense categories (id, name, color, icon).",
   {},
   async () => json(await api("GET", "/categories")),
 );
 
-server.tool(
+tool(
   "create_category",
   "Create an expense category.",
   {
@@ -190,14 +214,14 @@ server.tool(
 
 // ----------------------------------------------------------------- accounts
 
-server.tool(
+tool(
   "list_accounts",
   "List accounts with their current balances.",
   {},
   async () => json(await api("GET", "/accounts")),
 );
 
-server.tool(
+tool(
   "create_account",
   "Create an account (checking, savings, credit, cash, or other) with an opening balance.",
   {
@@ -209,7 +233,7 @@ server.tool(
   async (body) => json(await api("POST", "/accounts", body)),
 );
 
-server.tool(
+tool(
   "deposit",
   "Deposit money into an account.",
   {
@@ -221,7 +245,7 @@ server.tool(
     json(await api("POST", `/accounts/${accountId}/deposit`, body)),
 );
 
-server.tool(
+tool(
   "transfer",
   "Transfer money between two accounts.",
   {
@@ -233,7 +257,7 @@ server.tool(
   async (body) => json(await api("POST", "/accounts/transfer", body)),
 );
 
-server.tool(
+tool(
   "list_transactions",
   "List account transactions (deposits, transfers, expenses, allocations, contributions), newest first.",
   {
@@ -261,7 +285,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "allocate_to_budget",
   "Move money from an account into a month's budget envelope (deducts the account, records the allocation).",
   {
@@ -275,14 +299,14 @@ server.tool(
 
 // ------------------------------------------------------------------ savings
 
-server.tool(
+tool(
   "list_savings_goals",
   "List savings goals with target, progress, and completion state.",
   {},
   async () => json(await api("GET", "/savings-goals")),
 );
 
-server.tool(
+tool(
   "create_savings_goal",
   "Create a savings goal.",
   {
@@ -293,7 +317,7 @@ server.tool(
   async (body) => json(await api("POST", "/savings-goals", body)),
 );
 
-server.tool(
+tool(
   "contribute_to_goal",
   "Contribute money from an account to a savings goal (deducts the account, advances the goal, flips completion when the target is reached).",
   {
@@ -308,7 +332,7 @@ server.tool(
 
 // ----------------------------------------------------------------- forecast
 
-server.tool(
+tool(
   "list_forecast_flows",
   "List cash-flow forecast entries (recurring ins/outs by year and month, with uncertainty ranges).",
   { year: z.number().int().optional() },
@@ -316,7 +340,7 @@ server.tool(
     json(await api("GET", `/forecast-flows${year ? `?year=${year}` : ""}`)),
 );
 
-server.tool(
+tool(
   "add_forecast_flow",
   "Add a forecast cash flow: money in or out, in specific months of a year, certain (value) or uncertain (lowValue..highValue).",
   {
@@ -337,3 +361,19 @@ server.tool(
 const transport = new StdioServerTransport();
 await server.connect(transport);
 console.error("budgetability MCP server running (stdio)");
+
+// Announce to the MCP registry (no-op unless MCP_REGISTRY_URL is set).
+startRegistryAnnouncer({
+  name: SERVER_NAME,
+  version: SERVER_VERSION,
+  description:
+    "Budgetability MCP server — standalone backend (backend/api, Express + SQLite). Budgets, expenses, plans, envelope accounts, savings goals, forecast. Safe sandbox: not wired to the production apps.",
+  tags: ["budgetability", "budget", "finance", "standalone", "sandbox"],
+  env: [
+    { name: "BUDGETABILITY_API_URL", required: false, description: "Defaults to http://localhost:8787" },
+    { name: "BUDGETABILITY_TOKEN", required: false, secret: true, description: "Personal access token (bat_...)" },
+    { name: "BUDGETABILITY_EMAIL", required: false, description: "Alternative to the token" },
+    { name: "BUDGETABILITY_PASSWORD", required: false, secret: true, description: "Alternative to the token" },
+  ],
+  tools: toolMetas,
+});

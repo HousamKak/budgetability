@@ -61,3 +61,13 @@ the same ordering fix the apps received.
 Months are `"YYYY-MM"` and default to the current month. **These tools write
 to your real data** — there is no sandbox; prefer the `backend/` system for
 experiments.
+
+## Registry self-registration
+
+When `MCP_REGISTRY_URL` is set, the server announces itself on startup
+(identity, stdio transport, env requirements, and every tool with its JSON
+Schema) via `POST {url}/register`, heartbeats every
+`MCP_REGISTRY_HEARTBEAT_SECONDS` (default 300, `0` off), and posts
+`{url}/unregister` on shutdown. Optional `MCP_REGISTRY_TOKEN` is sent as a
+bearer token. Unset = disabled; a failing registry never affects the
+server. Full contract: [docs/MCP-REGISTRY.md](../docs/MCP-REGISTRY.md).

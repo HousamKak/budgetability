@@ -9,9 +9,10 @@
  *
  * Tool names match backend/mcp so either server can back the same workflows.
  */
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, type ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import {
   check,
   currentMonthKey,
@@ -21,11 +22,34 @@ import {
   sanitizeLike,
   supabase,
 } from "./client.js";
+import { startRegistryAnnouncer, type ToolMeta } from "./registry.js";
+
+const SERVER_NAME = "budgetability-live";
+const SERVER_VERSION = "0.1.0";
 
 const server = new McpServer({
-  name: "budgetability-live",
-  version: "0.1.0",
+  name: SERVER_NAME,
+  version: SERVER_VERSION,
 });
+
+/**
+ * Register a tool on the MCP server AND record its metadata so the server
+ * can announce its components to an MCP registry (see registry.ts).
+ */
+const toolMetas: ToolMeta[] = [];
+function tool<Args extends z.ZodRawShape>(
+  name: string,
+  description: string,
+  shape: Args,
+  handler: ToolCallback<Args>,
+): void {
+  toolMetas.push({
+    name,
+    description,
+    inputSchema: zodToJsonSchema(z.object(shape)),
+  });
+  server.tool(name, description, shape, handler);
+}
 
 const monthKeySchema = z
   .string()
@@ -102,7 +126,7 @@ async function insertTx(
 
 // ------------------------------------------------------------- month / budget
 
-server.tool(
+tool(
   "get_month_summary",
   "Get the full summary for a month: budget, total spent, total planned, money left now, money left after planned expenses, and spending grouped by category.",
   { monthKey: monthKeySchema },
@@ -150,7 +174,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "set_budget",
   "Set the total budget amount for a month.",
   { monthKey: monthKeySchema, amount: z.number().min(0).describe("Budget amount") },
@@ -170,7 +194,7 @@ server.tool(
 
 // ----------------------------------------------------------------- expenses
 
-server.tool(
+tool(
   "list_expenses",
   "List all expenses recorded in a month.",
   { monthKey: monthKeySchema },
@@ -187,7 +211,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "add_expense",
   "Record an expense in the live app. If accountId is given, the amount is deducted from that account's balance (visible immediately in the apps).",
   {
@@ -227,7 +251,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "update_expense",
   "Update an existing expense. Account balances are reconciled automatically when the amount or account changes.",
   {
@@ -294,7 +318,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "delete_expense",
   "Delete an expense. If it was paid from an account, the amount is refunded to that account.",
   { monthKey: monthKeySchema, expenseId: z.string().uuid() },
@@ -329,7 +353,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "search_expenses",
   'Search expenses across months by note/category text (e.g. "when did I last pay the mechanic"). Returns newest first.',
   {
@@ -354,7 +378,7 @@ server.tool(
 
 // -------------------------------------------------------------------- plans
 
-server.tool(
+tool(
   "list_plans",
   "List planned (not yet paid) expenses for a month.",
   { monthKey: monthKeySchema },
@@ -371,7 +395,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "add_plan",
   "Add a planned expense to a month (something you intend to pay but haven't yet).",
   {
@@ -404,7 +428,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "mark_plan_paid",
   "Convert a plan into a real expense (creates the expense, deducts the account if set, removes the plan). Future-month plans cannot be marked paid.",
   {
@@ -464,7 +488,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "delete_plan",
   "Delete a planned expense.",
   { monthKey: monthKeySchema, planId: z.string().uuid() },
@@ -483,7 +507,7 @@ server.tool(
 
 // --------------------------------------------------------------- categories
 
-server.tool(
+tool(
   "list_categories",
   "List the user's expense categories (id, name, color, icon).",
   {},
@@ -499,7 +523,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "create_category",
   "Create an expense category.",
   {
@@ -520,7 +544,7 @@ server.tool(
 
 // ----------------------------------------------------------------- accounts
 
-server.tool(
+tool(
   "list_accounts",
   "List accounts with their current balances.",
   {},
@@ -546,7 +570,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "create_account",
   "Create an account (checking, savings, credit, cash, or other) with an opening balance.",
   {
@@ -573,7 +597,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "deposit",
   "Deposit money into an account.",
   {
@@ -593,7 +617,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "transfer",
   "Transfer money between two accounts.",
   {
@@ -616,7 +640,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "list_transactions",
   "List account transactions (deposits, transfers, expenses, allocations, contributions), newest first.",
   {
@@ -660,7 +684,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "undo_transaction",
   "Undo a deposit or transfer (the only transaction types the app allows deleting). Balances are reversed automatically.",
   { transactionId: z.string().uuid() },
@@ -678,7 +702,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "allocate_to_budget",
   "Move money from an account into a month's budget envelope (deducts the account, records the allocation).",
   {
@@ -730,7 +754,7 @@ server.tool(
 
 // ------------------------------------------------------------------ savings
 
-server.tool(
+tool(
   "list_savings_goals",
   "List savings goals with target, progress, and completion state.",
   {},
@@ -755,7 +779,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "create_savings_goal",
   "Create a savings goal.",
   {
@@ -778,7 +802,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "contribute_to_goal",
   "Contribute money from an account to a savings goal (deducts the account, advances the goal, flips completion when the target is reached).",
   {
@@ -814,7 +838,7 @@ server.tool(
 
 // ----------------------------------------------------------------- forecast
 
-server.tool(
+tool(
   "list_forecast_flows",
   "List cash-flow forecast entries (recurring ins/outs by year and month, with uncertainty ranges).",
   { year: z.number().int().optional() },
@@ -842,7 +866,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "add_forecast_flow",
   "Add a forecast cash flow: money in or out, in specific months of a year, certain (value) or uncertain (lowValue..highValue).",
   {
@@ -880,3 +904,19 @@ server.tool(
 const transport = new StdioServerTransport();
 await server.connect(transport);
 console.error("budgetability-live MCP server running (stdio, Supabase backend)");
+
+// Announce to the MCP registry (no-op unless MCP_REGISTRY_URL is set).
+startRegistryAnnouncer({
+  name: SERVER_NAME,
+  version: SERVER_VERSION,
+  description:
+    "Budgetability live MCP server — operates on the production Supabase backend as the signed-in user (RLS enforced). Budgets, expenses, plans, envelope accounts, savings goals, forecast.",
+  tags: ["budgetability", "budget", "finance", "supabase", "live"],
+  env: [
+    { name: "SUPABASE_EMAIL", required: true, description: "Budgetability account email" },
+    { name: "SUPABASE_PASSWORD", required: true, secret: true, description: "Budgetability account password" },
+    { name: "SUPABASE_URL", required: false, description: "Defaults to the production project" },
+    { name: "SUPABASE_PUBLISHABLE_KEY", required: false, description: "Defaults to the production key" },
+  ],
+  tools: toolMetas,
+});
