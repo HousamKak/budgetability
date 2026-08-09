@@ -23,6 +23,7 @@ import {
   supabase,
 } from "./client.js";
 import { startRegistryAnnouncer, type ToolMeta } from "./registry.js";
+import { startHAnnounce } from "./h-register.js";
 
 const SERVER_NAME = "budgetability-live";
 const SERVER_VERSION = "0.1.0";
@@ -106,6 +107,7 @@ async function insertTx(
     monthKey?: string;
     savingsGoalId?: string;
     note?: string;
+    inForecast?: boolean;
   },
 ): Promise<string> {
   const id = newId();
@@ -119,6 +121,8 @@ async function insertTx(
     month_key: tx.monthKey ?? null,
     savings_goal_id: tx.savingsGoalId ?? null,
     note: tx.note ?? null,
+    // Deposits only — a DB check constraint rejects the flag on other types.
+    in_forecast: tx.inForecast ?? false,
   });
   check(error, "Recording account transaction failed");
   return id;
@@ -221,6 +225,12 @@ tool(
     categoryId: z.string().uuid().optional().describe("Category id (preferred when known)"),
     accountId: z.string().uuid().optional().describe("Account to pay from"),
     note: z.string().optional(),
+    inForecast: z
+      .boolean()
+      .optional()
+      .describe(
+        "Mark 'Show in Forecast': the expense also appears on the Forecast page as an outflow in its month. Off unless set.",
+      ),
   },
   async (args) => {
     const userId = await ensureUserId();
@@ -236,6 +246,7 @@ tool(
       category_id: args.categoryId ?? null,
       account_id: args.accountId ?? null,
       note: args.note ?? null,
+      in_forecast: args.inForecast ?? false,
     });
     check(error, "Adding expense failed");
     if (args.accountId) {
@@ -407,6 +418,12 @@ tool(
     categoryId: z.string().uuid().optional(),
     accountId: z.string().uuid().optional().describe("Account it will be paid from"),
     note: z.string().optional(),
+    inForecast: z
+      .boolean()
+      .optional()
+      .describe(
+        "Mark 'Show in Forecast': the plan appears on the Forecast page as an outflow, and stays there once it's marked paid. Off unless set.",
+      ),
   },
   async ({ monthKey, ...b }) => {
     const userId = await ensureUserId();
@@ -422,9 +439,56 @@ tool(
       account_id: b.accountId ?? null,
       note: b.note ?? null,
       target_date: b.targetDate ?? null,
+      in_forecast: b.inForecast ?? false,
     });
     check(error, "Adding plan failed");
     return json({ id, monthKey: mk(monthKey), ...b, amount: money(b.amount) });
+  },
+);
+
+tool(
+  "update_plan",
+  "Edit a planned (unpaid) expense in place — change its amount, category, account, week, target date, or note. No balance effects (a plan only moves money when marked paid). Omitted fields are left unchanged.",
+  {
+    monthKey: monthKeySchema,
+    planId: z.string().uuid(),
+    amount: z.number().positive().optional(),
+    weekIndex: z.number().int().min(0).max(4).optional().describe("Week of the month, 0-4"),
+    targetDate: dateSchema.optional(),
+    category: z.string().optional(),
+    categoryId: z.string().uuid().optional(),
+    accountId: z.string().uuid().optional().describe("Account it will be paid from"),
+    note: z.string().optional(),
+  },
+  async ({ monthKey, planId, ...u }) => {
+    const userId = await ensureUserId();
+    const m = mk(monthKey);
+    const { data: old, error: oldErr } = await supabase
+      .from("plans")
+      .select("*")
+      .eq("id", planId)
+      .eq("user_id", userId)
+      .eq("month_key", m)
+      .maybeSingle();
+    check(oldErr, "Loading plan failed");
+    if (!old) throw new Error("Plan not found");
+
+    const { error } = await supabase
+      .from("plans")
+      .update({
+        amount: u.amount !== undefined ? money(u.amount) : Number(old.amount),
+        week_index: u.weekIndex !== undefined ? u.weekIndex : old.week_index,
+        target_date: u.targetDate !== undefined ? u.targetDate : old.target_date,
+        category: u.category !== undefined ? u.category : old.category,
+        category_id: u.categoryId !== undefined ? u.categoryId : old.category_id,
+        account_id: u.accountId !== undefined ? u.accountId : old.account_id,
+        note: u.note !== undefined ? u.note : old.note,
+      })
+      .eq("id", planId)
+      .eq("user_id", userId)
+      .eq("month_key", m);
+    check(error, "Updating plan failed");
+    return json({ updated: planId });
   },
 );
 
@@ -599,19 +663,26 @@ tool(
 
 tool(
   "deposit",
-  "Deposit money into an account.",
+  "Deposit money into an account. This is the app's income event.",
   {
     accountId: z.string().uuid(),
     amount: z.number().positive(),
     note: z.string().optional(),
+    inForecast: z
+      .boolean()
+      .optional()
+      .describe(
+        "Mark 'Show in Forecast': the income also appears on the Forecast page as an inflow in the month it's recorded. Off unless set.",
+      ),
   },
-  async ({ accountId, amount, note }) => {
+  async ({ accountId, amount, note, inForecast }) => {
     const userId = await ensureUserId();
     const txId = await insertTx(userId, {
       toAccountId: accountId,
       amount,
       type: "deposit",
       note: note ?? "Deposit",
+      inForecast,
     });
     return json({ transactionId: txId });
   },
@@ -905,7 +976,13 @@ const transport = new StdioServerTransport();
 await server.connect(transport);
 console.error("budgetability-live MCP server running (stdio, Supabase backend)");
 
-// Announce to the MCP registry (no-op unless MCP_REGISTRY_URL is set).
+// Register with H exactly like comms-hub: announce the stdio launch spec to H's
+// MCP registry on startup + on a TTL timer. H then spawns this server into every
+// agent/terminal, and each spawned instance re-announces — so the entry stays
+// `up` resiliently instead of dying with one standalone heartbeat process.
+startHAnnounce(3600);
+
+// Generic MCP registry announce (no-op unless MCP_REGISTRY_URL is set).
 startRegistryAnnouncer({
   name: SERVER_NAME,
   version: SERVER_VERSION,

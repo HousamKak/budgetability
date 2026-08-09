@@ -262,6 +262,11 @@ export default function PaperBudget() {
       category: p.category,
       accountId: p.accountId,
       note: p.note,
+      // Carry the forecast link across: paying a plan replaces it with an
+      // expense, and without this the flow would silently drop off the
+      // forecast the moment the bill was settled.
+      inForecast: p.inForecast,
+      forecastEnabled: p.forecastEnabled,
     });
     removePlan(p.id);
     // Refresh accounts so any balance change from the new expense shows up.
@@ -307,6 +312,9 @@ export default function PaperBudget() {
   const [category, setCategory] = useState<string>("groceries");
   const [note, setNote] = useState<string>("");
   const [expenseAccountId, setExpenseAccountId] = useState<string>("");
+  // "Show in Forecast" for the entry being added/edited. Always starts off —
+  // an entry only reaches the Forecast page if it is explicitly marked.
+  const [inForecast, setInForecast] = useState(false);
 
   // editing state
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
@@ -329,6 +337,7 @@ export default function PaperBudget() {
       category,
       accountId: expenseAccountId || undefined,
       note,
+      inForecast,
     });
 
     // Trigger red animation on the target date
@@ -341,6 +350,7 @@ export default function PaperBudget() {
 
     setAmount("");
     setNote("");
+    setInForecast(false);
     setOpen(false);
   }
 
@@ -349,6 +359,7 @@ export default function PaperBudget() {
     amount: number;
     category: string;
     note: string;
+    inForecast: boolean;
   }) {
     // Parse the date to get week information
     const targetDate = new Date(planData.date);
@@ -366,6 +377,7 @@ export default function PaperBudget() {
       category: planData.category,
       accountId: expenseAccountId || undefined,
       note: planData.note,
+      inForecast: planData.inForecast,
     });
 
     // Trigger blue animation on the target date
@@ -373,6 +385,7 @@ export default function PaperBudget() {
 
     setAmount("");
     setNote("");
+    setInForecast(false);
     setOpen(false);
   }
 
@@ -385,6 +398,7 @@ export default function PaperBudget() {
     setCategory(expense.category || "groceries");
     setExpenseAccountId(expense.accountId || "");
     setNote(expense.note || "");
+    setInForecast(!!expense.inForecast);
     setOpen(true);
   }
 
@@ -396,6 +410,7 @@ export default function PaperBudget() {
     setCategory(plan.category || "groceries");
     setExpenseAccountId(plan.accountId || "");
     setNote(plan.note || "");
+    setInForecast(!!plan.inForecast);
     setOpen(true);
   }
 
@@ -406,6 +421,7 @@ export default function PaperBudget() {
     setEditingExpense(null);
     setAmount("");
     setNote("");
+    setInForecast(false);
     setOpen(false);
   }
 
@@ -428,6 +444,7 @@ export default function PaperBudget() {
     setEditingPlan(null);
     setAmount("");
     setNote("");
+    setInForecast(false);
     setOpen(false);
   }
 
@@ -437,6 +454,7 @@ export default function PaperBudget() {
     if (!isOpen) {
       setEditingExpense(null);
       setEditingPlan(null);
+      setInForecast(false);
       // Reset to default account
       const defaultAcct = accounts.find((a) => a.isDefault) || accounts[0];
       setExpenseAccountId(defaultAcct?.id || "");
@@ -535,6 +553,8 @@ export default function PaperBudget() {
         accountId={expenseAccountId}
         onAccountIdChange={setExpenseAccountId}
         accounts={accounts}
+        inForecast={inForecast}
+        onInForecastChange={setInForecast}
         onSubmit={submitExpense}
         onSubmitPlan={submitPlan}
         dayExpenses={expenses.filter((e) => e.date === formDate)}

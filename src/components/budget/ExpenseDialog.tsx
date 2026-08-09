@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { type Account, type Expense, type PlanItem } from "@/lib/data-service";
 import { formatNumber } from "@/lib/utils";
 import { cn, dialogStyles } from "@/styles";
-import { Check, Pencil, X } from "lucide-react";
+import { Check, Pencil, TrendingUp, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CategoryPicker } from "./CategoryPicker";
 import { CategoryIcon } from "./CategoryIcon";
@@ -56,6 +56,10 @@ interface ExpenseDialogProps {
   accountId: string;
   onAccountIdChange: (accountId: string) => void;
   accounts: Account[];
+  // "Show in Forecast" — opt this entry in to the Forecast page as an outflow
+  // in its own month. Off by default; nothing is forecast unless marked.
+  inForecast: boolean;
+  onInForecastChange: (inForecast: boolean) => void;
   onSubmit: () => void;
   onSubmitPlan?: (planData: {
     date: string;
@@ -63,6 +67,7 @@ interface ExpenseDialogProps {
     category: string;
     accountId?: string;
     note: string;
+    inForecast: boolean;
   }) => void;
   dayExpenses?: Array<{
     id: string;
@@ -101,6 +106,8 @@ export function ExpenseDialog({
   accountId,
   onAccountIdChange,
   accounts,
+  inForecast,
+  onInForecastChange,
   onSubmit,
   onSubmitPlan,
   dayExpenses = [],
@@ -240,6 +247,7 @@ export function ExpenseDialog({
           category,
           accountId: accountId || undefined,
           note,
+          inForecast,
         });
       } else if (editingPlan && onUpdatePlan) {
         onUpdatePlan(editingPlan.id, {
@@ -248,6 +256,7 @@ export function ExpenseDialog({
           category,
           accountId: accountId || undefined,
           note,
+          inForecast,
         });
       }
     } else if (mode === "expense") {
@@ -262,6 +271,7 @@ export function ExpenseDialog({
         category,
         accountId: accountId || undefined,
         note,
+        inForecast,
       });
     }
   };
@@ -559,6 +569,39 @@ export function ExpenseDialog({
                         className={dialogStyles.form.input}
                       />
                     </div>
+
+                    {/* Forecast link — opt-in, off unless ticked */}
+                    <label
+                      className={cn(
+                        "flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors",
+                        inForecast
+                          ? "border-sky-400 bg-sky-50/70"
+                          : "border-stone-200 bg-white/50 hover:border-sky-300",
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={inForecast}
+                        onChange={(e) => onInForecastChange(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 accent-sky-500 cursor-pointer"
+                      />
+                      <span className="flex-1">
+                        <span
+                          className={cn(
+                            "flex items-center gap-1.5 text-sm font-medium",
+                            inForecast ? "text-sky-800" : "text-stone-600",
+                          )}
+                        >
+                          <TrendingUp className="w-3.5 h-3.5" />
+                          Show in Forecast
+                        </span>
+                        <span className="block text-xs text-stone-500 mt-0.5">
+                          {mode === "expense"
+                            ? "Adds this expense to the forecast as an outflow in its month."
+                            : "Adds this plan to the forecast, and stays on it once you mark it paid."}
+                        </span>
+                      </span>
+                    </label>
                   </div>
 
                   {/* Action buttons */}
