@@ -378,6 +378,31 @@ export default function ForecastPage() {
   const netBest = model.yearEnd.best - model.start.best;
   const netWorst = model.yearEnd.worst - model.start.worst;
 
+  // How much of this year has actually happened. A past year is wholly behind
+  // us, a future one wholly ahead — so "to date" means all twelve months or
+  // none of them, and only the current year is genuinely part-way through.
+  const monthsElapsed =
+    year < CURRENT_YEAR ? 12 : year > CURRENT_YEAR ? 0 : CURRENT_MONTH_IDX + 1;
+
+  const totals = useMemo(() => {
+    let outBest = 0, outWorst = 0, inBest = 0, inWorst = 0;
+    let ytdOut = 0, ytdIn = 0;
+    model.buckets.forEach((b, i) => {
+      // Outflow bounds are negative; report them as magnitudes.
+      outBest += Math.abs(b.outBest);
+      outWorst += Math.abs(b.outWorst);
+      inBest += b.inBest;
+      inWorst += b.inWorst;
+      if (i < monthsElapsed) {
+        // Elapsed months are almost always certain, so the mid-point is the
+        // honest single figure rather than a band of nearly zero width.
+        ytdOut += (Math.abs(b.outBest) + Math.abs(b.outWorst)) / 2;
+        ytdIn += (b.inBest + b.inWorst) / 2;
+      }
+    });
+    return { outBest, outWorst, inBest, inWorst, ytdOut, ytdIn };
+  }, [model, monthsElapsed]);
+
   const VIEWS: { key: View; label: string; icon: typeof LineChartIcon }[] = [
     { key: "line", label: "Balance", icon: LineChartIcon },
     { key: "bars", label: "Bars", icon: BarChart3 },
@@ -472,7 +497,9 @@ export default function ForecastPage() {
         </div>
 
         {/* Summary cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        {/* Five tracks so the two-figure card can take a double slot without
+            squeezing the single-figure ones. */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
           <SummaryCard
             label={year === baseYear ? "Opening balance" : `Start of ${year}`}
             value={formatCurrency(model.start.best)}
@@ -484,22 +511,36 @@ export default function ForecastPage() {
             tone="neutral"
             onClick={() => setShowStartDialog(true)}
           />
-          <SummaryCard
-            label={`Best case · end ${year}`}
-            value={formatCurrency(model.yearEnd.best)}
-            hint={`${netBest >= 0 ? "+" : ""}${formatCurrency(netBest)} net`}
-            tone="best"
+          <RangeCard
+            label={`End of ${year}`}
+            best={model.yearEnd.best}
+            worst={model.yearEnd.worst}
+            bestHint={`${netBest >= 0 ? "+" : ""}${formatCurrency(netBest)} net`}
+            worstHint={`${netWorst >= 0 ? "+" : ""}${formatCurrency(netWorst)} net`}
+            hint={`${formatCurrency(model.yearEnd.best - model.yearEnd.worst)} spread`}
           />
           <SummaryCard
-            label={`Worst case · end ${year}`}
-            value={formatCurrency(model.yearEnd.worst)}
-            hint={`${netWorst >= 0 ? "+" : ""}${formatCurrency(netWorst)} net`}
+            label={`Total spend · ${year}`}
+            value={band(totals.outWorst, totals.outBest)}
+            hint={`${band(totals.inWorst, totals.inBest)} in`}
             tone="worst"
           />
           <SummaryCard
-            label="Uncertainty spread"
-            value={formatCurrency(model.yearEnd.best - model.yearEnd.worst)}
-            hint="best − worst at year end"
+            label={
+              monthsElapsed === 0
+                ? `Spent so far · ${year}`
+                : monthsElapsed === 12
+                  ? `Spent · all of ${year}`
+                  : `Spent so far · through ${MONTHS_SHORT[monthsElapsed - 1]}`
+            }
+            value={formatCurrency(totals.ytdOut)}
+            hint={
+              monthsElapsed === 0
+                ? "hasn't started yet"
+                : `${formatCurrency(totals.ytdIn)} in · ${
+                    totals.ytdIn - totals.ytdOut >= 0 ? "+" : "−"
+                  }${formatCurrency(Math.abs(totals.ytdIn - totals.ytdOut))} net`
+            }
             tone="neutral"
           />
         </div>
@@ -776,6 +817,56 @@ function SummaryCard({
       <p className="text-xs text-stone-500">{label}</p>
       <p className={cn("text-xl font-bold tabular-nums", valueColor)}>{value}</p>
       <p className="text-[11px] text-stone-400">{hint}</p>
+    </div>
+  );
+}
+
+// Best and worst in one card. They're two readings of the same quantity, so
+// sitting them side by side makes the spread legible at a glance — two separate
+// cards invited reading them as unrelated numbers.
+function RangeCard({
+  label,
+  best,
+  worst,
+  bestHint,
+  worstHint,
+  hint,
+}: {
+  label: string;
+  best: number;
+  worst: number;
+  bestHint: string;
+  worstHint: string;
+  hint: string;
+}) {
+  return (
+    <div className="col-span-2 rounded-xl border border-stone-200/70 bg-white/70 p-3">
+      <p className="text-xs text-stone-500">{label}</p>
+      <div className="flex items-baseline gap-3 flex-wrap mt-0.5">
+        <span>
+          <span className="text-[10px] uppercase tracking-wide text-stone-400 mr-1">
+            best
+          </span>
+          <span className="text-xl font-bold tabular-nums text-green-700">
+            {formatCurrency(best)}
+          </span>
+        </span>
+        <span>
+          <span className="text-[10px] uppercase tracking-wide text-stone-400 mr-1">
+            worst
+          </span>
+          <span className="text-xl font-bold tabular-nums text-red-600">
+            {formatCurrency(worst)}
+          </span>
+        </span>
+      </div>
+      <p className="text-[11px] text-stone-400">
+        <span className="text-green-700">{bestHint}</span>
+        {" · "}
+        <span className="text-red-600">{worstHint}</span>
+        {" · "}
+        {hint}
+      </p>
     </div>
   );
 }
