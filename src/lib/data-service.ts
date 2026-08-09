@@ -50,10 +50,11 @@ export type ForecastSource = {
   monthKey: string; // the source's month, for routing edits back
 };
 
-// A saved query that emits one forecast line per month, automatically. Where a
-// marked record is one record in one month, a rule is a filter over all of
-// them — "sum the expenses on these accounts, month by month" — so it keeps
-// itself current as new spending lands.
+// Turns a flow's amount from a number you typed into one computed per month
+// from your real records — "total the expenses on these accounts". Present on a
+// flow = that flow is computed; absent = an ordinary typed flow. Everything
+// else about the flow (name, year, months, on/off) works exactly the same,
+// which is what scopes a rule to the months you actually want it on.
 export type ForecastRuleSource = "expenses" | "deposits" | "plans";
 export type ForecastProjection =
   | "none" // future months contribute nothing (historical overlay)
@@ -62,9 +63,7 @@ export type ForecastProjection =
   | "last"
   | "fixed";
 
-export type ForecastRule = {
-  id: string;
-  name: string;
+export type ForecastRuleSpec = {
   source: ForecastRuleSource;
   accountIds: string[]; // empty = every account
   categoryIds: string[]; // empty = every category
@@ -72,8 +71,6 @@ export type ForecastRule = {
   projection: ForecastProjection;
   projectionWindow: number; // months of history the projection learns from
   fixedValue?: number;
-  enabled: boolean;
-  sortOrder: number;
 };
 
 // Forecast flow type - a projected inflow/outflow across months of a year.
@@ -93,6 +90,8 @@ export type ForecastFlow = {
   enabled: boolean;
   sortOrder: number;
   source?: ForecastSource; // set only on linked (derived) flows
+  // Present = this flow's amount is computed per month rather than typed.
+  rule?: ForecastRuleSpec;
 };
 
 // Account Group type - a non-transactable "mother account" that groups several
@@ -216,7 +215,6 @@ export type Store = {
   savingsContributions: SavingsContribution[];
   spreadsheetEntries: ManualEntry[];
   forecastFlows: ForecastFlow[];
-  forecastRules: ForecastRule[];
 };
 
 // Default categories seed data
@@ -297,7 +295,6 @@ const defaultStore: Store = {
   savingsContributions: [],
   spreadsheetEntries: [],
   forecastFlows: [],
-  forecastRules: [],
 };
 
 function loadStoreFromLocalStorage(): Store {
@@ -323,7 +320,6 @@ function loadStoreFromLocalStorage(): Store {
           savingsContributions: [],
           spreadsheetEntries: [],
           forecastFlows: [],
-          forecastRules: [],
         };
         saveStoreToLocalStorage(migrated);
         return migrated;
@@ -355,7 +351,6 @@ function loadStoreFromLocalStorage(): Store {
       savingsContributions: parsed.savingsContributions ?? [],
       spreadsheetEntries: parsed.spreadsheetEntries ?? [],
       forecastFlows: parsed.forecastFlows ?? [],
-      forecastRules: parsed.forecastRules ?? [],
     };
   } catch {
     return { ...defaultStore };
@@ -3177,6 +3172,9 @@ export class DataService {
         if (updates.enabled !== undefined) dbUpdates.enabled = updates.enabled;
         if (updates.sortOrder !== undefined)
           dbUpdates.sort_order = updates.sortOrder;
+        // `rule` present in the patch at all — even as undefined — means the
+        // caller is setting what kind of flow this is, so write the columns.
+        if ("rule" in updates) Object.assign(dbUpdates, ruleSpecToRow(updates.rule));
 
         const { error } = await supabase
           .from("forecast_flows")
@@ -3429,139 +3427,47 @@ export class DataService {
   }
 
   // ============================================
-  // FORECAST RULES (saved queries that aggregate per month)
+  // COMPUTED (RULE) FLOWS
   // ============================================
 
-  async getForecastRules(): Promise<ForecastRule[]> {
-    if (this.useSupabase && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from("forecast_rules")
-          .select("*")
-          .order("sort_order", { ascending: true });
-        if (error) throw error;
-        return ((data as Array<Record<string, unknown>> | null) ?? []).map(
-          ruleRowToRule,
-        );
-      } catch (error) {
-        console.warn("Supabase error, falling back to localStorage:", error);
-      }
-    }
-    return this.localStore.forecastRules ?? [];
-  }
-
-  async addForecastRule(rule: Omit<ForecastRule, "id">): Promise<ForecastRule> {
-    const created: ForecastRule = { id: crypto.randomUUID(), ...rule };
-    if (this.useSupabase && supabase) {
-      try {
-        const user = await this.getCurrentUser();
-        if (user) {
-          const { error } = await supabase
-            .from("forecast_rules")
-            .insert(ruleToRow(created, user.id) as never);
-          if (error) throw error;
-          return created;
-        }
-      } catch (error) {
-        console.warn("Supabase error, falling back to localStorage:", error);
-      }
-    }
-    this.localStore.forecastRules = [
-      ...(this.localStore.forecastRules ?? []),
-      created,
-    ];
-    saveStoreToLocalStorage(this.localStore);
-    return created;
-  }
-
-  async updateForecastRule(
-    id: string,
-    updates: Partial<Omit<ForecastRule, "id">>,
-  ): Promise<void> {
-    if (this.useSupabase && supabase) {
-      try {
-        const u: Record<string, unknown> = {};
-        if (updates.name !== undefined) u.name = updates.name;
-        if (updates.source !== undefined) u.source = updates.source;
-        if (updates.accountIds !== undefined) u.account_ids = updates.accountIds;
-        if (updates.categoryIds !== undefined)
-          u.category_ids = updates.categoryIds;
-        if (updates.excludeLinked !== undefined)
-          u.exclude_linked = updates.excludeLinked;
-        if (updates.projection !== undefined) u.projection = updates.projection;
-        if (updates.projectionWindow !== undefined)
-          u.projection_window = updates.projectionWindow;
-        if (updates.fixedValue !== undefined)
-          u.fixed_value = updates.fixedValue ?? null;
-        if (updates.enabled !== undefined) u.enabled = updates.enabled;
-        if (updates.sortOrder !== undefined) u.sort_order = updates.sortOrder;
-
-        const { error } = await supabase
-          .from("forecast_rules")
-          .update(u as never)
-          .eq("id", id);
-        if (error) throw error;
-        return;
-      } catch (error) {
-        console.warn("Supabase error, falling back to localStorage:", error);
-      }
-    }
-    this.localStore.forecastRules = (this.localStore.forecastRules ?? []).map(
-      (r) => (r.id === id ? { ...r, ...updates } : r),
-    );
-    saveStoreToLocalStorage(this.localStore);
-  }
-
-  async removeForecastRule(id: string): Promise<void> {
-    if (this.useSupabase && supabase) {
-      try {
-        const { error } = await supabase
-          .from("forecast_rules")
-          .delete()
-          .eq("id", id);
-        if (error) throw error;
-      } catch (error) {
-        console.warn("Supabase error, falling back to localStorage:", error);
-      }
-    }
-    this.localStore.forecastRules = (
-      this.localStore.forecastRules ?? []
-    ).filter((r) => r.id !== id);
-    saveStoreToLocalStorage(this.localStore);
-  }
-
-  // Every rule evaluated against `year`, projected into ForecastFlow shape —
-  // one flow per (rule, month) so the maths and every view treat them like any
-  // other flow. They carry source.kind === "rule" so the UI can group the
-  // twelve back into a single row with a single toggle.
+  // Expand each computed flow into one line per month it covers, with that
+  // month's total. A computed flow stores no amount of its own — its months
+  // and year say *where* it applies, and this fills in *how much*.
   //
-  // Months up to and including the current one use the real sum, so the
+  // The expansion carries source.kind === "rule" so views can tell it apart,
+  // and so the flows list can fold the lines back into the single stored row
+  // the user actually edits.
+  //
+  // Months up to and including the current one use the real total, so the
   // current (partial) month shows what has actually been spent so far. Later
-  // months use the rule's projection, which is 'none' by default — a rule is a
-  // historical overlay until you ask it to project.
-  async getRuleForecastFlows(year: number): Promise<ForecastFlow[]> {
-    // Disabled rules still emit their lines, flagged disabled, exactly like a
-    // muted manual flow. Dropping them here would make a rule vanish from the
-    // page the moment you switched it off, with no way to switch it back.
-    const rules = await this.getForecastRules();
-    if (rules.length === 0) return [];
+  // months use the flow's projection — 'none' by default, which makes a
+  // computed flow a historical overlay until you ask it to project.
+  async evaluateRuleFlows(
+    ruleFlows: ForecastFlow[],
+    year: number,
+  ): Promise<ForecastFlow[]> {
+    // Disabled ones are still expanded, flagged disabled, exactly like a muted
+    // typed flow — the maths skips them but they stay on screen.
+    const defs = ruleFlows.filter((f) => f.rule && f.year === year);
+    if (defs.length === 0) return [];
 
-    const window = Math.max(1, ...rules.map((r) => r.projectionWindow));
+    const window = Math.max(1, ...defs.map((f) => f.rule!.projectionWindow));
     const from = addMonths(`${year}-01`, -window);
     const to = `${year}-12`;
     const now = new Date();
     const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-    const needed = new Set(rules.map((r) => r.source));
+    const needed = new Set(defs.map((f) => f.rule!.source));
     const rows: Partial<Record<ForecastRuleSource, AggregateRow[]>> = {};
     for (const src of needed) {
       rows[src] = await this.loadAggregateRows(src, from, to);
     }
 
-    const flows: ForecastFlow[] = [];
+    const out: ForecastFlow[] = [];
     let order = 0;
 
-    for (const rule of rules) {
+    for (const def of defs) {
+      const rule = def.rule!;
       const all = rows[rule.source] ?? [];
       const accounts = new Set(rule.accountIds);
       const categories = new Set(rule.categoryIds);
@@ -3586,28 +3492,31 @@ export class DataService {
         .map(([, v]) => v);
       const projected = projectValue(rule, closed);
 
-      for (let m = 1; m <= 12; m++) {
+      // Only the months the flow is actually scoped to — this is what stops a
+      // computed flow from landing on every month of the year by fiat.
+      for (const m of def.months) {
+        if (m < 1 || m > 12) continue;
         const monthKey = `${year}-${String(m).padStart(2, "0")}`;
         const actual = byMonth.get(monthKey) ?? 0;
         const value = monthKey <= currentMonthKey ? actual : projected;
         if (!(value > 0)) continue;
-        flows.push({
-          id: `rule:${rule.id}:${monthKey}`,
+        out.push({
+          id: `rule:${def.id}:${monthKey}`,
           year,
           months: [m],
-          type: rule.source === "deposits" ? "in" : "out",
-          name: rule.name,
+          type: def.type,
+          name: def.name,
           uncertain: false,
           value,
-          isGhost: false,
-          enabled: rule.enabled, // muting happens on the rule, not the line
+          isGhost: def.isGhost,
+          enabled: def.enabled,
           sortOrder: LINKED_SORT_OFFSET + 500_000 + order++,
-          source: { kind: "rule", id: rule.id, monthKey },
+          source: { kind: "rule", id: def.id, monthKey },
         });
       }
     }
 
-    return flows;
+    return out;
   }
 
   // Flat rows a rule can aggregate, normalised across the three sources.
@@ -3808,7 +3717,7 @@ function addMonths(monthKey: string, delta: number): string {
 
 // What a rule shows for a month with no data yet, given the sums of its most
 // recent closed months (oldest first).
-function projectValue(rule: ForecastRule, history: number[]): number {
+function projectValue(rule: ForecastRuleSpec, history: number[]): number {
   switch (rule.projection) {
     case "fixed":
       return rule.fixedValue ?? 0;
@@ -3830,41 +3739,45 @@ function projectValue(rule: ForecastRule, history: number[]): number {
   }
 }
 
-function ruleRowToRule(row: Record<string, unknown>): ForecastRule {
+// rule_source is the discriminator: null means an ordinary typed flow.
+function ruleSpecFromRow(
+  row: Record<string, unknown>,
+): ForecastRuleSpec | undefined {
+  if (!row.rule_source) return undefined;
   return {
-    id: row.id as string,
-    name: (row.name as string) || "Rule",
-    source: (row.source as ForecastRuleSource) ?? "expenses",
-    accountIds: Array.isArray(row.account_ids) ? (row.account_ids as string[]) : [],
-    categoryIds: Array.isArray(row.category_ids)
-      ? (row.category_ids as string[])
+    source: row.rule_source as ForecastRuleSource,
+    accountIds: Array.isArray(row.rule_account_ids)
+      ? (row.rule_account_ids as string[])
       : [],
-    excludeLinked: row.exclude_linked !== false,
-    projection: (row.projection as ForecastProjection) ?? "none",
-    projectionWindow: Number(row.projection_window ?? 3),
+    categoryIds: Array.isArray(row.rule_category_ids)
+      ? (row.rule_category_ids as string[])
+      : [],
+    excludeLinked: row.rule_exclude_linked !== false,
+    projection: (row.rule_projection as ForecastProjection) ?? "none",
+    projectionWindow: Number(row.rule_projection_window ?? 3),
     fixedValue:
-      row.fixed_value === null || row.fixed_value === undefined
+      row.rule_fixed_value === null || row.rule_fixed_value === undefined
         ? undefined
-        : Number(row.fixed_value),
-    enabled: row.enabled !== false,
-    sortOrder: Number(row.sort_order ?? 0),
+        : Number(row.rule_fixed_value),
   };
 }
 
-function ruleToRow(rule: ForecastRule, userId: string): Record<string, unknown> {
+function ruleSpecToRow(
+  rule: ForecastRuleSpec | undefined,
+): Record<string, unknown> {
+  if (!rule) {
+    // Clear the discriminator so editing a computed flow back into a typed one
+    // actually stops it computing.
+    return { rule_source: null };
+  }
   return {
-    id: rule.id,
-    user_id: userId,
-    name: rule.name,
-    source: rule.source,
-    account_ids: rule.accountIds,
-    category_ids: rule.categoryIds,
-    exclude_linked: rule.excludeLinked,
-    projection: rule.projection,
-    projection_window: rule.projectionWindow,
-    fixed_value: rule.fixedValue ?? null,
-    enabled: rule.enabled,
-    sort_order: rule.sortOrder,
+    rule_source: rule.source,
+    rule_account_ids: rule.accountIds,
+    rule_category_ids: rule.categoryIds,
+    rule_exclude_linked: rule.excludeLinked,
+    rule_projection: rule.projection,
+    rule_projection_window: rule.projectionWindow,
+    rule_fixed_value: rule.fixedValue ?? null,
   };
 }
 
@@ -3885,6 +3798,7 @@ function forecastRowToFlow(row: Record<string, unknown>): ForecastFlow {
     isGhost: !!row.is_ghost,
     enabled: row.enabled !== false,
     sortOrder: Number(row.sort_order ?? 0),
+    rule: ruleSpecFromRow(row),
   };
 }
 
@@ -3906,6 +3820,7 @@ function forecastFlowToRow(
     is_ghost: flow.isGhost,
     enabled: flow.enabled,
     sort_order: flow.sortOrder,
+    ...ruleSpecToRow(flow.rule),
   };
 }
 
