@@ -7,6 +7,11 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "13.0.5"
+  }
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -34,6 +39,190 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_group_members: {
+        Row: {
+          account_id: string
+          created_at: string | null
+          group_id: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string | null
+          group_id: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string | null
+          group_id?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_group_members_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "account_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      account_groups: {
+        Row: {
+          color: string | null
+          created_at: string | null
+          icon: string | null
+          id: string
+          name: string
+          sort_order: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string | null
+          icon?: string | null
+          id?: string
+          name: string
+          sort_order?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string | null
+          icon?: string | null
+          id?: string
+          name?: string
+          sort_order?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      account_transactions: {
+        Row: {
+          amount: number
+          created_at: string | null
+          forecast_enabled: boolean
+          from_account_id: string | null
+          id: string
+          in_forecast: boolean
+          month_key: string | null
+          note: string | null
+          savings_goal_id: string | null
+          to_account_id: string | null
+          transaction_type: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          forecast_enabled?: boolean
+          from_account_id?: string | null
+          id?: string
+          in_forecast?: boolean
+          month_key?: string | null
+          note?: string | null
+          savings_goal_id?: string | null
+          to_account_id?: string | null
+          transaction_type: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          forecast_enabled?: boolean
+          from_account_id?: string | null
+          id?: string
+          in_forecast?: boolean
+          month_key?: string | null
+          note?: string | null
+          savings_goal_id?: string | null
+          to_account_id?: string | null
+          transaction_type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_transactions_from_account_id_fkey"
+            columns: ["from_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_transactions_savings_goal_id_fkey"
+            columns: ["savings_goal_id"]
+            isOneToOne: false
+            referencedRelation: "savings_goals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_transactions_to_account_id_fkey"
+            columns: ["to_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      accounts: {
+        Row: {
+          account_type: string
+          color: string | null
+          created_at: string | null
+          current_balance: number
+          icon: string | null
+          id: string
+          initial_balance: number
+          is_default: boolean | null
+          name: string
+          sort_order: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          account_type: string
+          color?: string | null
+          created_at?: string | null
+          current_balance?: number
+          icon?: string | null
+          id?: string
+          initial_balance?: number
+          is_default?: boolean | null
+          name: string
+          sort_order?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          account_type?: string
+          color?: string | null
+          created_at?: string | null
+          current_balance?: number
+          icon?: string | null
+          id?: string
+          initial_balance?: number
+          is_default?: boolean | null
+          name?: string
+          sort_order?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       audit_logs: {
         Row: {
           action: string
@@ -67,6 +256,44 @@ export type Database = {
         }
         Relationships: []
       }
+      budget_allocations: {
+        Row: {
+          account_id: string
+          amount: number
+          created_at: string | null
+          id: string
+          month_key: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          amount: number
+          created_at?: string | null
+          id?: string
+          month_key: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          amount?: number
+          created_at?: string | null
+          id?: string
+          month_key?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_allocations_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       budgets: {
         Row: {
           amount: number
@@ -94,48 +321,213 @@ export type Database = {
         }
         Relationships: []
       }
-      expenses: {
+      categories: {
         Row: {
-          amount: number
+          color: string
+          created_at: string | null
+          icon: string
+          id: string
+          is_default: boolean | null
+          name: string
+          sort_order: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          color: string
+          created_at?: string | null
+          icon: string
+          id?: string
+          is_default?: boolean | null
+          name: string
+          sort_order?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          color?: string
+          created_at?: string | null
+          icon?: string
+          id?: string
+          is_default?: boolean | null
+          name?: string
+          sort_order?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      drafts: {
+        Row: {
+          account_id: string | null
+          amount: number | null
           category: string | null
           created_at: string | null
-          date: string
+          date: string | null
           id: string
+          note: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          account_id?: string | null
+          amount?: number | null
+          category?: string | null
+          created_at?: string | null
+          date?: string | null
+          id?: string
+          note: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          account_id?: string | null
+          amount?: number | null
+          category?: string | null
+          created_at?: string | null
+          date?: string | null
+          id?: string
+          note?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "drafts_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      expenses: {
+        Row: {
+          account_id: string | null
+          amount: number
+          category: string | null
+          category_id: string | null
+          created_at: string | null
+          date: string
+          forecast_enabled: boolean
+          id: string
+          in_forecast: boolean
           month_key: string
           note: string | null
           updated_at: string | null
           user_id: string
         }
         Insert: {
+          account_id?: string | null
           amount: number
           category?: string | null
+          category_id?: string | null
           created_at?: string | null
           date: string
+          forecast_enabled?: boolean
           id?: string
+          in_forecast?: boolean
           month_key: string
           note?: string | null
           updated_at?: string | null
           user_id: string
         }
         Update: {
+          account_id?: string | null
           amount?: number
           category?: string | null
+          category_id?: string | null
           created_at?: string | null
           date?: string
+          forecast_enabled?: boolean
           id?: string
+          in_forecast?: boolean
           month_key?: string
           note?: string | null
           updated_at?: string | null
           user_id?: string
         }
+        Relationships: [
+          {
+            foreignKeyName: "expenses_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      forecast_flows: {
+        Row: {
+          created_at: string | null
+          enabled: boolean
+          high_value: number | null
+          id: string
+          is_ghost: boolean
+          low_value: number | null
+          months: number[]
+          name: string | null
+          sort_order: number | null
+          type: string
+          uncertain: boolean
+          updated_at: string | null
+          user_id: string
+          value: number | null
+          year: number
+        }
+        Insert: {
+          created_at?: string | null
+          enabled?: boolean
+          high_value?: number | null
+          id?: string
+          is_ghost?: boolean
+          low_value?: number | null
+          months?: number[]
+          name?: string | null
+          sort_order?: number | null
+          type: string
+          uncertain?: boolean
+          updated_at?: string | null
+          user_id: string
+          value?: number | null
+          year: number
+        }
+        Update: {
+          created_at?: string | null
+          enabled?: boolean
+          high_value?: number | null
+          id?: string
+          is_ghost?: boolean
+          low_value?: number | null
+          months?: number[]
+          name?: string | null
+          sort_order?: number | null
+          type?: string
+          uncertain?: boolean
+          updated_at?: string | null
+          user_id?: string
+          value?: number | null
+          year?: number
+        }
         Relationships: []
       }
       plans: {
         Row: {
+          account_id: string | null
           amount: number
           category: string | null
+          category_id: string | null
           created_at: string | null
+          forecast_enabled: boolean
           id: string
+          in_forecast: boolean
           is_completed: boolean | null
           month_key: string
           note: string | null
@@ -145,10 +537,14 @@ export type Database = {
           week_index: number
         }
         Insert: {
+          account_id?: string | null
           amount: number
           category?: string | null
+          category_id?: string | null
           created_at?: string | null
+          forecast_enabled?: boolean
           id?: string
+          in_forecast?: boolean
           is_completed?: boolean | null
           month_key: string
           note?: string | null
@@ -158,10 +554,14 @@ export type Database = {
           week_index: number
         }
         Update: {
+          account_id?: string | null
           amount?: number
           category?: string | null
+          category_id?: string | null
           created_at?: string | null
+          forecast_enabled?: boolean
           id?: string
+          in_forecast?: boolean
           is_completed?: boolean | null
           month_key?: string
           note?: string | null
@@ -170,7 +570,22 @@ export type Database = {
           user_id?: string
           week_index?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "plans_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plans_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -199,13 +614,130 @@ export type Database = {
         }
         Relationships: []
       }
+      savings_contributions: {
+        Row: {
+          account_id: string
+          amount: number
+          created_at: string | null
+          id: string
+          note: string | null
+          savings_goal_id: string
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          amount: number
+          created_at?: string | null
+          id?: string
+          note?: string | null
+          savings_goal_id: string
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          amount?: number
+          created_at?: string | null
+          id?: string
+          note?: string | null
+          savings_goal_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "savings_contributions_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "savings_contributions_savings_goal_id_fkey"
+            columns: ["savings_goal_id"]
+            isOneToOne: false
+            referencedRelation: "savings_goals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      savings_goals: {
+        Row: {
+          color: string | null
+          completed_at: string | null
+          created_at: string | null
+          current_amount: number
+          deadline: string | null
+          id: string
+          image_url: string | null
+          is_completed: boolean | null
+          name: string
+          target_amount: number
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          color?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          current_amount?: number
+          deadline?: string | null
+          id?: string
+          image_url?: string | null
+          is_completed?: boolean | null
+          name: string
+          target_amount: number
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          color?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          current_amount?: number
+          deadline?: string | null
+          id?: string
+          image_url?: string | null
+          is_completed?: boolean | null
+          name?: string
+          target_amount?: number
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      spreadsheet_entries: {
+        Row: {
+          column_key: string
+          created_at: string | null
+          id: string
+          month_key: string
+          user_id: string
+          value: number
+        }
+        Insert: {
+          column_key: string
+          created_at?: string | null
+          id?: string
+          month_key: string
+          user_id: string
+          value?: number
+        }
+        Update: {
+          column_key?: string
+          created_at?: string | null
+          id?: string
+          month_key?: string
+          user_id?: string
+          value?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
       get_user_monthly_summary: {
-        Args: Record<PropertyKey, never>
+        Args: never
         Returns: {
           budget_amount: number
           expense_count: number
@@ -350,4 +882,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
