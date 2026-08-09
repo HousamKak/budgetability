@@ -474,6 +474,13 @@ export type Database = {
           low_value: number | null
           months: number[]
           name: string | null
+          rule_account_ids: string[]
+          rule_category_ids: string[]
+          rule_exclude_linked: boolean
+          rule_fixed_value: number | null
+          rule_projection: string
+          rule_projection_window: number
+          rule_source: string | null
           sort_order: number | null
           type: string
           uncertain: boolean
@@ -491,6 +498,13 @@ export type Database = {
           low_value?: number | null
           months?: number[]
           name?: string | null
+          rule_account_ids?: string[]
+          rule_category_ids?: string[]
+          rule_exclude_linked?: boolean
+          rule_fixed_value?: number | null
+          rule_projection?: string
+          rule_projection_window?: number
+          rule_source?: string | null
           sort_order?: number | null
           type: string
           uncertain?: boolean
@@ -508,6 +522,13 @@ export type Database = {
           low_value?: number | null
           months?: number[]
           name?: string | null
+          rule_account_ids?: string[]
+          rule_category_ids?: string[]
+          rule_exclude_linked?: boolean
+          rule_fixed_value?: number | null
+          rule_projection?: string
+          rule_projection_window?: number
+          rule_source?: string | null
           sort_order?: number | null
           type?: string
           uncertain?: boolean
@@ -515,57 +536,6 @@ export type Database = {
           user_id?: string
           value?: number | null
           year?: number
-        }
-        Relationships: []
-      }
-      forecast_rules: {
-        Row: {
-          account_ids: string[]
-          category_ids: string[]
-          created_at: string | null
-          enabled: boolean
-          exclude_linked: boolean
-          fixed_value: number | null
-          id: string
-          name: string
-          projection: string
-          projection_window: number
-          sort_order: number | null
-          source: string
-          updated_at: string | null
-          user_id: string
-        }
-        Insert: {
-          account_ids?: string[]
-          category_ids?: string[]
-          created_at?: string | null
-          enabled?: boolean
-          exclude_linked?: boolean
-          fixed_value?: number | null
-          id?: string
-          name: string
-          projection?: string
-          projection_window?: number
-          sort_order?: number | null
-          source?: string
-          updated_at?: string | null
-          user_id: string
-        }
-        Update: {
-          account_ids?: string[]
-          category_ids?: string[]
-          created_at?: string | null
-          enabled?: boolean
-          exclude_linked?: boolean
-          fixed_value?: number | null
-          id?: string
-          name?: string
-          projection?: string
-          projection_window?: number
-          sort_order?: number | null
-          source?: string
-          updated_at?: string | null
-          user_id?: string
         }
         Relationships: []
       }

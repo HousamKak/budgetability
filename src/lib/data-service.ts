@@ -3494,12 +3494,17 @@ export class DataService {
 
       // Only the months the flow is actually scoped to — this is what stops a
       // computed flow from landing on every month of the year by fiat.
+      //
+      // A month that totals nothing still gets a line. Skipping zeros made a
+      // flow scoped entirely to future months (with no projection) expand to
+      // nothing at all, so it vanished from every view that is built from the
+      // expansion — including the default one. Zero adds nothing to the
+      // maths, and "no spending recorded yet" is worth seeing.
       for (const m of def.months) {
         if (m < 1 || m > 12) continue;
         const monthKey = `${year}-${String(m).padStart(2, "0")}`;
         const actual = byMonth.get(monthKey) ?? 0;
         const value = monthKey <= currentMonthKey ? actual : projected;
-        if (!(value > 0)) continue;
         out.push({
           id: `rule:${def.id}:${monthKey}`,
           year,
