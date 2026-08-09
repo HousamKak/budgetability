@@ -518,6 +518,57 @@ export type Database = {
         }
         Relationships: []
       }
+      forecast_rules: {
+        Row: {
+          account_ids: string[]
+          category_ids: string[]
+          created_at: string | null
+          enabled: boolean
+          exclude_linked: boolean
+          fixed_value: number | null
+          id: string
+          name: string
+          projection: string
+          projection_window: number
+          sort_order: number | null
+          source: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          account_ids?: string[]
+          category_ids?: string[]
+          created_at?: string | null
+          enabled?: boolean
+          exclude_linked?: boolean
+          fixed_value?: number | null
+          id?: string
+          name: string
+          projection?: string
+          projection_window?: number
+          sort_order?: number | null
+          source?: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          account_ids?: string[]
+          category_ids?: string[]
+          created_at?: string | null
+          enabled?: boolean
+          exclude_linked?: boolean
+          fixed_value?: number | null
+          id?: string
+          name?: string
+          projection?: string
+          projection_window?: number
+          sort_order?: number | null
+          source?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       plans: {
         Row: {
           account_id: string | null
