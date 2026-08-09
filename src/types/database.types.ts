@@ -116,6 +116,7 @@ export type Database = {
           amount: number
           created_at: string | null
           forecast_enabled: boolean
+          forecast_flow_id: string | null
           from_account_id: string | null
           id: string
           in_forecast: boolean
@@ -130,6 +131,7 @@ export type Database = {
           amount: number
           created_at?: string | null
           forecast_enabled?: boolean
+          forecast_flow_id?: string | null
           from_account_id?: string | null
           id?: string
           in_forecast?: boolean
@@ -144,6 +146,7 @@ export type Database = {
           amount?: number
           created_at?: string | null
           forecast_enabled?: boolean
+          forecast_flow_id?: string | null
           from_account_id?: string | null
           id?: string
           in_forecast?: boolean
@@ -155,6 +158,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "account_transactions_forecast_flow_id_fkey"
+            columns: ["forecast_flow_id"]
+            isOneToOne: false
+            referencedRelation: "forecast_flows"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "account_transactions_from_account_id_fkey"
             columns: ["from_account_id"]
@@ -410,6 +420,7 @@ export type Database = {
           created_at: string | null
           date: string
           forecast_enabled: boolean
+          forecast_flow_id: string | null
           id: string
           in_forecast: boolean
           month_key: string
@@ -425,6 +436,7 @@ export type Database = {
           created_at?: string | null
           date: string
           forecast_enabled?: boolean
+          forecast_flow_id?: string | null
           id?: string
           in_forecast?: boolean
           month_key: string
@@ -440,6 +452,7 @@ export type Database = {
           created_at?: string | null
           date?: string
           forecast_enabled?: boolean
+          forecast_flow_id?: string | null
           id?: string
           in_forecast?: boolean
           month_key?: string
@@ -460,6 +473,13 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_forecast_flow_id_fkey"
+            columns: ["forecast_flow_id"]
+            isOneToOne: false
+            referencedRelation: "forecast_flows"
             referencedColumns: ["id"]
           },
         ]
@@ -547,6 +567,7 @@ export type Database = {
           category_id: string | null
           created_at: string | null
           forecast_enabled: boolean
+          forecast_flow_id: string | null
           id: string
           in_forecast: boolean
           is_completed: boolean | null
@@ -564,6 +585,7 @@ export type Database = {
           category_id?: string | null
           created_at?: string | null
           forecast_enabled?: boolean
+          forecast_flow_id?: string | null
           id?: string
           in_forecast?: boolean
           is_completed?: boolean | null
@@ -581,6 +603,7 @@ export type Database = {
           category_id?: string | null
           created_at?: string | null
           forecast_enabled?: boolean
+          forecast_flow_id?: string | null
           id?: string
           in_forecast?: boolean
           is_completed?: boolean | null
@@ -604,6 +627,13 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plans_forecast_flow_id_fkey"
+            columns: ["forecast_flow_id"]
+            isOneToOne: false
+            referencedRelation: "forecast_flows"
             referencedColumns: ["id"]
           },
         ]
