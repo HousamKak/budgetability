@@ -18,7 +18,7 @@ import { dataService } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import { MONTHS_FULL, MONTHS_SHORT } from "@/utils/forecast";
-import { Lock, Pencil, RefreshCw, Sigma } from "lucide-react";
+import { Lock, Pencil, RefreshCw, Search, Sigma, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 interface ForecastFlowDialogProps {
@@ -87,6 +87,11 @@ export function ForecastFlowDialog({
   const [pickable, setPickable] = useState<PickableExpense[]>([]);
   const [pickLoading, setPickLoading] = useState(false);
   const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [query, setQuery] = useState("");
+  const [filterMonth, setFilterMonth] = useState(0); // 0 = every month
+  const [filterAccount, setFilterAccount] = useState(""); // "" = every account
+  const [filterCategory, setFilterCategory] = useState(""); // "" = every category
+  const [pickedOnly, setPickedOnly] = useState(false);
 
   const isEditing = !!editingFlow;
 
@@ -132,6 +137,11 @@ export function ForecastFlowDialog({
     }
     setPickable([]);
     setMemberIds([]);
+    setQuery("");
+    setFilterMonth(0);
+    setFilterAccount("");
+    setFilterCategory("");
+    setPickedOnly(false);
   }, [open, editingFlow, defaultYear]);
 
   // Direction follows the source for a computed flow: expenses and plans go
@@ -187,16 +197,112 @@ export function ForecastFlowDialog({
   );
   const pickedTotal = picked.reduce((s, p) => s + p.amount, 0);
 
+  // Filter options come from the records actually loaded, not from every
+  // account or category that exists — offering a filter that matches nothing
+  // is just noise.
+  const monthOptions = useMemo(
+    () =>
+      [...new Set(pickable.map((p) => Number(p.date.slice(5, 7))))].sort(
+        (a, b) => a - b,
+      ),
+    [pickable],
+  );
+  const accountOptions = useMemo(() => {
+    const ids = [...new Set(pickable.map((p) => p.accountId).filter(Boolean))];
+    return ids
+      .map((id) => ({
+        id: id as string,
+        name: accounts.find((a) => a.id === id)?.name ?? "Unknown account",
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [pickable, accounts]);
+  // Categories are legacy free text, so "Groceries" and "groceries" are the
+  // same thing — fold on case and show the first spelling seen.
+  const categoryOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const p of pickable) {
+      const c = p.category?.trim();
+      if (!c) continue;
+      const key = c.toLowerCase();
+      if (!seen.has(key)) seen.set(key, c);
+    }
+    return [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [pickable]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return pickable.filter((p) => {
+      if (pickedOnly && !memberIds.includes(p.id)) return false;
+      if (filterMonth && Number(p.date.slice(5, 7)) !== filterMonth) return false;
+      if (filterAccount && p.accountId !== filterAccount) return false;
+      if (
+        filterCategory &&
+        (p.category ?? "").trim().toLowerCase() !== filterCategory
+      )
+        return false;
+      if (!q) return true;
+      // Date is searchable too, so "08-02" finds a particular day.
+      return (
+        (p.note ?? "").toLowerCase().includes(q) ||
+        (p.category ?? "").toLowerCase().includes(q) ||
+        p.date.includes(q) ||
+        String(p.amount).includes(q)
+      );
+    });
+  }, [
+    pickable,
+    query,
+    filterMonth,
+    filterAccount,
+    filterCategory,
+    pickedOnly,
+    memberIds,
+  ]);
+
+  // Already claimed by a different grouped line, so unavailable here.
+  const takenElsewhere = (p: PickableExpense) =>
+    !!p.forecastFlowId && p.forecastFlowId !== editingFlow?.id;
+
+  const selectableShown = useMemo(
+    () => filtered.filter((p) => !takenElsewhere(p)).map((p) => p.id),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filtered, editingFlow?.id],
+  );
+  const allShownPicked =
+    selectableShown.length > 0 &&
+    selectableShown.every((id) => memberIds.includes(id));
+
+  const toggleAllShown = () =>
+    setMemberIds((prev) =>
+      allShownPicked
+        ? prev.filter((id) => !selectableShown.includes(id))
+        : [...new Set([...prev, ...selectableShown])],
+    );
+
+  const filtersActive =
+    !!query.trim() ||
+    filterMonth !== 0 ||
+    !!filterAccount ||
+    !!filterCategory ||
+    pickedOnly;
+  const clearFilters = () => {
+    setQuery("");
+    setFilterMonth(0);
+    setFilterAccount("");
+    setFilterCategory("");
+    setPickedOnly(false);
+  };
+
   // Grouped by month, so a group spanning months is obvious while picking.
   const pickableByMonth = useMemo(() => {
     const map = new Map<number, PickableExpense[]>();
-    for (const p of pickable) {
+    for (const p of filtered) {
       const m = Number(p.date.slice(5, 7));
       if (!map.has(m)) map.set(m, []);
       map.get(m)!.push(p);
     }
     return [...map.entries()].sort((a, b) => a[0] - b[0]);
-  }, [pickable]);
+  }, [filtered]);
 
   const toggleMonth = (m: number) =>
     setMonths((prev) =>
@@ -467,13 +573,136 @@ export function ForecastFlowDialog({
                     </span>
                   </div>
 
+                  {/* Search + filters. A year is hundreds of expenses, so
+                      finding the handful that belong together needs more than
+                      scrolling. */}
+                  {!pickLoading && pickable.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-stone-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
+                          placeholder="Search note, category, date or amount…"
+                          className="w-full pl-7 pr-7 py-1.5 rounded-lg border border-stone-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-teal-400/50"
+                        />
+                        {query && (
+                          <button
+                            type="button"
+                            onClick={() => setQuery("")}
+                            title="Clear search"
+                            className="absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded flex items-center justify-center text-stone-400 hover:text-stone-700 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex gap-1.5 flex-wrap items-center">
+                        <select
+                          value={filterMonth}
+                          onChange={(e) => setFilterMonth(Number(e.target.value))}
+                          className="px-1.5 py-1 rounded-lg border border-stone-200 bg-white text-xs text-stone-600 focus:outline-none focus:ring-2 focus:ring-teal-400/50 cursor-pointer"
+                        >
+                          <option value={0}>Any month</option>
+                          {monthOptions.map((m) => (
+                            <option key={m} value={m}>
+                              {MONTHS_FULL[m - 1]}
+                            </option>
+                          ))}
+                        </select>
+
+                        {accountOptions.length > 1 && (
+                          <select
+                            value={filterAccount}
+                            onChange={(e) => setFilterAccount(e.target.value)}
+                            className="px-1.5 py-1 rounded-lg border border-stone-200 bg-white text-xs text-stone-600 max-w-[9rem] focus:outline-none focus:ring-2 focus:ring-teal-400/50 cursor-pointer"
+                          >
+                            <option value="">Any account</option>
+                            {accountOptions.map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+
+                        {categoryOptions.length > 1 && (
+                          <select
+                            value={filterCategory}
+                            onChange={(e) => setFilterCategory(e.target.value)}
+                            className="px-1.5 py-1 rounded-lg border border-stone-200 bg-white text-xs text-stone-600 max-w-[9rem] focus:outline-none focus:ring-2 focus:ring-teal-400/50 cursor-pointer"
+                          >
+                            <option value="">Any category</option>
+                            {categoryOptions.map(([key, label]) => (
+                              <option key={key} value={key}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => setPickedOnly((v) => !v)}
+                          className={cn(
+                            "px-2 py-1 rounded-lg border text-xs transition-colors cursor-pointer",
+                            pickedOnly
+                              ? "bg-teal-500 border-teal-500 text-white"
+                              : "border-stone-200 bg-white text-stone-600 hover:border-teal-300",
+                          )}
+                        >
+                          Picked only
+                        </button>
+
+                        {filtersActive && (
+                          <button
+                            type="button"
+                            onClick={clearFilters}
+                            className="text-xs text-stone-400 hover:text-stone-700 underline cursor-pointer"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-stone-400">
+                        <span>
+                          Showing {filtered.length} of {pickable.length}
+                        </span>
+                        {selectableShown.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={toggleAllShown}
+                            className="text-teal-600 hover:underline cursor-pointer"
+                          >
+                            {allShownPicked
+                              ? `Unpick these ${selectableShown.length}`
+                              : `Pick all ${selectableShown.length} shown`}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {pickLoading ? (
                     <div className="flex justify-center py-6">
                       <RefreshCw className="w-5 h-5 text-teal-500 animate-spin" />
                     </div>
-                  ) : pickableByMonth.length === 0 ? (
+                  ) : pickable.length === 0 ? (
                     <p className="text-xs text-stone-400 py-4 text-center">
                       No expenses recorded in {year}.
+                    </p>
+                  ) : pickableByMonth.length === 0 ? (
+                    <p className="text-xs text-stone-400 py-4 text-center">
+                      Nothing matches. <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="text-teal-600 hover:underline cursor-pointer"
+                      >
+                        Reset filters
+                      </button>
                     </p>
                   ) : (
                     <div className="max-h-64 overflow-y-auto rounded-lg border border-stone-200 bg-white divide-y divide-stone-100">
@@ -484,16 +713,12 @@ export function ForecastFlowDialog({
                           </div>
                           {rows.map((p) => {
                             const on = memberIds.includes(p.id);
-                            // Claimed by another grouped line, so it can't also
-                            // belong here without being counted twice.
-                            const takenElsewhere =
-                              !!p.forecastFlowId &&
-                              p.forecastFlowId !== editingFlow?.id;
+                            const taken = takenElsewhere(p);
                             return (
                               <label
                                 key={p.id}
                                 title={
-                                  takenElsewhere
+                                  taken
                                     ? "Already part of another grouped forecast line"
                                     : p.inForecast
                                       ? "Marked on its own — picking it here moves it into this group"
@@ -501,7 +726,7 @@ export function ForecastFlowDialog({
                                 }
                                 className={cn(
                                   "flex items-center gap-2 px-2 py-1 text-xs",
-                                  takenElsewhere
+                                  taken
                                     ? "opacity-40 cursor-not-allowed"
                                     : "cursor-pointer hover:bg-teal-50/60",
                                   on && "bg-teal-50",
@@ -510,7 +735,7 @@ export function ForecastFlowDialog({
                                 <input
                                   type="checkbox"
                                   checked={on}
-                                  disabled={takenElsewhere}
+                                  disabled={taken}
                                   onChange={() => toggleMember(p.id)}
                                   className="w-3.5 h-3.5 accent-teal-500 shrink-0"
                                 />
