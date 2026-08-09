@@ -32,6 +32,8 @@ interface AccountTransactionsDialogProps {
   accounts: Account[];
   onDeposit?: (account: Account) => void;
   onTransfer?: (account: Account) => void;
+  /** Open on this month ("YYYY-MM") instead of the current one. */
+  initialMonthKey?: string;
 }
 
 function txIsInflow(
@@ -87,12 +89,24 @@ export function AccountTransactionsDialog({
   accounts,
   onDeposit,
   onTransfer,
+  initialMonthKey,
 }: AccountTransactionsDialogProps) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [allTransactions, setAllTransactions] = useState<AccountTransaction[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Land on the month the caller is looking at, so opening an account from a
+  // rewound Accounts page doesn't jump back to today.
+  useEffect(() => {
+    if (!open || !initialMonthKey) return;
+    const [y, m] = initialMonthKey.split("-").map(Number);
+    if (Number.isFinite(y) && Number.isFinite(m)) {
+      setYear(y);
+      setMonth(m - 1);
+    }
+  }, [open, initialMonthKey]);
 
   // Reload when dialog opens, account changes, or account balance updates
   // (balance update means a deposit/transfer happened)

@@ -35,6 +35,10 @@ interface AccountGroupBandProps {
   onTransfer: (account: Account) => void;
   onDeposit: (account: Account) => void;
   onSetDefault: (account: Account) => void;
+  /** Per-account movement for the month being viewed, keyed by account id. */
+  activity?: Record<string, { inflow: number; outflow: number }>;
+  /** Viewing a past month — balances are historical, so no actions. */
+  readOnly?: boolean;
 }
 
 /**
@@ -57,6 +61,8 @@ export function AccountGroupBand({
   onTransfer,
   onDeposit,
   onSetDefault,
+  activity,
+  readOnly = false,
 }: AccountGroupBandProps) {
   const combined = groupTotal(members);
   const accent = group.color || "#f59e0b";
@@ -230,6 +236,8 @@ export function AccountGroupBand({
                   onSetDefault={onSetDefault}
                   onRemove={() => onRemoveFromGroup(group.id, account.id)}
                   removeLabel={`Remove from ${group.name}`}
+                  activity={activity?.[account.id]}
+                  readOnly={readOnly}
                 />
               ))}
             </div>

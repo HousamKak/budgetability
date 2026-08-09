@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import type { Account } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, TrendingUp } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AccountTypeBadge } from "./AccountTypeBadge";
 
@@ -18,7 +18,12 @@ interface DepositDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   account: Account | null;
-  onDeposit: (accountId: string, amount: number, note?: string) => void;
+  onDeposit: (
+    accountId: string,
+    amount: number,
+    note?: string,
+    inForecast?: boolean,
+  ) => void;
 }
 
 /**
@@ -32,11 +37,14 @@ export function DepositDialog({
 }: DepositDialogProps) {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [inForecast, setInForecast] = useState(false);
 
   useEffect(() => {
     if (open) {
       setAmount("");
       setNote("");
+      // Opt-in every time: nothing reaches the forecast unless marked here.
+      setInForecast(false);
     }
   }, [open]);
 
@@ -46,7 +54,7 @@ export function DepositDialog({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (canDeposit && account) {
-      onDeposit(account.id, depositAmount, note || undefined);
+      onDeposit(account.id, depositAmount, note || undefined, inForecast);
       onOpenChange(false);
     }
   };
@@ -156,6 +164,37 @@ export function DepositDialog({
               )}
             />
           </div>
+
+          {/* Forecast link */}
+          <label
+            className={cn(
+              "flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-colors",
+              inForecast
+                ? "border-sky-400 bg-sky-50/70"
+                : "border-stone-200 bg-white/50 hover:border-sky-300",
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={inForecast}
+              onChange={(e) => setInForecast(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-sky-500 cursor-pointer"
+            />
+            <span className="flex-1">
+              <span
+                className={cn(
+                  "flex items-center gap-1.5 text-sm font-medium",
+                  inForecast ? "text-sky-800" : "text-stone-600",
+                )}
+              >
+                <TrendingUp className="w-3.5 h-3.5" />
+                Show in Forecast
+              </span>
+              <span className="block text-xs text-stone-500 mt-0.5">
+                Adds this income to the forecast as an inflow this month.
+              </span>
+            </span>
+          </label>
 
           {/* Preview */}
           {depositAmount > 0 && (

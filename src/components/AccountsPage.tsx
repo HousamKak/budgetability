@@ -5,13 +5,17 @@ import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import {
   ArrowRightLeft,
+  CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   LayoutGrid,
   Layers,
+  Lock,
   Plus,
   RefreshCw,
   Wallet,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { readAccountDrag } from "./accounts/accountDrag";
 import { AccountForm } from "./accounts/AccountForm";
 import { AccountGroupBand } from "./accounts/AccountGroupBand";
@@ -24,6 +28,16 @@ import { TransferDialog } from "./accounts/TransferDialog";
 
 type ViewMode = "flat" | "grouped";
 
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+const NOW = new Date();
+const CURRENT_MONTH_KEY = `${NOW.getFullYear()}-${String(NOW.getMonth() + 1).padStart(2, "0")}`;
+
+type MonthActivity = { balance: number; inflow: number; outflow: number };
+
 /**
  * Main accounts management page
  * Displays all accounts and provides actions for managing money
@@ -33,6 +47,15 @@ export default function AccountsPage() {
   const [groups, setGroups] = useState<AccountGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>("flat");
+
+  // Which month the page is showing. On the current month this is just today's
+  // live state; on any earlier month the whole page is rewound to how it looked
+  // at that month's end, and becomes read-only.
+  const [monthKey, setMonthKey] = useState(CURRENT_MONTH_KEY);
+  const [snapshot, setSnapshot] = useState<Record<string, MonthActivity>>({});
+  const isCurrentMonth = monthKey === CURRENT_MONTH_KEY;
+  const isFutureMonth = monthKey > CURRENT_MONTH_KEY;
+  const readOnly = !isCurrentMonth;
 
   // Dialog states
   const [showAccountForm, setShowAccountForm] = useState(false);
@@ -56,23 +79,35 @@ export default function AccountsPage() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [monthKey]);
 
   async function loadData() {
     try {
       setLoading(true);
-      const [accts, grps] = await Promise.all([
+      const [accts, grps, snap] = await Promise.all([
         dataService.getAccounts(),
         dataService.getAccountGroups(),
+        dataService.getAccountMonthSnapshot(monthKey),
       ]);
       setAccounts(accts);
       setGroups(grps);
+      setSnapshot(snap);
     } catch (error) {
       console.error("Failed to load accounts:", error);
     } finally {
       setLoading(false);
     }
   }
+
+  // Step the month by `delta`, clamped so you can't scroll into the future —
+  // there is nothing there to reconstruct.
+  const stepMonth = (delta: number) => {
+    const [y, m] = monthKey.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (next > CURRENT_MONTH_KEY) return;
+    setMonthKey(next);
+  };
 
   const handleCreateAccount = async (
     account: Omit<Account, "id" | "currentBalance">,
@@ -141,9 +176,10 @@ export default function AccountsPage() {
     accountId: string,
     amount: number,
     note?: string,
+    inForecast?: boolean,
   ) => {
     try {
-      await dataService.depositToAccount(accountId, amount, note);
+      await dataService.depositToAccount(accountId, amount, note, inForecast);
       await loadData();
     } catch (error) {
       console.error("Failed to deposit:", error);
@@ -246,37 +282,77 @@ export default function AccountsPage() {
     );
   };
 
-  // Per-account card actions (shared by flat grid and group bands)
+  // Per-account card actions (shared by flat grid and group bands). These
+  // always resolve back to the live account — the cards may be showing a
+  // rewound copy, but every action acts on the real one.
   const cardClick = (a: Account) => {
-    setTransactionsAccount(a);
+    setTransactionsAccount(liveAccount(a));
     setShowTransactionsDialog(true);
   };
   const editAccount = (a: Account) => {
-    setEditingAccount(a);
-    setFormGroupIds(a.groupIds ?? []);
+    const live = liveAccount(a);
+    setEditingAccount(live);
+    setFormGroupIds(live.groupIds ?? []);
     setShowAccountForm(true);
   };
   const transferFrom = (a: Account) => {
-    setTransferSourceAccount(a);
+    setTransferSourceAccount(liveAccount(a));
     setShowTransferDialog(true);
   };
   const depositTo = (a: Account) => {
-    setDepositAccount(a);
+    setDepositAccount(liveAccount(a));
     setShowDepositDialog(true);
   };
 
-  const totalBalance = accounts.reduce((sum, a) => sum + a.currentBalance, 0);
+  // What the cards, rows and group bands render. On the current month this is
+  // `accounts` untouched; on an earlier month each balance is swapped for the
+  // reconstructed end-of-month figure, so every downstream component — group
+  // totals included — rewinds with no changes of its own.
+  const viewAccounts = useMemo(
+    () =>
+      isCurrentMonth
+        ? accounts
+        : accounts.map((a) => ({
+            ...a,
+            currentBalance: snapshot[a.id]?.balance ?? a.currentBalance,
+          })),
+    [accounts, snapshot, isCurrentMonth],
+  );
+
+  const totalBalance = viewAccounts.reduce(
+    (sum, a) => sum + a.currentBalance,
+    0,
+  );
+  const monthTotals = useMemo(
+    () =>
+      Object.values(snapshot).reduce(
+        (acc, s) => ({
+          inflow: acc.inflow + s.inflow,
+          outflow: acc.outflow + s.outflow,
+        }),
+        { inflow: 0, outflow: 0 },
+      ),
+    [snapshot],
+  );
+
+  // Actions still operate on the live account (never the rewound copy), so a
+  // deposit opened from a past month would still hit the real balance — hence
+  // the money actions are withheld entirely while `readOnly`.
+  const liveAccount = (a: Account) => accounts.find((x) => x.id === a.id) ?? a;
 
   // Members of each group (an account can appear in several); and accounts
   // that belong to no group at all.
   const groupedAccounts = groups.map((g) => ({
     group: g,
-    members: accounts.filter((a) => a.groupIds?.includes(g.id)),
+    members: viewAccounts.filter((a) => a.groupIds?.includes(g.id)),
   }));
-  const ungroupedAccounts = accounts.filter((a) => !a.groupIds?.length);
+  const ungroupedAccounts = viewAccounts.filter((a) => !a.groupIds?.length);
   const summaryMembers = summaryGroup
-    ? accounts.filter((a) => a.groupIds?.includes(summaryGroup.id))
+    ? viewAccounts.filter((a) => a.groupIds?.includes(summaryGroup.id))
     : [];
+
+  const [monthYear, monthNum] = monthKey.split("-").map(Number);
+  const monthLabel = `${MONTH_NAMES[monthNum - 1]} ${monthYear}`;
 
   return (
     <div className="min-h-screen w-full p-4 md:p-8 max-lg:pb-24 bg-[repeating-linear-gradient(0deg,#fbf6e9,#fbf6e9_28px,#f2e8cf_28px,#f2e8cf_29px)]">
@@ -314,12 +390,61 @@ export default function AccountsPage() {
                   Accounts
                 </h1>
                 <p className="text-stone-500 text-sm">
-                  Manage your money across different accounts
+                  {isCurrentMonth
+                    ? "Manage your money across different accounts"
+                    : `Balances as they stood at the end of ${monthLabel}`}
                 </p>
               </div>
             </div>
 
             <div className="flex gap-2 flex-wrap items-center">
+              {/* Month nav — rewinds the whole page. Can't go past this month. */}
+              <div
+                className={cn(
+                  "flex items-center rounded-xl border-2",
+                  readOnly ? "border-stone-300 bg-stone-50" : paperTheme.colors.borders.amber,
+                  !readOnly && paperTheme.colors.background.white,
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => stepMonth(-1)}
+                  title="Previous month"
+                  className="px-2 py-1.5 text-stone-500 hover:text-amber-600 cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span
+                  className={cn(
+                    "px-2 text-sm font-bold whitespace-nowrap",
+                    paperTheme.fonts.handwriting,
+                    readOnly ? "text-stone-600" : "text-stone-700",
+                  )}
+                >
+                  {monthLabel}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => stepMonth(1)}
+                  disabled={isCurrentMonth || isFutureMonth}
+                  title={isCurrentMonth ? "Already at the current month" : "Next month"}
+                  className="px-2 py-1.5 text-stone-500 hover:text-amber-600 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-stone-500"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+              {readOnly && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setMonthKey(CURRENT_MONTH_KEY)}
+                  className={cn(paperTheme.colors.borders.amber)}
+                >
+                  <CalendarClock className="w-4 h-4 mr-1" />
+                  Back to today
+                </Button>
+              )}
+
               {/* View toggle: Flat <-> Grouped */}
               <div
                 className={cn(
@@ -368,7 +493,7 @@ export default function AccountsPage() {
                 />
                 Refresh
               </Button>
-              {viewMode === "grouped" && (
+              {!readOnly && viewMode === "grouped" && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -382,14 +507,16 @@ export default function AccountsPage() {
                   New Group
                 </Button>
               )}
-              <Button
-                size="sm"
-                onClick={() => openNewAccount(null)}
-                className="bg-amber-500 hover:bg-amber-600 text-white"
-              >
-                <Plus className="w-4 h-4 mr-1" />
-                New Account
-              </Button>
+              {!readOnly && (
+                <Button
+                  size="sm"
+                  onClick={() => openNewAccount(null)}
+                  className="bg-amber-500 hover:bg-amber-600 text-white"
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  New Account
+                </Button>
+              )}
             </div>
           </div>
 
@@ -411,7 +538,9 @@ export default function AccountsPage() {
             />
             <div className="relative flex flex-wrap gap-6">
               <div>
-                <p className="text-sm text-stone-500">Total Balance</p>
+                <p className="text-sm text-stone-500">
+                  {isCurrentMonth ? "Total Balance" : `Total · end of ${monthLabel}`}
+                </p>
                 <p
                   className={cn(
                     "text-2xl font-bold",
@@ -420,6 +549,28 @@ export default function AccountsPage() {
                   )}
                 >
                   {formatCurrency(totalBalance)}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-stone-500">In · {monthLabel}</p>
+                <p
+                  className={cn(
+                    "text-2xl font-bold text-green-700",
+                    paperTheme.fonts.handwriting,
+                  )}
+                >
+                  +{formatCurrency(monthTotals.inflow)}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-stone-500">Out · {monthLabel}</p>
+                <p
+                  className={cn(
+                    "text-2xl font-bold text-red-600",
+                    paperTheme.fonts.handwriting,
+                  )}
+                >
+                  −{formatCurrency(monthTotals.outflow)}
                 </p>
               </div>
               <div>
@@ -436,8 +587,16 @@ export default function AccountsPage() {
               </div>
             </div>
 
+            {readOnly && (
+              <p className="relative mt-3 flex items-center gap-1.5 text-xs text-stone-500">
+                <Lock className="w-3.5 h-3.5" />
+                Viewing a past month — read only. Money actions are hidden so
+                nothing lands in the wrong month.
+              </p>
+            )}
+
             {/* Quick transfer button */}
-            {accounts.length >= 2 && (
+            {!readOnly && accounts.length >= 2 && (
               <Button
                 variant="outline"
                 size="sm"
@@ -507,7 +666,7 @@ export default function AccountsPage() {
         ) : viewMode === "flat" ? (
           <div className="rounded-xl border border-stone-200/70 bg-white/50 p-2">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-2">
-              {accounts.map((account) => (
+              {viewAccounts.map((account) => (
                 <AccountRow
                   key={account.id}
                   account={account}
@@ -517,6 +676,8 @@ export default function AccountsPage() {
                   onTransfer={transferFrom}
                   onDeposit={depositTo}
                   onSetDefault={handleSetDefault}
+                  activity={snapshot[account.id]}
+                  readOnly={readOnly}
                 />
               ))}
             </div>
@@ -576,6 +737,8 @@ export default function AccountsPage() {
                     onTransfer={transferFrom}
                     onDeposit={depositTo}
                     onSetDefault={handleSetDefault}
+                    activity={snapshot}
+                    readOnly={readOnly}
                   />
                   </div>
                 ))}
@@ -626,6 +789,8 @@ export default function AccountsPage() {
                       onTransfer={transferFrom}
                       onDeposit={depositTo}
                       onSetDefault={handleSetDefault}
+                      activity={snapshot[account.id]}
+                      readOnly={readOnly}
                     />
                   ))}
                 </div>
@@ -710,14 +875,25 @@ export default function AccountsPage() {
           }}
           account={transactionsAccount}
           accounts={accounts}
-          onDeposit={(a) => {
-            setDepositAccount(a);
-            setShowDepositDialog(true);
-          }}
-          onTransfer={(a) => {
-            setTransferSourceAccount(a);
-            setShowTransferDialog(true);
-          }}
+          initialMonthKey={monthKey}
+          // Withheld while a past month is on screen — the dialog would happily
+          // move money today from a page that's showing history.
+          onDeposit={
+            readOnly
+              ? undefined
+              : (a) => {
+                  setDepositAccount(a);
+                  setShowDepositDialog(true);
+                }
+          }
+          onTransfer={
+            readOnly
+              ? undefined
+              : (a) => {
+                  setTransferSourceAccount(a);
+                  setShowTransferDialog(true);
+                }
+          }
         />
       </div>
     </div>

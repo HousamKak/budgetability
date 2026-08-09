@@ -38,6 +38,18 @@ export type AccountGroupMember = {
   accountId: string;
 };
 
+// Where a forecast flow came from. Absent = a hand-written flow living in the
+// forecast_flows table. Present = the flow is *derived* from a real record the
+// user marked with "Show in Forecast"; it has no row of its own, so its amount,
+// name and month always track the source.
+export type ForecastSourceKind = "expense" | "plan" | "deposit";
+
+export type ForecastSource = {
+  kind: ForecastSourceKind;
+  id: string; // the source record's id
+  monthKey: string; // the source's month, for routing edits back
+};
+
 // Forecast flow type - a projected inflow/outflow across months of a year.
 // Amounts are positive magnitudes (in real currency); `type` sets the sign.
 // Uncertain flows carry a low/high range that produces best/worst scenarios.
@@ -54,6 +66,7 @@ export type ForecastFlow = {
   isGhost: boolean; // hypothetical what-if
   enabled: boolean;
   sortOrder: number;
+  source?: ForecastSource; // set only on linked (derived) flows
 };
 
 // Account Group type - a non-transactable "mother account" that groups several
@@ -83,6 +96,9 @@ export type AccountTransaction = {
   savingsGoalId?: string;
   note?: string;
   createdAt: string;
+  // Forecast link (deposits only — see the 20260810 migration).
+  inForecast?: boolean;
+  forecastEnabled?: boolean;
 };
 
 // Budget Allocation type - links accounts to monthly budgets
@@ -125,6 +141,10 @@ export type Expense = {
   categoryId?: string; // NEW: Reference to categories table
   accountId?: string; // Account this expense was paid from
   note?: string;
+  // Forecast link: inForecast = shows on the Forecast page as an outflow in the
+  // month of `date`; forecastEnabled = counted in the band (toggle, not removal).
+  inForecast?: boolean;
+  forecastEnabled?: boolean;
 };
 
 // Plan type - with optional categoryId for new system
@@ -138,6 +158,10 @@ export type PlanItem = {
   accountId?: string; // Account this plan will be paid from when marked paid
   note?: string;
   targetDate?: string;
+  // Forecast link: outflow in the month of `targetDate` (else `monthKey`).
+  // Carried over to the expense created when the plan is marked paid.
+  inForecast?: boolean;
+  forecastEnabled?: boolean;
 };
 
 export type DraftItem = {
@@ -456,6 +480,8 @@ export class DataService {
             categoryId: row.category_id || undefined,
             accountId: row.account_id || undefined,
             note: row.note || undefined,
+            inForecast: !!row.in_forecast,
+            forecastEnabled: row.forecast_enabled !== false,
           })) || [];
 
         // Update local store to stay in sync
@@ -501,6 +527,8 @@ export class DataService {
             category_id: expense.categoryId || null,
             account_id: expense.accountId || null,
             note: expense.note,
+            in_forecast: !!expense.inForecast,
+            forecast_enabled: expense.forecastEnabled !== false,
           });
 
           if (error) throw error;
@@ -655,6 +683,8 @@ export class DataService {
             accountId: row.account_id || undefined,
             note: row.note || undefined,
             targetDate: row.target_date || undefined,
+            inForecast: !!row.in_forecast,
+            forecastEnabled: row.forecast_enabled !== false,
           })) || [];
 
         // Update local store to stay in sync
@@ -688,6 +718,8 @@ export class DataService {
             account_id: plan.accountId || null,
             note: plan.note,
             target_date: plan.targetDate,
+            in_forecast: !!plan.inForecast,
+            forecast_enabled: plan.forecastEnabled !== false,
           });
 
           if (error) {
@@ -728,6 +760,10 @@ export class DataService {
         if (updates.note !== undefined) dbUpdates.note = updates.note;
         if (updates.targetDate !== undefined)
           dbUpdates.target_date = updates.targetDate;
+        if (updates.inForecast !== undefined)
+          dbUpdates.in_forecast = updates.inForecast;
+        if (updates.forecastEnabled !== undefined)
+          dbUpdates.forecast_enabled = updates.forecastEnabled;
 
         const { error } = await supabase
           .from("plans")
@@ -1008,6 +1044,10 @@ export class DataService {
           dbUpdates.account_id = updates.accountId || null;
         if (updates.note !== undefined) dbUpdates.note = updates.note;
         if (updates.date !== undefined) dbUpdates.date = updates.date;
+        if (updates.inForecast !== undefined)
+          dbUpdates.in_forecast = updates.inForecast;
+        if (updates.forecastEnabled !== undefined)
+          dbUpdates.forecast_enabled = updates.forecastEnabled;
 
         const { error } = await supabase
           .from("expenses")
@@ -1745,10 +1785,13 @@ export class DataService {
     await this.setAccountGroups(accountId, []);
   }
 
+  // A deposit is this app's only "income" event. `inForecast` marks it to show
+  // up on the Forecast page as an inflow in the month it was recorded.
   async depositToAccount(
     accountId: string,
     amount: number,
     note?: string,
+    inForecast = false,
   ): Promise<void> {
     const id = crypto.randomUUID();
     const transaction: AccountTransaction = {
@@ -1758,6 +1801,8 @@ export class DataService {
       transactionType: "deposit",
       note,
       createdAt: new Date().toISOString(),
+      inForecast,
+      forecastEnabled: true,
     };
 
     if (this.useSupabase && supabase) {
@@ -1773,6 +1818,8 @@ export class DataService {
           amount,
           transaction_type: "deposit",
           note,
+          in_forecast: inForecast,
+          forecast_enabled: true,
         });
 
         if (error) throw error;
@@ -2282,6 +2329,8 @@ export class DataService {
             savingsGoalId: row.savings_goal_id || undefined,
             note: row.note || undefined,
             createdAt: row.created_at,
+            inForecast: !!row.in_forecast,
+            forecastEnabled: row.forecast_enabled !== false,
           })) || []
         );
       } catch (error) {
@@ -2297,6 +2346,59 @@ export class DataService {
           (t.fromAccountId === accountId || t.toAccountId === accountId),
       )
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  // What every account was worth at the end of `monthKey`, plus what moved
+  // during it.
+  //
+  // `accounts.current_balance` is live, and every single change to it goes
+  // through an account_transactions row (+to_account, -from_account, reversed
+  // on delete). So a historical balance is exact, not an estimate: take today's
+  // balance and rewind every transaction recorded after the month ended.
+  //
+  // Returns a map keyed by account id. Accounts with no activity still get an
+  // entry, so callers can render every account for any month.
+  async getAccountMonthSnapshot(monthKey: string): Promise<
+    Record<string, { balance: number; inflow: number; outflow: number }>
+  > {
+    const [accounts, transactions] = await Promise.all([
+      this.getAccounts(),
+      this.getAccountTransactions(),
+    ]);
+
+    const snapshot: Record<
+      string,
+      { balance: number; inflow: number; outflow: number }
+    > = {};
+    for (const a of accounts) {
+      snapshot[a.id] = {
+        balance: a.currentBalance,
+        inflow: 0,
+        outflow: 0,
+      };
+    }
+
+    for (const t of transactions) {
+      // createdAt is an ISO timestamp, so its first 7 chars are the month key
+      // and string comparison orders months correctly.
+      const txMonth = (t.createdAt ?? "").slice(0, 7);
+      if (!txMonth) continue;
+
+      if (txMonth > monthKey) {
+        // Recorded after the month we're looking at — undo it.
+        if (t.toAccountId && snapshot[t.toAccountId])
+          snapshot[t.toAccountId].balance -= t.amount;
+        if (t.fromAccountId && snapshot[t.fromAccountId])
+          snapshot[t.fromAccountId].balance += t.amount;
+      } else if (txMonth === monthKey) {
+        if (t.toAccountId && snapshot[t.toAccountId])
+          snapshot[t.toAccountId].inflow += t.amount;
+        if (t.fromAccountId && snapshot[t.fromAccountId])
+          snapshot[t.fromAccountId].outflow += t.amount;
+      }
+    }
+
+    return snapshot;
   }
 
   async removeAccountTransaction(transactionId: string): Promise<void> {
@@ -2401,6 +2503,8 @@ export class DataService {
             savingsGoalId: row.savings_goal_id || undefined,
             note: row.note || undefined,
             createdAt: row.created_at,
+            inForecast: !!row.in_forecast,
+            forecastEnabled: row.forecast_enabled !== false,
           })) || []
         );
       } catch (error) {
@@ -3080,6 +3184,220 @@ export class DataService {
     saveStoreToLocalStorage(this.localStore);
   }
 
+  // ============================================
+  // FORECAST LINKS (real records marked "Show in Forecast")
+  // ============================================
+
+  // Every marked expense / plan / deposit, projected into the ForecastFlow
+  // shape so the forecast math can treat them exactly like manual flows.
+  //
+  // These are derived, not stored: there is no row in forecast_flows for them.
+  // The amount, name and month always reflect the source record, and deleting
+  // the source removes the flow with no reconciliation step.
+  //
+  // Marked records are always *certain* (value, never a low/high band) — they
+  // are facts, so they shift the best and worst lines by the same amount.
+  async getLinkedForecastFlows(): Promise<ForecastFlow[]> {
+    const flows: ForecastFlow[] = [];
+
+    const push = (
+      kind: ForecastSourceKind,
+      id: string,
+      when: string | null | undefined,
+      fallbackMonthKey: string | null | undefined,
+      amount: number,
+      name: string,
+      enabled: boolean,
+    ) => {
+      const at = parseYearMonth(when) ?? parseYearMonth(fallbackMonthKey);
+      if (!at || !(amount > 0)) return;
+      flows.push({
+        id: `${kind}:${id}`,
+        year: at.year,
+        months: [at.month], // a marked record is always a single occurrence
+        type: kind === "deposit" ? "in" : "out",
+        name,
+        uncertain: false,
+        value: amount,
+        isGhost: false,
+        enabled,
+        sortOrder: 0, // assigned below, after sorting
+        source: {
+          kind,
+          id,
+          monthKey: fallbackMonthKey || monthKeyOf(at),
+        },
+      });
+    };
+
+    if (this.useSupabase && supabase) {
+      try {
+        const [expRes, planRes, depRes] = await Promise.all([
+          supabase
+            .from("expenses")
+            .select("id, month_key, date, amount, category, note, forecast_enabled")
+            .eq("in_forecast", true),
+          supabase
+            .from("plans")
+            .select(
+              "id, month_key, target_date, amount, category, note, forecast_enabled",
+            )
+            .eq("in_forecast", true),
+          supabase
+            .from("account_transactions")
+            .select("id, created_at, month_key, amount, note, forecast_enabled")
+            .eq("in_forecast", true)
+            .eq("transaction_type", "deposit"),
+        ]);
+
+        if (expRes.error) throw expRes.error;
+        if (planRes.error) throw planRes.error;
+        if (depRes.error) throw depRes.error;
+
+        for (const r of expRes.data ?? []) {
+          push(
+            "expense",
+            r.id,
+            r.date,
+            r.month_key,
+            Number(r.amount),
+            r.note || r.category || "Expense",
+            r.forecast_enabled !== false,
+          );
+        }
+        for (const r of planRes.data ?? []) {
+          push(
+            "plan",
+            r.id,
+            r.target_date,
+            r.month_key,
+            Number(r.amount),
+            r.note || r.category || "Plan",
+            r.forecast_enabled !== false,
+          );
+        }
+        for (const r of depRes.data ?? []) {
+          push(
+            "deposit",
+            r.id,
+            r.created_at,
+            r.month_key,
+            Number(r.amount),
+            r.note || "Deposit",
+            r.forecast_enabled !== false,
+          );
+        }
+
+        return orderLinkedFlows(flows);
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        flows.length = 0;
+      }
+    }
+
+    for (const [monthKey, list] of Object.entries(
+      this.localStore.expenses ?? {},
+    )) {
+      for (const e of list) {
+        if (!e.inForecast) continue;
+        push(
+          "expense",
+          e.id,
+          e.date,
+          monthKey,
+          e.amount,
+          e.note || e.category || "Expense",
+          e.forecastEnabled !== false,
+        );
+      }
+    }
+    for (const [monthKey, list] of Object.entries(
+      this.localStore.plans ?? {},
+    )) {
+      for (const p of list) {
+        if (!p.inForecast) continue;
+        push(
+          "plan",
+          p.id,
+          p.targetDate,
+          monthKey,
+          p.amount,
+          p.note || p.category || "Plan",
+          p.forecastEnabled !== false,
+        );
+      }
+    }
+    for (const t of this.localStore.accountTransactions ?? []) {
+      if (!t.inForecast || t.transactionType !== "deposit") continue;
+      push(
+        "deposit",
+        t.id,
+        t.createdAt,
+        t.monthKey,
+        t.amount,
+        t.note || "Deposit",
+        t.forecastEnabled !== false,
+      );
+    }
+
+    return orderLinkedFlows(flows);
+  }
+
+  // Flip the forecast flags on a source record without touching anything else.
+  //
+  // Deliberately not routed through updateExpense/updatePlan: those replay the
+  // account balance adjustment (a refund + a re-deduction transaction) on every
+  // call, which would litter the ledger with a pair of no-op rows each time you
+  // toggled a card on the forecast page.
+  async setForecastLink(
+    source: ForecastSource,
+    patch: { inForecast?: boolean; forecastEnabled?: boolean },
+  ): Promise<void> {
+    const table =
+      source.kind === "expense"
+        ? "expenses"
+        : source.kind === "plan"
+          ? "plans"
+          : "account_transactions";
+
+    if (this.useSupabase && supabase) {
+      try {
+        const dbUpdates: Record<string, unknown> = {};
+        if (patch.inForecast !== undefined)
+          dbUpdates.in_forecast = patch.inForecast;
+        if (patch.forecastEnabled !== undefined)
+          dbUpdates.forecast_enabled = patch.forecastEnabled;
+        if (Object.keys(dbUpdates).length === 0) return;
+
+        const { error } = await supabase
+          .from(table)
+          .update(dbUpdates as never)
+          .eq("id", source.id);
+        if (error) throw error;
+        return;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+      }
+    }
+
+    if (source.kind === "expense") {
+      const list = this.localStore.expenses[source.monthKey] ?? [];
+      this.localStore.expenses[source.monthKey] = list.map((x) =>
+        x.id === source.id ? { ...x, ...patch } : x,
+      );
+    } else if (source.kind === "plan") {
+      const list = this.localStore.plans[source.monthKey] ?? [];
+      this.localStore.plans[source.monthKey] = list.map((x) =>
+        x.id === source.id ? { ...x, ...patch } : x,
+      );
+    } else {
+      this.localStore.accountTransactions = (
+        this.localStore.accountTransactions ?? []
+      ).map((t) => (t.id === source.id ? { ...t, ...patch } : t));
+    }
+    saveStoreToLocalStorage(this.localStore);
+  }
+
   // Bulk-insert flows (used by the importer). Returns the created flows.
   async addForecastFlows(
     flows: Array<Omit<ForecastFlow, "id">>,
@@ -3116,6 +3434,42 @@ export class DataService {
     saveStoreToLocalStorage(this.localStore);
     return created;
   }
+}
+
+// ---- Forecast link helpers ----
+
+// Pull {year, month} out of a "YYYY-MM-DD", "YYYY-MM" or ISO timestamp string.
+// `month` is 1-based to match ForecastFlow.months.
+function parseYearMonth(
+  value: string | null | undefined,
+): { year: number; month: number } | null {
+  if (!value) return null;
+  const m = /^(\d{4})-(\d{2})/.exec(value);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  if (!Number.isFinite(year) || month < 1 || month > 12) return null;
+  return { year, month };
+}
+
+function monthKeyOf({ year, month }: { year: number; month: number }): string {
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+// Linked flows have no user-defined ordering, so give them a stable one:
+// chronological, then by name. The offset keeps them below hand-written flows,
+// which own the low sort_order range.
+const LINKED_SORT_OFFSET = 1_000_000;
+
+function orderLinkedFlows(flows: ForecastFlow[]): ForecastFlow[] {
+  return flows
+    .sort(
+      (a, b) =>
+        a.year - b.year ||
+        (a.months[0] ?? 0) - (b.months[0] ?? 0) ||
+        (a.name ?? "").localeCompare(b.name ?? ""),
+    )
+    .map((f, i) => ({ ...f, sortOrder: LINKED_SORT_OFFSET + i }));
 }
 
 // ---- Forecast flow row mappers (DB snake_case <-> ForecastFlow) ----

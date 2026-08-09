@@ -30,6 +30,13 @@ interface AccountRowProps {
   /** Remove from the current group (group context only). */
   onRemove?: () => void;
   removeLabel?: string;
+  /** What moved through this account in the month being viewed. */
+  activity?: { inflow: number; outflow: number };
+  /**
+   * Viewing a past month: the balance shown is historical, so every action
+   * that would move money or change the account is withheld.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -47,16 +54,23 @@ export function AccountRow({
   onSetDefault,
   onRemove,
   removeLabel = "Remove from group",
+  activity,
+  readOnly = false,
 }: AccountRowProps) {
   const typeColor = getAccountTypeConfig(account.accountType).color;
   const icon = account.icon || "wallet";
+  const hasActivity = !!activity && (activity.inflow > 0 || activity.outflow > 0);
 
   return (
     <div
-      draggable
+      draggable={!readOnly}
       onDragStart={(e) => startAccountDrag(e, account.id)}
       onClick={() => onClick(account)}
-      title="Drag onto a group to add · click to view"
+      title={
+        readOnly
+          ? "Click to view transactions"
+          : "Drag onto a group to add · click to view"
+      }
       className="group/row relative flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/70 cursor-pointer transition-colors"
     >
       {/* Type icon */}
@@ -81,33 +95,55 @@ export function AccountRow({
             <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
           )}
         </div>
-        <span
-          className={cn(
-            "text-sm font-bold tabular-nums leading-tight",
-            account.currentBalance >= 0 ? "text-green-700" : "text-red-600",
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <span
+            className={cn(
+              "text-sm font-bold tabular-nums leading-tight",
+              account.currentBalance >= 0 ? "text-green-700" : "text-red-600",
+            )}
+          >
+            {formatCurrency(account.currentBalance)}
+          </span>
+          {hasActivity && (
+            <span className="text-[11px] tabular-nums text-stone-400">
+              {activity.inflow > 0 && (
+                <span className="text-green-600">
+                  +{formatCurrency(activity.inflow)}
+                </span>
+              )}
+              {activity.inflow > 0 && activity.outflow > 0 && " · "}
+              {activity.outflow > 0 && (
+                <span className="text-red-500">
+                  −{formatCurrency(activity.outflow)}
+                </span>
+              )}
+            </span>
           )}
-        >
-          {formatCurrency(account.currentBalance)}
-        </span>
+        </div>
       </div>
 
       {/* Always-visible actions */}
       <div className="flex items-center gap-0.5 shrink-0">
-        <IconButton
-          title="Deposit"
-          onClick={() => onDeposit(account)}
-          className="text-emerald-600 hover:bg-emerald-50"
-        >
-          <ArrowUpRight className="w-4 h-4" />
-        </IconButton>
-        <IconButton
-          title="Transfer"
-          onClick={() => onTransfer(account)}
-          className="text-sky-600 hover:bg-sky-50"
-        >
-          <ArrowRightLeft className="w-4 h-4" />
-        </IconButton>
+        {!readOnly && (
+          <>
+            <IconButton
+              title="Deposit"
+              onClick={() => onDeposit(account)}
+              className="text-emerald-600 hover:bg-emerald-50"
+            >
+              <ArrowUpRight className="w-4 h-4" />
+            </IconButton>
+            <IconButton
+              title="Transfer"
+              onClick={() => onTransfer(account)}
+              className="text-sky-600 hover:bg-sky-50"
+            >
+              <ArrowRightLeft className="w-4 h-4" />
+            </IconButton>
+          </>
+        )}
 
+        {!readOnly && (
         <HoverCard openDelay={0} closeDelay={80}>
           <HoverCardTrigger asChild>
             <button
@@ -151,9 +187,10 @@ export function AccountRow({
             </div>
           </HoverCardContent>
         </HoverCard>
+        )}
 
         {/* Quick detach (group context) */}
-        {onRemove && (
+        {!readOnly && onRemove && (
           <IconButton
             title={removeLabel}
             onClick={onRemove}

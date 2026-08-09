@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import type { ForecastFlow } from "@/lib/data-service";
+import type { ForecastFlow, ForecastSourceKind } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
@@ -9,6 +9,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Ghost,
+  Link2,
+  Link2Off,
   LineChart as LineChartIcon,
   Pencil,
   Plus,
@@ -19,6 +21,7 @@ import {
   Trash2,
   TrendingUp,
   Upload,
+  Wallet,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ForecastBars } from "./forecast/ForecastBars";
@@ -35,10 +38,21 @@ import {
 } from "@/utils/forecast";
 
 type View = "line" | "bars" | "table" | "calendar" | "ledger";
+type SourceFilter = "all" | "manual" | "linked";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const CURRENT_MONTH_IDX = new Date().getMonth(); // 0..11, for the "now" marker
 const START_KEY = "forecast-opening-balance";
+
+// Linked flows (marked expenses / plans / deposits) are drawn in sky blue
+// everywhere so they read as "came from my real data" at a glance — distinct
+// from amber (hand-written flows), violet (ghosts) and the green/red that
+// already encode direction.
+const SOURCE_LABEL: Record<ForecastSourceKind, string> = {
+  expense: "Expense",
+  plan: "Plan",
+  deposit: "Income",
+};
 
 function loadStartBalance(): number {
   try {
@@ -56,7 +70,11 @@ function monthsLabel(months: number[]): string {
 }
 
 export default function ForecastPage() {
-  const [flows, setFlows] = useState<ForecastFlow[]>([]);
+  // Hand-written flows and flows derived from marked real records are kept
+  // apart in state (they persist very differently) and merged only for display
+  // and for the maths.
+  const [manualFlows, setManualFlows] = useState<ForecastFlow[]>([]);
+  const [linkedFlows, setLinkedFlows] = useState<ForecastFlow[]>([]);
   const [loading, setLoading] = useState(true);
   const [year, setYear] = useState(CURRENT_YEAR);
   const [view, setView] = useState<View>("line");
@@ -65,6 +83,7 @@ export default function ForecastPage() {
   const [editingFlow, setEditingFlow] = useState<ForecastFlow | undefined>();
   const [showImport, setShowImport] = useState(false);
   const [flowsView, setFlowsView] = useState<"flow" | "month">("month");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [startBalance, setStartBalance] = useState<number>(loadStartBalance);
   const [showStartDialog, setShowStartDialog] = useState(false);
 
@@ -75,14 +94,23 @@ export default function ForecastPage() {
   async function loadData() {
     try {
       setLoading(true);
-      const fl = await dataService.getForecastFlows();
-      setFlows(fl);
+      const [manual, linked] = await Promise.all([
+        dataService.getForecastFlows(),
+        dataService.getLinkedForecastFlows(),
+      ]);
+      setManualFlows(manual);
+      setLinkedFlows(linked);
     } catch (e) {
       console.error("Failed to load forecast:", e);
     } finally {
       setLoading(false);
     }
   }
+
+  const flows = useMemo(
+    () => [...manualFlows, ...linkedFlows],
+    [manualFlows, linkedFlows],
+  );
 
   // The opening balance applies at the earliest year we have flows for; each
   // later year carries forward from the previous. Independent of accounts.
@@ -108,12 +136,32 @@ export default function ForecastPage() {
   // Purely-visual "now" marker (only when viewing the current calendar year).
   const todayIndex = year === CURRENT_YEAR ? CURRENT_MONTH_IDX : -1;
 
+  // Everything in this year — what the chart card's views render. The chart
+  // always shows the whole picture; the source filter below is a lens on the
+  // flows list only, never on the maths.
   const yearFlows = useMemo(
     () =>
       flows
         .filter((f) => f.year === year)
         .sort((a, b) => a.sortOrder - b.sortOrder),
     [flows, year],
+  );
+
+  const listedFlows = useMemo(
+    () =>
+      yearFlows.filter((f) =>
+        sourceFilter === "all"
+          ? true
+          : sourceFilter === "linked"
+            ? !!f.source
+            : !f.source,
+      ),
+    [yearFlows, sourceFilter],
+  );
+
+  const linkedCount = useMemo(
+    () => yearFlows.filter((f) => f.source).length,
+    [yearFlows],
   );
 
   // The same flows grouped under each month they occur in (for the by-month
@@ -123,10 +171,10 @@ export default function ForecastPage() {
       Array.from({ length: 12 }, (_, i) => i + 1)
         .map((month) => ({
           month,
-          entries: yearFlows.filter((f) => f.months.includes(month)),
+          entries: listedFlows.filter((f) => f.months.includes(month)),
         }))
         .filter((m) => m.entries.length > 0),
-    [yearFlows],
+    [listedFlows],
   );
 
   // ---- handlers ----
@@ -137,7 +185,10 @@ export default function ForecastPage() {
       if (editingFlow) {
         await dataService.updateForecastFlow(editingFlow.id, flow);
       } else {
-        await dataService.addForecastFlow({ ...flow, sortOrder: flows.length });
+        await dataService.addForecastFlow({
+          ...flow,
+          sortOrder: manualFlows.length,
+        });
       }
       setEditingFlow(undefined);
       await loadData();
@@ -150,7 +201,7 @@ export default function ForecastPage() {
     incoming: Array<Omit<ForecastFlow, "id">>,
   ) => {
     try {
-      const base = flows.length;
+      const base = manualFlows.length;
       await dataService.addForecastFlows(
         incoming.map((f, i) => ({ ...f, sortOrder: base + i })),
       );
@@ -160,20 +211,48 @@ export default function ForecastPage() {
     }
   };
 
+  // On/off is available for linked flows too — the forecast is a scratchpad for
+  // analysis, so you can mute a real expense without unlinking or deleting it.
   const toggleFlow = async (f: ForecastFlow) => {
-    setFlows((prev) =>
-      prev.map((x) => (x.id === f.id ? { ...x, enabled: !x.enabled } : x)),
+    const next = !f.enabled;
+    const setter = f.source ? setLinkedFlows : setManualFlows;
+    setter((prev) =>
+      prev.map((x) => (x.id === f.id ? { ...x, enabled: next } : x)),
     );
     try {
-      await dataService.updateForecastFlow(f.id, { enabled: !f.enabled });
+      if (f.source) {
+        await dataService.setForecastLink(f.source, { forecastEnabled: next });
+      } else {
+        await dataService.updateForecastFlow(f.id, { enabled: next });
+      }
     } catch (e) {
       console.error(e);
       await loadData();
     }
   };
 
+  // Manual flows are deleted outright; linked ones are only unmarked, which
+  // takes them off this page and leaves the real record untouched.
   const deleteFlow = async (f: ForecastFlow) => {
-    if (!confirm(`Delete "${f.name || "flow"}"?`)) return;
+    const label = f.name || "flow";
+    if (f.source) {
+      const kind = SOURCE_LABEL[f.source.kind].toLowerCase();
+      if (
+        !confirm(
+          `Remove "${label}" from the forecast?\n\nThe ${kind} itself stays exactly where it is — this only unmarks it.`,
+        )
+      )
+        return;
+      try {
+        await dataService.setForecastLink(f.source, { inForecast: false });
+        await loadData();
+      } catch (e) {
+        console.error(e);
+      }
+      return;
+    }
+
+    if (!confirm(`Delete "${label}"?`)) return;
     try {
       await dataService.removeForecastFlow(f.id);
       await loadData();
@@ -182,7 +261,10 @@ export default function ForecastPage() {
     }
   };
 
+  // Linked flows are read-only here: their amount, name and month belong to the
+  // source record, so there is nothing on this page to edit.
   const editFlow = (f: ForecastFlow) => {
+    if (f.source) return;
     setEditingFlow(f);
     setShowFlowDialog(true);
   };
@@ -330,6 +412,12 @@ export default function ForecastPage() {
               <Legend color="#16a34a" label="Best" />
               <Legend color="#dc2626" label="Worst" />
               <Legend color="#6b7280" label="Expected" dashed />
+              {linkedCount > 0 && (
+                <span className="flex items-center gap-1 text-sky-600">
+                  <Link2 className="w-3 h-3" />
+                  Linked from my data
+                </span>
+              )}
             </div>
             <div className="flex items-center rounded-xl border-2 border-amber-200 bg-white p-0.5">
               {VIEWS.map((v) => (
@@ -385,7 +473,38 @@ export default function ForecastPage() {
               Flows · {year}
             </h2>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-stone-400">{yearFlows.length} flows</span>
+              <span className="text-xs text-stone-400">
+                {yearFlows.length} flows
+                {linkedCount > 0 && (
+                  <span className="text-sky-600"> · {linkedCount} linked</span>
+                )}
+              </span>
+              {linkedCount > 0 && (
+                <div className="flex items-center rounded-lg border-2 border-amber-200 bg-white p-0.5">
+                  {(
+                    [
+                      ["all", "All"],
+                      ["manual", "Manual"],
+                      ["linked", "Linked"],
+                    ] as [SourceFilter, string][]
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      onClick={() => setSourceFilter(key)}
+                      className={cn(
+                        "px-2 py-0.5 rounded-md text-xs transition-colors cursor-pointer",
+                        sourceFilter === key
+                          ? key === "linked"
+                            ? "bg-sky-500 text-white"
+                            : "bg-amber-500 text-white"
+                          : "text-stone-500 hover:bg-amber-50",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="flex items-center rounded-lg border-2 border-amber-200 bg-white p-0.5">
                 <button
                   onClick={() => setFlowsView("flow")}
@@ -409,13 +528,15 @@ export default function ForecastPage() {
             </div>
           </div>
 
-          {yearFlows.length === 0 ? (
+          {listedFlows.length === 0 ? (
             <div className="text-center py-10 text-stone-400 text-sm">
-              No flows for {year}. Add one or import your data.
+              {yearFlows.length === 0
+                ? `No flows for ${year}. Add one, import your data, or mark an income or expense to show here.`
+                : `No ${sourceFilter} flows for ${year}.`}
             </div>
           ) : flowsView === "flow" ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3">
-              {yearFlows.map((f) => (
+              {listedFlows.map((f) => (
                 <FlowRow
                   key={f.id}
                   flow={f}
@@ -579,17 +700,29 @@ function FlowRow({
   const amountLabel = flow.uncertain
     ? `${formatCurrency(flow.lowValue ?? 0)}–${formatCurrency(flow.highValue ?? 0)}`
     : formatCurrency(amount);
+  const linked = flow.source;
   return (
     <div
       className={cn(
-        "group/row flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/70 transition-colors",
+        "group/row flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors",
+        linked
+          ? "bg-sky-50/70 border-l-[3px] border-sky-400 hover:bg-sky-50"
+          : "hover:bg-white/70",
         !flow.enabled && "opacity-50",
       )}
     >
       <ToggleSwitch
         on={flow.enabled}
         onChange={onToggle}
-        title={flow.enabled ? "Enabled" : "Disabled"}
+        title={
+          flow.enabled
+            ? linked
+              ? "Counted in the forecast — click to mute"
+              : "Enabled"
+            : linked
+              ? "Muted — still linked, not counted"
+              : "Disabled"
+        }
       />
       <span
         className="w-2 h-2 rounded-full shrink-0"
@@ -600,6 +733,7 @@ function FlowRow({
           <span className="text-sm font-medium text-stone-700 truncate">
             {flow.name || (flow.type === "in" ? "Inflow" : "Outflow")}
           </span>
+          {linked && <SourceChip kind={linked.kind} />}
           {flow.isGhost && (
             <Ghost className="w-3.5 h-3.5 text-violet-400 shrink-0" />
           )}
@@ -623,22 +757,49 @@ function FlowRow({
         {amountLabel}
       </span>
       <div className="flex items-center gap-0.5 shrink-0 invisible group-hover/row:visible">
-        <button
-          onClick={onEdit}
-          title="Edit"
-          className="w-6 h-6 rounded-md flex items-center justify-center text-stone-400 hover:text-stone-700 hover:bg-stone-100 cursor-pointer"
-        >
-          <Pencil className="w-3.5 h-3.5" />
-        </button>
+        {/* Linked rows have no editable fields here — everything about them
+            lives on the source record — so only unlink is offered. */}
+        {!linked && (
+          <button
+            onClick={onEdit}
+            title="Edit"
+            className="w-6 h-6 rounded-md flex items-center justify-center text-stone-400 hover:text-stone-700 hover:bg-stone-100 cursor-pointer"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        )}
         <button
           onClick={onDelete}
-          title="Delete"
-          className="w-6 h-6 rounded-md flex items-center justify-center text-stone-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+          title={linked ? "Remove from forecast (keeps the record)" : "Delete"}
+          className={cn(
+            "w-6 h-6 rounded-md flex items-center justify-center text-stone-400 cursor-pointer",
+            linked
+              ? "hover:text-sky-700 hover:bg-sky-100"
+              : "hover:text-red-600 hover:bg-red-50",
+          )}
         >
-          <Trash2 className="w-3.5 h-3.5" />
+          {linked ? (
+            <Link2Off className="w-3.5 h-3.5" />
+          ) : (
+            <Trash2 className="w-3.5 h-3.5" />
+          )}
         </button>
       </div>
     </div>
+  );
+}
+
+// Marks a flow as coming from a real record rather than being hand-written.
+function SourceChip({ kind }: { kind: ForecastSourceKind }) {
+  const Icon = kind === "deposit" ? Wallet : Link2;
+  return (
+    <span
+      title={`Linked from ${SOURCE_LABEL[kind].toLowerCase()}`}
+      className="flex items-center gap-0.5 text-[10px] text-sky-700 bg-sky-100 px-1 py-px rounded shrink-0"
+    >
+      <Icon className="w-2.5 h-2.5" />
+      {SOURCE_LABEL[kind]}
+    </span>
   );
 }
 
@@ -676,14 +837,21 @@ function MonthlyPaymentsTable({ flows }: { flows: ForecastFlow[] }) {
                       key={f.id}
                       className={cn(
                         "rounded-md px-2 py-1.5 mb-1.5 border-l-[3px]",
+                        // Linked cards keep the green/red tint that encodes
+                        // direction but take a sky border + ring so they read
+                        // as "from my real data" at a glance.
                         f.type === "in"
                           ? "bg-green-50 border-green-500"
                           : "bg-red-50 border-red-500",
+                        f.source && "border-sky-400 ring-1 ring-inset ring-sky-200",
                         f.uncertain && "border-dashed opacity-80",
                       )}
                     >
                       <div className="text-[11px] font-semibold text-stone-700 leading-tight break-words flex items-center gap-1">
                         {f.name || (f.type === "in" ? "Inflow" : "Outflow")}
+                        {f.source && (
+                          <Link2 className="w-3 h-3 text-sky-500 shrink-0" />
+                        )}
                         {f.isGhost && (
                           <Ghost className="w-3 h-3 text-violet-400 shrink-0" />
                         )}
@@ -761,13 +929,20 @@ function MonthlyLedger({ flows }: { flows: ForecastFlow[] }) {
                   ? `${formatCurrency(Math.min(f.lowValue ?? 0, f.highValue ?? 0))} – ${formatCurrency(Math.max(f.lowValue ?? 0, f.highValue ?? 0))}`
                   : formatCurrency(Math.abs(f.value ?? 0));
                 return (
-                  <div key={f.id} className="flex items-center gap-2 px-3 py-1.5">
+                  <div
+                    key={f.id}
+                    className={cn(
+                      "flex items-center gap-2 px-3 py-1.5",
+                      f.source && "bg-sky-50/70 border-l-[3px] border-sky-400",
+                    )}
+                  >
                     <span
                       className="w-2 h-2 rounded-full shrink-0"
                       style={{ backgroundColor: f.type === "in" ? "#22c55e" : "#ef4444" }}
                     />
                     <span className="flex-1 min-w-0 text-sm text-stone-700 truncate flex items-center gap-1">
                       {f.name || (f.type === "in" ? "Inflow" : "Outflow")}
+                      {f.source && <SourceChip kind={f.source.kind} />}
                       {f.isGhost && <Ghost className="w-3.5 h-3.5 text-violet-400 shrink-0" />}
                       {f.uncertain && (
                         <span className="text-[10px] text-amber-600 bg-amber-50 px-1 rounded shrink-0">±</span>
