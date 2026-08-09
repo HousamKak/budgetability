@@ -232,16 +232,22 @@ export default function ForecastPage() {
   // ---- handlers ----
   const handleSubmitFlow = async (
     flow: Omit<ForecastFlow, "id" | "sortOrder">,
+    memberIds?: string[],
   ) => {
     try {
+      let flowId: string;
       if (editingFlow) {
         await dataService.updateForecastFlow(editingFlow.id, flow);
+        flowId = editingFlow.id;
       } else {
-        await dataService.addForecastFlow({
+        // Members point at the flow, so it has to exist before they can.
+        const created = await dataService.addForecastFlow({
           ...flow,
           sortOrder: manualFlows.length,
         });
+        flowId = created.id;
       }
+      if (memberIds) await dataService.setFlowMembers(flowId, memberIds);
       setEditingFlow(undefined);
       await loadData();
     } catch (e) {

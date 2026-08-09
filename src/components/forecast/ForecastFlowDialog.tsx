@@ -12,17 +12,22 @@ import type {
   ForecastFlow,
   ForecastProjection,
   ForecastRuleSource,
+  PickableExpense,
 } from "@/lib/data-service";
-import { cn } from "@/lib/utils";
+import { dataService } from "@/lib/data-service";
+import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
-import { MONTHS_SHORT } from "@/utils/forecast";
-import { Pencil, Sigma } from "lucide-react";
-import { useEffect, useState } from "react";
+import { MONTHS_FULL, MONTHS_SHORT } from "@/utils/forecast";
+import { Lock, Pencil, RefreshCw, Sigma } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 interface ForecastFlowDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (flow: Omit<ForecastFlow, "id" | "sortOrder">) => void;
+  onSubmit: (
+    flow: Omit<ForecastFlow, "id" | "sortOrder">,
+    memberIds?: string[],
+  ) => void;
   editingFlow?: ForecastFlow;
   defaultYear: number;
   accounts: Account[];
@@ -41,6 +46,7 @@ const RULE_SOURCES: {
   { key: "expenses", label: "Expenses", type: "out" },
   { key: "deposits", label: "Income", type: "in" },
   { key: "plans", label: "Plans", type: "out" },
+  { key: "picked", label: "Picked records", type: "out" },
 ];
 
 const PROJECTIONS: { key: ForecastProjection; label: string; hint: string }[] = [
@@ -76,6 +82,11 @@ export function ForecastFlowDialog({
   const [projection, setProjection] = useState<ForecastProjection>("none");
   const [projectionWindow, setProjectionWindow] = useState("3");
   const [fixedValue, setFixedValue] = useState("");
+
+  // Member picking
+  const [pickable, setPickable] = useState<PickableExpense[]>([]);
+  const [pickLoading, setPickLoading] = useState(false);
+  const [memberIds, setMemberIds] = useState<string[]>([]);
 
   const isEditing = !!editingFlow;
 
@@ -119,6 +130,8 @@ export function ForecastFlowDialog({
       setProjectionWindow("3");
       setFixedValue("");
     }
+    setPickable([]);
+    setMemberIds([]);
   }, [open, editingFlow, defaultYear]);
 
   // Direction follows the source for a computed flow: expenses and plans go
@@ -137,6 +150,53 @@ export function ForecastFlowDialog({
     setRuleAccounts((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
+  const toggleMember = (id: string) =>
+    setMemberIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+
+  const isPicked = ruleSource === "picked";
+
+  // Load the year's expenses only when the picker is actually on screen.
+  useEffect(() => {
+    if (!open || mode !== "computed" || !isPicked) return;
+    let cancelled = false;
+    setPickLoading(true);
+    dataService
+      .getPickableExpenses(`${year}-01`, `${year}-12`)
+      .then((rows) => {
+        if (cancelled) return;
+        setPickable(rows);
+        // Whatever already belongs to this flow starts ticked.
+        if (editingFlow) {
+          setMemberIds(
+            rows.filter((r) => r.forecastFlowId === editingFlow.id).map((r) => r.id),
+          );
+        }
+      })
+      .catch((e) => console.error("Failed to load expenses:", e))
+      .finally(() => !cancelled && setPickLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, mode, isPicked, year, editingFlow]);
+
+  const picked = useMemo(
+    () => pickable.filter((p) => memberIds.includes(p.id)),
+    [pickable, memberIds],
+  );
+  const pickedTotal = picked.reduce((s, p) => s + p.amount, 0);
+
+  // Grouped by month, so a group spanning months is obvious while picking.
+  const pickableByMonth = useMemo(() => {
+    const map = new Map<number, PickableExpense[]>();
+    for (const p of pickable) {
+      const m = Number(p.date.slice(5, 7));
+      if (!map.has(m)) map.set(m, []);
+      map.get(m)!.push(p);
+    }
+    return [...map.entries()].sort((a, b) => a[0] - b[0]);
+  }, [pickable]);
 
   const toggleMonth = (m: number) =>
     setMonths((prev) =>
@@ -147,12 +207,26 @@ export function ForecastFlowDialog({
 
   const computed = mode === "computed";
 
+  const pickedMode = computed && isPicked;
+
+  // A picked group lives wherever its members fall — their dates decide, not
+  // the month grid. Stored anyway so the row still knows where it belongs even
+  // if every member is later deleted.
+  const memberMonths = useMemo(
+    () =>
+      [...new Set(picked.map((p) => Number(p.date.slice(5, 7))))].sort(
+        (a, b) => a - b,
+      ),
+    [picked],
+  );
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (months.length === 0) return;
+    const effectiveMonths = pickedMode ? memberMonths : months;
+    if (effectiveMonths.length === 0) return;
     const flow: Omit<ForecastFlow, "id" | "sortOrder"> = {
       year,
-      months: [...months].sort((a, b) => a - b),
+      months: [...effectiveMonths].sort((a, b) => a - b),
       type,
       name: name.trim() || undefined,
       // A computed flow carries no amount of its own — the months hold the
@@ -176,17 +250,14 @@ export function ForecastFlowDialog({
           }
         : undefined,
     };
-    onSubmit(flow);
+    onSubmit(flow, pickedMode ? memberIds : undefined);
     onOpenChange(false);
   };
 
-  const valid =
-    months.length > 0 &&
-    (computed
-      ? name.trim().length > 0
-      : uncertain
-        ? low !== "" && high !== ""
-        : amount !== "");
+  const valid = computed
+    ? name.trim().length > 0 &&
+      (pickedMode ? memberIds.length > 0 : months.length > 0)
+    : months.length > 0 && (uncertain ? low !== "" && high !== "" : amount !== "");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -307,7 +378,22 @@ export function ForecastFlowDialog({
             />
           </div>
 
-          {/* Months */}
+          {/* Months — a picked group takes its months from its members */}
+          {pickedMode ? (
+            <div className="space-y-1.5">
+              <Label className={cn("text-sm", paperTheme.fonts.handwriting)}>
+                Months
+              </Label>
+              <p className="flex items-center gap-1.5 text-xs text-stone-500 px-3 py-2 rounded-xl border-2 border-dashed border-teal-200 bg-white/60">
+                <Lock className="w-3.5 h-3.5 shrink-0" />
+                {memberMonths.length === 0
+                  ? "Taken from whichever records you pick below."
+                  : `From the records picked: ${memberMonths
+                      .map((m) => MONTHS_SHORT[m - 1])
+                      .join(", ")}`}
+              </p>
+            </div>
+          ) : (
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label className={cn("text-sm", paperTheme.fonts.handwriting)}>Months</Label>
@@ -341,6 +427,7 @@ export function ForecastFlowDialog({
               })}
             </div>
           </div>
+          )}
 
           {/* Computed: what to total, and from where */}
           {computed && (
@@ -368,6 +455,93 @@ export function ForecastFlowDialog({
                 </div>
               </div>
 
+              {/* Picked: choose the individual records that make up the line */}
+              {isPicked ? (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className={cn("text-sm", paperTheme.fonts.handwriting)}>
+                      Records in {year}
+                    </Label>
+                    <span className="text-xs font-bold tabular-nums text-teal-700">
+                      {memberIds.length} picked · {formatCurrency(pickedTotal)}
+                    </span>
+                  </div>
+
+                  {pickLoading ? (
+                    <div className="flex justify-center py-6">
+                      <RefreshCw className="w-5 h-5 text-teal-500 animate-spin" />
+                    </div>
+                  ) : pickableByMonth.length === 0 ? (
+                    <p className="text-xs text-stone-400 py-4 text-center">
+                      No expenses recorded in {year}.
+                    </p>
+                  ) : (
+                    <div className="max-h-64 overflow-y-auto rounded-lg border border-stone-200 bg-white divide-y divide-stone-100">
+                      {pickableByMonth.map(([month, rows]) => (
+                        <div key={month}>
+                          <div className="sticky top-0 px-2 py-1 bg-stone-50 border-b border-stone-100 text-[11px] font-bold text-stone-500">
+                            {MONTHS_FULL[month - 1]}
+                          </div>
+                          {rows.map((p) => {
+                            const on = memberIds.includes(p.id);
+                            // Claimed by another grouped line, so it can't also
+                            // belong here without being counted twice.
+                            const takenElsewhere =
+                              !!p.forecastFlowId &&
+                              p.forecastFlowId !== editingFlow?.id;
+                            return (
+                              <label
+                                key={p.id}
+                                title={
+                                  takenElsewhere
+                                    ? "Already part of another grouped forecast line"
+                                    : p.inForecast
+                                      ? "Marked on its own — picking it here moves it into this group"
+                                      : undefined
+                                }
+                                className={cn(
+                                  "flex items-center gap-2 px-2 py-1 text-xs",
+                                  takenElsewhere
+                                    ? "opacity-40 cursor-not-allowed"
+                                    : "cursor-pointer hover:bg-teal-50/60",
+                                  on && "bg-teal-50",
+                                )}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={on}
+                                  disabled={takenElsewhere}
+                                  onChange={() => toggleMember(p.id)}
+                                  className="w-3.5 h-3.5 accent-teal-500 shrink-0"
+                                />
+                                <span className="w-10 shrink-0 text-stone-400 tabular-nums">
+                                  {p.date.slice(8, 10)}/{p.date.slice(5, 7)}
+                                </span>
+                                <span className="flex-1 min-w-0 truncate text-stone-700">
+                                  {p.note || p.category || "Expense"}
+                                </span>
+                                {p.inForecast && !on && (
+                                  <span className="text-[9px] text-sky-700 bg-sky-100 px-1 rounded shrink-0">
+                                    marked
+                                  </span>
+                                )}
+                                <span className="shrink-0 tabular-nums font-medium text-stone-600">
+                                  {formatCurrency(p.amount)}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-stone-500">
+                    These add up to one line. Edit or delete any of them and the
+                    total follows; nothing here is copied.
+                  </p>
+                </div>
+              ) : (
+              <>
               <div className="space-y-1.5">
                 <Label className={cn("text-sm", paperTheme.fonts.handwriting)}>
                   From accounts
@@ -476,11 +650,13 @@ export function ForecastFlowDialog({
                   </div>
                 )}
               </div>
+              </>
+              )}
 
               <p className="text-xs text-stone-500 border-t border-teal-200/70 pt-2">
-                Past and current months always use the real total, so this month
-                shows what you have actually spent so far. Only the months
-                selected above are affected.
+                {isPicked
+                  ? "Picking a record moves it here from wherever else it sat on the forecast, so nothing is counted twice."
+                  : "Past and current months always use the real total, so this month shows what you have actually spent so far. Only the months selected above are affected."}
               </p>
             </div>
           )}

@@ -55,13 +55,32 @@ export type ForecastSource = {
 // flow = that flow is computed; absent = an ordinary typed flow. Everything
 // else about the flow (name, year, months, on/off) works exactly the same,
 // which is what scopes a rule to the months you actually want it on.
-export type ForecastRuleSource = "expenses" | "deposits" | "plans";
+export type ForecastRuleSource =
+  | "expenses"
+  | "deposits"
+  | "plans"
+  // Members are the records that point at this flow, hand-picked, rather than
+  // whatever happens to match a filter.
+  | "picked";
 export type ForecastProjection =
   | "none" // future months contribute nothing (historical overlay)
   | "average"
   | "median"
   | "last"
   | "fixed";
+
+// One expense as offered in the member picker, with enough context to choose
+// it and to see whether it is already claimed elsewhere on the forecast.
+export type PickableExpense = {
+  id: string;
+  date: string; // YYYY-MM-DD
+  amount: number;
+  note?: string;
+  category?: string;
+  accountId?: string;
+  inForecast: boolean;
+  forecastFlowId?: string;
+};
 
 export type ForecastRuleSpec = {
   source: ForecastRuleSource;
@@ -124,6 +143,7 @@ export type AccountTransaction = {
   // Forecast link (deposits only — see the 20260810 migration).
   inForecast?: boolean;
   forecastEnabled?: boolean;
+  forecastFlowId?: string;
 };
 
 // Budget Allocation type - links accounts to monthly budgets
@@ -170,6 +190,9 @@ export type Expense = {
   // month of `date`; forecastEnabled = counted in the band (toggle, not removal).
   inForecast?: boolean;
   forecastEnabled?: boolean;
+  // Set when this expense is one member of a grouped forecast line. Mutually
+  // exclusive with inForecast — a record has exactly one home on the forecast.
+  forecastFlowId?: string;
 };
 
 // Plan type - with optional categoryId for new system
@@ -187,6 +210,7 @@ export type PlanItem = {
   // Carried over to the expense created when the plan is marked paid.
   inForecast?: boolean;
   forecastEnabled?: boolean;
+  forecastFlowId?: string;
 };
 
 export type DraftItem = {
@@ -507,6 +531,7 @@ export class DataService {
             note: row.note || undefined,
             inForecast: !!row.in_forecast,
             forecastEnabled: row.forecast_enabled !== false,
+            forecastFlowId: row.forecast_flow_id || undefined,
           })) || [];
 
         // Update local store to stay in sync
@@ -710,6 +735,7 @@ export class DataService {
             targetDate: row.target_date || undefined,
             inForecast: !!row.in_forecast,
             forecastEnabled: row.forecast_enabled !== false,
+            forecastFlowId: row.forecast_flow_id || undefined,
           })) || [];
 
         // Update local store to stay in sync
@@ -785,8 +811,10 @@ export class DataService {
         if (updates.note !== undefined) dbUpdates.note = updates.note;
         if (updates.targetDate !== undefined)
           dbUpdates.target_date = updates.targetDate;
-        if (updates.inForecast !== undefined)
+        if (updates.inForecast !== undefined) {
           dbUpdates.in_forecast = updates.inForecast;
+          if (updates.inForecast) dbUpdates.forecast_flow_id = null;
+        }
         if (updates.forecastEnabled !== undefined)
           dbUpdates.forecast_enabled = updates.forecastEnabled;
 
@@ -1069,8 +1097,12 @@ export class DataService {
           dbUpdates.account_id = updates.accountId || null;
         if (updates.note !== undefined) dbUpdates.note = updates.note;
         if (updates.date !== undefined) dbUpdates.date = updates.date;
-        if (updates.inForecast !== undefined)
+        if (updates.inForecast !== undefined) {
           dbUpdates.in_forecast = updates.inForecast;
+          // A record has one home on the forecast, and the DB enforces it.
+          // Marking one individually takes it out of whatever group held it.
+          if (updates.inForecast) dbUpdates.forecast_flow_id = null;
+        }
         if (updates.forecastEnabled !== undefined)
           dbUpdates.forecast_enabled = updates.forecastEnabled;
 
@@ -3457,7 +3489,11 @@ export class DataService {
     const now = new Date();
     const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-    const needed = new Set(defs.map((f) => f.rule!.source));
+    // 'picked' groups draw from the expenses table like an expense filter does;
+    // they just select by membership instead of by account.
+    const needed = new Set(
+      defs.map((f) => (f.rule!.source === "picked" ? "expenses" : f.rule!.source)),
+    );
     const rows: Partial<Record<ForecastRuleSource, AggregateRow[]>> = {};
     for (const src of needed) {
       rows[src] = await this.loadAggregateRows(src, from, to);
@@ -3468,18 +3504,26 @@ export class DataService {
 
     for (const def of defs) {
       const rule = def.rule!;
-      const all = rows[rule.source] ?? [];
+      const picked = rule.source === "picked";
+      const all = rows[picked ? "expenses" : rule.source] ?? [];
       const accounts = new Set(rule.accountIds);
       const categories = new Set(rule.categoryIds);
 
       // Month -> summed magnitude, over the rows this rule actually matches.
       const byMonth = new Map<string, number>();
       for (const r of all) {
-        if (accounts.size > 0 && (!r.accountId || !accounts.has(r.accountId)))
-          continue;
-        if (categories.size > 0 && (!r.categoryId || !categories.has(r.categoryId)))
-          continue;
-        if (rule.excludeLinked && r.inForecast) continue;
+        if (picked) {
+          // Membership is the whole filter — nothing else applies.
+          if (r.forecastFlowId !== def.id) continue;
+        } else {
+          if (accounts.size > 0 && (!r.accountId || !accounts.has(r.accountId)))
+            continue;
+          if (categories.size > 0 && (!r.categoryId || !categories.has(r.categoryId)))
+            continue;
+          // Skip anything already on the forecast in its own right — marked
+          // individually, or claimed by a grouped line.
+          if (rule.excludeLinked && (r.inForecast || r.forecastFlowId)) continue;
+        }
         byMonth.set(r.monthKey, (byMonth.get(r.monthKey) ?? 0) + r.amount);
       }
 
@@ -3500,11 +3544,21 @@ export class DataService {
       // nothing at all, so it vanished from every view that is built from the
       // expansion — including the default one. Zero adds nothing to the
       // maths, and "no spending recorded yet" is worth seeing.
-      for (const m of def.months) {
+      // A picked group sits wherever its members actually fall — their dates
+      // decide, not a month grid — and projects nothing, because its members
+      // are things that already happened.
+      const monthNumbers = picked
+        ? [...byMonth.keys()]
+            .map((k) => Number(k.slice(5, 7)))
+            .sort((a, b) => a - b)
+        : def.months;
+
+      for (const m of monthNumbers) {
         if (m < 1 || m > 12) continue;
         const monthKey = `${year}-${String(m).padStart(2, "0")}`;
         const actual = byMonth.get(monthKey) ?? 0;
-        const value = monthKey <= currentMonthKey ? actual : projected;
+        const value =
+          picked || monthKey <= currentMonthKey ? actual : projected;
         out.push({
           id: `rule:${def.id}:${monthKey}`,
           year,
@@ -3524,6 +3578,109 @@ export class DataService {
     return out;
   }
 
+  // Expenses a grouped line could take as members, for the picker: every
+  // expense in the range, each saying whether it's already spoken for.
+  async getPickableExpenses(
+    fromMonth: string,
+    toMonth: string,
+  ): Promise<PickableExpense[]> {
+    const out: PickableExpense[] = [];
+
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("expenses")
+          .select(
+            "id, month_key, date, amount, note, category, account_id, in_forecast, forecast_flow_id",
+          )
+          .gte("month_key", fromMonth)
+          .lte("month_key", toMonth)
+          .order("date", { ascending: true });
+        if (error) throw error;
+        for (const r of (data as Array<Record<string, unknown>> | null) ?? []) {
+          out.push({
+            id: r.id as string,
+            date: (r.date as string) || `${r.month_key}-01`,
+            amount: Number(r.amount) || 0,
+            note: (r.note as string) || undefined,
+            category: (r.category as string) || undefined,
+            accountId: (r.account_id as string) || undefined,
+            inForecast: !!r.in_forecast,
+            forecastFlowId: (r.forecast_flow_id as string) || undefined,
+          });
+        }
+        return out;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        out.length = 0;
+      }
+    }
+
+    for (const [monthKey, list] of Object.entries(
+      this.localStore.expenses ?? {},
+    )) {
+      if (monthKey < fromMonth || monthKey > toMonth) continue;
+      for (const e of list) {
+        out.push({
+          id: e.id,
+          date: e.date || `${monthKey}-01`,
+          amount: e.amount,
+          note: e.note,
+          category: e.category,
+          accountId: e.accountId,
+          inForecast: !!e.inForecast,
+          forecastFlowId: e.forecastFlowId,
+        });
+      }
+    }
+    return out.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  // Make exactly `expenseIds` the members of `flowId`. Joining a group clears
+  // the record's own mark — a record has one home on the forecast, never two,
+  // which is what keeps it from being counted twice.
+  async setFlowMembers(flowId: string, expenseIds: string[]): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        // Release the previous members first, then claim the new set. Doing it
+        // in this order means an id in both sets is never briefly unlinked.
+        const { error: clearErr } = await supabase
+          .from("expenses")
+          .update({ forecast_flow_id: null } as never)
+          .eq("forecast_flow_id", flowId);
+        if (clearErr) throw clearErr;
+
+        if (expenseIds.length > 0) {
+          const { error: setErr } = await supabase
+            .from("expenses")
+            .update({
+              forecast_flow_id: flowId,
+              in_forecast: false,
+            } as never)
+            .in("id", expenseIds);
+          if (setErr) throw setErr;
+        }
+        return;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+      }
+    }
+
+    const wanted = new Set(expenseIds);
+    for (const [monthKey, list] of Object.entries(
+      this.localStore.expenses ?? {},
+    )) {
+      this.localStore.expenses[monthKey] = list.map((e) => {
+        if (wanted.has(e.id))
+          return { ...e, forecastFlowId: flowId, inForecast: false };
+        if (e.forecastFlowId === flowId)
+          return { ...e, forecastFlowId: undefined };
+        return e;
+      });
+    }
+    saveStoreToLocalStorage(this.localStore);
+  }
+
   // Flat rows a rule can aggregate, normalised across the three sources.
   private async loadAggregateRows(
     source: ForecastRuleSource,
@@ -3540,7 +3697,7 @@ export class DataService {
           const { data, error } = await supabase
             .from(table)
             .select(
-              `id, month_key, ${dateCol}, amount, account_id, category_id, in_forecast`,
+              `id, month_key, ${dateCol}, amount, account_id, category_id, in_forecast, forecast_flow_id`,
             )
             .gte("month_key", fromMonth)
             .lte("month_key", toMonth);
@@ -3553,6 +3710,7 @@ export class DataService {
               accountId: (r.account_id as string) || undefined,
               categoryId: (r.category_id as string) || undefined,
               inForecast: !!r.in_forecast,
+              forecastFlowId: (r.forecast_flow_id as string) || undefined,
             });
           }
           return out;
@@ -3594,6 +3752,7 @@ export class DataService {
             accountId: e.accountId,
             categoryId: e.categoryId,
             inForecast: !!e.inForecast,
+            forecastFlowId: e.forecastFlowId,
           });
         }
       }
@@ -3609,6 +3768,7 @@ export class DataService {
             accountId: p.accountId,
             categoryId: p.categoryId,
             inForecast: !!p.inForecast,
+            forecastFlowId: p.forecastFlowId,
           });
         }
       }
@@ -3711,6 +3871,7 @@ type AggregateRow = {
   accountId?: string;
   categoryId?: string;
   inForecast: boolean;
+  forecastFlowId?: string; // the grouped line this record belongs to, if any
 };
 
 // Shift a "YYYY-MM" key by a whole number of months.
