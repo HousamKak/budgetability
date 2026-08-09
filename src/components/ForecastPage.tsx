@@ -455,7 +455,7 @@ export default function ForecastPage() {
           ) : view === "calendar" ? (
             <CalendarView model={model} />
           ) : (
-            <MonthlyLedger flows={yearFlows} />
+            <MonthlyLedger flows={yearFlows} model={model} />
           )}
         </div>
 
@@ -553,11 +553,17 @@ export default function ForecastPage() {
                   key={month}
                   className="rounded-xl border border-stone-200/70 bg-white/60 overflow-hidden"
                 >
-                  <div className="flex items-center justify-between px-3 py-1.5 bg-amber-50/60 border-b border-stone-100">
+                  {/* Aggregates cover the entries actually listed, so they
+                      track the Manual/Linked filter rather than the whole
+                      month. No running balance here for the same reason. */}
+                  <div className="flex items-center justify-between gap-3 px-3 py-1.5 bg-amber-50/60 border-b border-stone-100 flex-wrap">
                     <span className={cn("text-sm font-bold text-stone-700", paperTheme.fonts.handwriting)}>
                       {MONTHS_FULL[month - 1]}
                     </span>
-                    <span className="text-[11px] text-stone-400">{entries.length}</span>
+                    <MonthStats
+                      summary={summarize(entries)}
+                      count={entries.length}
+                    />
                   </div>
                   <div>
                     {entries.map((f) => (
@@ -872,9 +878,140 @@ function MonthlyPaymentsTable({ flows }: { flows: ForecastFlow[] }) {
   );
 }
 
+// In / out / net for one month's flows, as best/worst bounds. Mirrors
+// monthlyBuckets but over an arbitrary subset, so a filtered list summarises
+// what it actually shows rather than what the whole month holds.
+type MonthSummary = {
+  inBest: number;
+  inWorst: number;
+  outBest: number; // negative
+  outWorst: number; // negative
+  netBest: number;
+  netWorst: number;
+};
+
+function summarize(entries: ForecastFlow[]): MonthSummary {
+  let inBest = 0, inWorst = 0, outBest = 0, outWorst = 0;
+  for (const f of entries) {
+    if (f.enabled === false) continue;
+    const b = flowBounds(f);
+    if (f.type === "in") {
+      inBest += b.best;
+      inWorst += b.worst;
+    } else {
+      outBest += b.best;
+      outWorst += b.worst;
+    }
+  }
+  return {
+    inBest, inWorst, outBest, outWorst,
+    netBest: inBest + outBest,
+    netWorst: inWorst + outWorst,
+  };
+}
+
+// One figure when the best/worst band has no width, a low–high range when it
+// does. Always fed magnitudes; the caller owns the sign.
+function band(a: number, b: number): string {
+  if (Math.abs(a - b) < 0.005) return formatCurrency(Math.abs(a));
+  const lo = Math.min(Math.abs(a), Math.abs(b));
+  const hi = Math.max(Math.abs(a), Math.abs(b));
+  return `${formatCurrency(lo)}–${formatCurrency(hi)}`;
+}
+
+function signedBand(worst: number, best: number): string {
+  const flat = Math.abs(best - worst) < 0.005;
+  if (flat) return `${best >= 0 ? "+" : "−"}${formatCurrency(Math.abs(best))}`;
+  const s = (v: number) => `${v >= 0 ? "+" : "−"}${formatCurrency(Math.abs(v))}`;
+  return `${s(worst)} → ${s(best)}`;
+}
+
+// Compact labelled figure for a month header.
+function Stat({
+  label,
+  value,
+  className,
+  title,
+}: {
+  label: string;
+  value: string;
+  className?: string;
+  title?: string;
+}) {
+  return (
+    <span title={title} className="flex items-baseline gap-1 whitespace-nowrap">
+      <span className="text-[10px] uppercase tracking-wide text-stone-400">
+        {label}
+      </span>
+      <span className={cn("font-bold tabular-nums", className)}>{value}</span>
+    </span>
+  );
+}
+
+// The aggregate strip that sits on the same line as the month name.
+// `balance` is the running end-of-month balance and is only meaningful for the
+// full, unfiltered month — omitted where the list is a subset.
+function MonthStats({
+  summary,
+  balance,
+  count,
+}: {
+  summary: MonthSummary;
+  balance?: { best: number; worst: number };
+  count: number;
+}) {
+  const hasIn = summary.inBest !== 0 || summary.inWorst !== 0;
+  const hasOut = summary.outBest !== 0 || summary.outWorst !== 0;
+  return (
+    <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap text-[11px] justify-end">
+      <Stat
+        label="items"
+        value={String(count)}
+        className="text-stone-500 font-medium"
+      />
+      {hasIn && (
+        <Stat
+          label="in"
+          value={`+${band(summary.inWorst, summary.inBest)}`}
+          className="text-green-700"
+          title="Money coming in this month"
+        />
+      )}
+      {hasOut && (
+        <Stat
+          label="out"
+          value={`−${band(summary.outWorst, summary.outBest)}`}
+          className="text-red-600"
+          title="Money going out this month"
+        />
+      )}
+      <Stat
+        label="net"
+        value={signedBand(summary.netWorst, summary.netBest)}
+        className={summary.netBest >= 0 ? "text-green-700" : "text-red-600"}
+        title="In minus out for this month"
+      />
+      {balance && (
+        <Stat
+          label="bal"
+          value={band(balance.worst, balance.best)}
+          className={balance.worst >= 0 ? "text-stone-700" : "text-red-600"}
+          title="Running balance at the end of this month"
+        />
+      )}
+    </div>
+  );
+}
+
 // "By Month" — a vertical agenda: each month with flows, its individual
-// payments listed beneath, and a per-month total (range when uncertain).
-function MonthlyLedger({ flows }: { flows: ForecastFlow[] }) {
+// payments listed beneath, and the month's aggregates in the header.
+function MonthlyLedger({
+  flows,
+  model,
+}: {
+  flows: ForecastFlow[];
+  model: ReturnType<typeof computeForecast>;
+}) {
   const monthsWithFlows = Array.from({ length: 12 }, (_, i) => i + 1)
     .map((month) => ({
       month,
@@ -895,33 +1032,22 @@ function MonthlyLedger({ flows }: { flows: ForecastFlow[] }) {
   return (
     <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
       {monthsWithFlows.map(({ month, entries }) => {
-        const total = entries.reduce(
-          (acc, f) => {
-            const b = flowBounds(f);
-            return { best: acc.best + b.best, worst: acc.worst + b.worst };
-          },
-          { best: 0, worst: 0 },
-        );
-        const sameTotal = Math.abs(total.best - total.worst) < 0.005;
+        const summary = summarize(entries);
+        const point = model.series[month - 1];
         return (
           <div
             key={month}
             className="rounded-xl border border-stone-200/70 bg-white/70 overflow-hidden"
           >
-            <div className="flex items-center justify-between px-3 py-2 bg-amber-50/60 border-b border-stone-100">
+            <div className="flex items-center justify-between gap-3 px-3 py-2 bg-amber-50/60 border-b border-stone-100 flex-wrap">
               <span className={cn("text-sm font-bold text-stone-700", "handwriting")}>
                 {MONTHS_FULL[month - 1]}
               </span>
-              <span
-                className={cn(
-                  "text-sm font-bold tabular-nums",
-                  total.best >= 0 ? "text-green-700" : "text-red-600",
-                )}
-              >
-                {sameTotal
-                  ? `${total.best >= 0 ? "+" : ""}${formatCurrency(total.best)}`
-                  : `${formatCurrency(total.worst)} → ${formatCurrency(total.best)}`}
-              </span>
+              <MonthStats
+                summary={summary}
+                balance={{ best: point.best, worst: point.worst }}
+                count={entries.length}
+              />
             </div>
             <div className="divide-y divide-stone-100">
               {entries.map((f) => {
