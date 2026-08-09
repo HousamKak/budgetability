@@ -2,7 +2,6 @@ import { Button } from "@/components/ui/button";
 import type {
   Account,
   ForecastFlow,
-  ForecastRule,
   ForecastSourceKind,
 } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
@@ -34,7 +33,6 @@ import { ForecastBars } from "./forecast/ForecastBars";
 import { ForecastChart } from "./forecast/ForecastChart";
 import { ForecastFlowDialog } from "./forecast/ForecastFlowDialog";
 import { ForecastImportDialog } from "./forecast/ForecastImportDialog";
-import { ForecastRuleDialog } from "./forecast/ForecastRuleDialog";
 import { ForecastStartDialog } from "./forecast/ForecastStartDialog";
 import {
   MONTHS_FULL,
@@ -51,12 +49,9 @@ const CURRENT_YEAR = new Date().getFullYear();
 const CURRENT_MONTH_IDX = new Date().getMonth(); // 0..11, for the "now" marker
 const START_KEY = "forecast-opening-balance";
 
-// Linked flows (marked expenses / plans / deposits) are drawn in sky blue
-// everywhere so they read as "came from my real data" at a glance — distinct
-// from amber (hand-written flows), violet (ghosts) and the green/red that
-// already encode direction.
-// Rules get their own colour again — teal — because they behave differently
-// from a linked record: one definition standing in for many transactions.
+// Where a line's number came from, by colour: amber for one you typed, sky for
+// one linked to a single record, teal for one computed from many. Violet stays
+// ghosts, and green/red keep encoding direction.
 const SOURCE_LABEL: Record<ForecastSourceKind, string> = {
   expense: "Expense",
   plan: "Plan",
@@ -80,14 +75,14 @@ function monthsLabel(months: number[]): string {
 }
 
 export default function ForecastPage() {
-  // Hand-written flows and flows derived from marked real records are kept
-  // apart in state (they persist very differently) and merged only for display
-  // and for the maths.
+  // Typed and computed flows both live in forecast_flows and are split here
+  // because a computed one carries no amount until it's expanded into
+  // per-month lines. Flows derived from individually marked records are kept
+  // apart again — they persist differently. All merged for display and maths.
   const [manualFlows, setManualFlows] = useState<ForecastFlow[]>([]);
+  const [ruleDefs, setRuleDefs] = useState<ForecastFlow[]>([]);
   const [linkedFlows, setLinkedFlows] = useState<ForecastFlow[]>([]);
-  // Rule-derived flows are re-evaluated per year, so they live apart again.
   const [ruleFlows, setRuleFlows] = useState<ForecastFlow[]>([]);
-  const [rules, setRules] = useState<ForecastRule[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [year, setYear] = useState(CURRENT_YEAR);
@@ -96,8 +91,6 @@ export default function ForecastPage() {
   const [showFlowDialog, setShowFlowDialog] = useState(false);
   const [editingFlow, setEditingFlow] = useState<ForecastFlow | undefined>();
   const [showImport, setShowImport] = useState(false);
-  const [showRuleDialog, setShowRuleDialog] = useState(false);
-  const [editingRule, setEditingRule] = useState<ForecastRule | undefined>();
   const [flowsView, setFlowsView] = useState<"flow" | "month">("month");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [startBalance, setStartBalance] = useState<number>(loadStartBalance);
@@ -111,18 +104,17 @@ export default function ForecastPage() {
   async function loadData() {
     try {
       setLoading(true);
-      const [manual, linked, evaluated, ruleDefs, accts] = await Promise.all([
+      const [stored, linked, accts] = await Promise.all([
         dataService.getForecastFlows(),
         dataService.getLinkedForecastFlows(),
-        dataService.getRuleForecastFlows(year),
-        dataService.getForecastRules(),
         dataService.getAccounts(),
       ]);
-      setManualFlows(manual);
+      const defs = stored.filter((f) => f.rule);
+      setManualFlows(stored.filter((f) => !f.rule));
+      setRuleDefs(defs);
       setLinkedFlows(linked);
-      setRuleFlows(evaluated);
-      setRules(ruleDefs);
       setAccounts(accts);
+      setRuleFlows(await dataService.evaluateRuleFlows(defs, year));
     } catch (e) {
       console.error("Failed to load forecast:", e);
     } finally {
@@ -195,27 +187,22 @@ export default function ForecastPage() {
   // muted or empty rule stays visible and switchable.
   const ruleRows = useMemo<ForecastFlow[]>(
     () =>
-      rules.map((rule, i) => {
-        const mine = ruleFlows.filter((f) => f.source?.id === rule.id);
-        const total = mine.reduce((s, f) => s + (f.value ?? 0), 0);
-        const months = [...new Set(mine.flatMap((f) => f.months))].sort(
-          (a, b) => a - b,
-        );
-        return {
-          id: `rulerow:${rule.id}`,
-          year,
-          months,
-          type: rule.source === "deposits" ? "in" : "out",
-          name: rule.name,
-          uncertain: false,
-          value: total,
-          isGhost: false,
-          enabled: rule.enabled,
-          sortOrder: 2_000_000 + i,
-          source: { kind: "rule", id: rule.id, monthKey: `${year}-01` },
-        };
-      }),
-    [rules, ruleFlows, year],
+      ruleDefs
+        .filter((def) => def.year === year)
+        .map((def) => {
+          const mine = ruleFlows.filter((f) => f.source?.id === def.id);
+          return {
+            ...def,
+            // The stored row holds no amount; show the year total it produced.
+            value: mine.reduce((s, f) => s + (f.value ?? 0), 0),
+            source: {
+              kind: "rule" as const,
+              id: def.id,
+              monthKey: `${year}-01`,
+            },
+          };
+        }),
+    [ruleDefs, ruleFlows, year],
   );
 
   const byFlowList = useMemo(() => {
@@ -281,20 +268,18 @@ export default function ForecastPage() {
   const toggleFlow = async (f: ForecastFlow) => {
     const next = !f.enabled;
 
-    // A rule's switch lives on the rule, so one click mutes all twelve of the
-    // lines it emits.
+    // A computed flow's switch lives on the stored row, so one click mutes
+    // every month it expanded into.
     if (f.source?.kind === "rule") {
-      const ruleId = f.source.id;
-      setRules((prev) =>
-        prev.map((r) => (r.id === ruleId ? { ...r, enabled: next } : r)),
+      const defId = f.source.id;
+      setRuleDefs((prev) =>
+        prev.map((d) => (d.id === defId ? { ...d, enabled: next } : d)),
       );
       setRuleFlows((prev) =>
-        prev.map((x) =>
-          x.source?.id === ruleId ? { ...x, enabled: next } : x,
-        ),
+        prev.map((x) => (x.source?.id === defId ? { ...x, enabled: next } : x)),
       );
       try {
-        await dataService.updateForecastRule(ruleId, { enabled: next });
+        await dataService.updateForecastFlow(defId, { enabled: next });
       } catch (e) {
         console.error(e);
         await loadData();
@@ -326,12 +311,12 @@ export default function ForecastPage() {
     if (f.source?.kind === "rule") {
       if (
         !confirm(
-          `Delete the rule "${label}"?\n\nIt stops totalling on the forecast. None of your expenses, plans or income are touched.`,
+          `Delete "${label}"?\n\nIt stops totalling on the forecast. None of your expenses, plans or income are touched.`,
         )
       )
         return;
       try {
-        await dataService.removeForecastRule(f.source.id);
+        await dataService.removeForecastFlow(f.source.id);
         await loadData();
       } catch (e) {
         console.error(e);
@@ -368,35 +353,20 @@ export default function ForecastPage() {
   // Linked flows are read-only here: their amount, name and month belong to the
   // source record, so there is nothing on this page to edit.
   const editFlow = (f: ForecastFlow) => {
-    // A rule is editable — its definition is the thing you'd change. Records
-    // linked one-by-one are not: everything about them lives on the record.
+    // A computed flow is editable — it's a flow, and the same dialog opens on
+    // it. Records linked one-by-one are not: everything about them lives on
+    // the record itself.
     if (f.source?.kind === "rule") {
-      const rule = rules.find((r) => r.id === f.source!.id);
-      if (rule) {
-        setEditingRule(rule);
-        setShowRuleDialog(true);
+      const def = ruleDefs.find((d) => d.id === f.source!.id);
+      if (def) {
+        setEditingFlow(def);
+        setShowFlowDialog(true);
       }
       return;
     }
     if (f.source) return;
     setEditingFlow(f);
     setShowFlowDialog(true);
-  };
-
-  const handleSubmitRule = async (
-    rule: Omit<ForecastRule, "id" | "sortOrder">,
-  ) => {
-    try {
-      if (editingRule) {
-        await dataService.updateForecastRule(editingRule.id, rule);
-      } else {
-        await dataService.addForecastRule({ ...rule, sortOrder: rules.length });
-      }
-      setEditingRule(undefined);
-      await loadData();
-    } catch (e) {
-      console.error("Failed to save rule:", e);
-    }
   };
 
   const netBest = model.yearEnd.best - model.start.best;
@@ -482,18 +452,6 @@ export default function ForecastPage() {
               Import
             </Button>
             <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setEditingRule(undefined);
-                setShowRuleDialog(true);
-              }}
-              className="border-teal-300 text-teal-700 hover:bg-teal-50"
-            >
-              <Sigma className="w-4 h-4 mr-1" />
-              New Rule
-            </Button>
-            <Button
               size="sm"
               onClick={() => {
                 setEditingFlow(undefined);
@@ -560,7 +518,7 @@ export default function ForecastPage() {
                   Linked
                 </span>
               )}
-              {rules.length > 0 && (
+              {ruleRows.length > 0 && (
                 <span className="flex items-center gap-1 text-teal-600">
                   <Sigma className="w-3 h-3" />
                   Rule totals
@@ -626,11 +584,11 @@ export default function ForecastPage() {
                 {linkedCount > 0 && (
                   <span className="text-sky-600"> · {linkedCount} linked</span>
                 )}
-                {rules.length > 0 && (
-                  <span className="text-teal-600"> · {rules.length} rules</span>
+                {ruleRows.length > 0 && (
+                  <span className="text-teal-600"> · {ruleRows.length} computed</span>
                 )}
               </span>
-              {(linkedCount > 0 || rules.length > 0) && (
+              {(linkedCount > 0 || ruleRows.length > 0) && (
                 <div className="flex items-center rounded-lg border-2 border-amber-200 bg-white p-0.5">
                   {(
                     [
@@ -639,7 +597,7 @@ export default function ForecastPage() {
                       ...(linkedCount > 0
                         ? ([["linked", "Linked"]] as [SourceFilter, string][])
                         : []),
-                      ...(rules.length > 0
+                      ...(ruleRows.length > 0
                         ? ([["rules", "Rules"]] as [SourceFilter, string][])
                         : []),
                     ] as [SourceFilter, string][]
@@ -750,21 +708,12 @@ export default function ForecastPage() {
           onSubmit={handleSubmitFlow}
           editingFlow={editingFlow}
           defaultYear={year}
+          accounts={accounts}
         />
         <ForecastImportDialog
           open={showImport}
           onOpenChange={setShowImport}
           onImport={handleImport}
-        />
-        <ForecastRuleDialog
-          open={showRuleDialog}
-          onOpenChange={(o) => {
-            setShowRuleDialog(o);
-            if (!o) setEditingRule(undefined);
-          }}
-          onSubmit={handleSubmitRule}
-          editingRule={editingRule}
-          accounts={accounts}
         />
         <ForecastStartDialog
           open={showStartDialog}
