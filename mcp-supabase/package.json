@@ -6,12 +6,14 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "budgetability-mcp-supabase": "dist/index.js"
+    "budgetability-mcp-supabase": "dist/index.js",
+    "budgetability-mcp-announce": "scripts/h-announce.mjs"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "announce": "node scripts/h-announce.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",

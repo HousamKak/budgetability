@@ -71,3 +71,44 @@ Schema) via `POST {url}/register`, heartbeats every
 `{url}/unregister` on shutdown. Optional `MCP_REGISTRY_TOKEN` is sent as a
 bearer token. Unset = disabled; a failing registry never affects the
 server. Full contract: [docs/MCP-REGISTRY.md](../docs/MCP-REGISTRY.md).
+
+## Registering with the H orchestrator (self-announce, like comms-hub)
+
+Budgetability stays an external, standalone MCP server — it does **not** live
+inside H. It registers itself the **same way comms-hub does**: on startup (and on
+a TTL timer) it POSTs its **launch spec** to H's registry at
+`POST {H}/api/mcp-servers/announce` (auth: `x-api-key`) with a 1-hour TTL. H then
+merges every *live* registry server into the MCP config of every terminal/agent
+it spawns — and **spawns this server itself** (`node dist/index.js`) per consumer.
+Each spawned instance re-announces on startup, so the entry stays `up`
+resiliently (many short-lived registrars on a long TTL), instead of dying with a
+single standalone heartbeat process.
+
+So you no longer launch through a hook — just run the server directly, exactly
+like comms-hub's `node dist/mcp.js`:
+
+```bash
+SUPABASE_EMAIL=you@example.com SUPABASE_PASSWORD=your-password \
+  node dist/index.js          # serves stdio AND self-registers with H
+```
+
+Run it once (leave the terminal open, or let it re-announce every 30 min to keep
+itself `up`); once it's `up`, H respawns it into every agent/terminal on demand.
+The first launch's `SUPABASE_*` creds travel **inside the launch spec's env**, so
+every H-spawned instance can sign in and re-announce without re-supplying them.
+
+Config (all optional, env overrides): `H_API_BASE` (default
+`http://127.0.0.1:3100`), `H_API_KEY` / `H_MCP_KEY_FILE` (default reads
+`D:\dev\H\data\mcp-api-key`), `H_REGISTER=0` to disable. Against the desktop app
+set `H_API_BASE=http://127.0.0.1:4100`. Registration is best-effort — if H is
+unreachable the MCP server still runs normally, only discovery is lost.
+
+> The old `scripts/h-announce.mjs` hook (single process, short TTL) is now
+> obsolete — the server self-announces. Wiring it into a Claude client still
+> works the same, just point at `dist/index.js`:
+>
+> ```bash
+> claude mcp add budgetability-live \
+>   -e SUPABASE_EMAIL=you@example.com -e SUPABASE_PASSWORD=your-password \
+>   -- node <absolute path>/mcp-supabase/dist/index.js
+> ```
