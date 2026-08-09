@@ -42,12 +42,38 @@ export type AccountGroupMember = {
 // forecast_flows table. Present = the flow is *derived* from a real record the
 // user marked with "Show in Forecast"; it has no row of its own, so its amount,
 // name and month always track the source.
-export type ForecastSourceKind = "expense" | "plan" | "deposit";
+export type ForecastSourceKind = "expense" | "plan" | "deposit" | "rule";
 
 export type ForecastSource = {
   kind: ForecastSourceKind;
-  id: string; // the source record's id
+  id: string; // the source record's id (or the rule's id)
   monthKey: string; // the source's month, for routing edits back
+};
+
+// A saved query that emits one forecast line per month, automatically. Where a
+// marked record is one record in one month, a rule is a filter over all of
+// them — "sum the expenses on these accounts, month by month" — so it keeps
+// itself current as new spending lands.
+export type ForecastRuleSource = "expenses" | "deposits" | "plans";
+export type ForecastProjection =
+  | "none" // future months contribute nothing (historical overlay)
+  | "average"
+  | "median"
+  | "last"
+  | "fixed";
+
+export type ForecastRule = {
+  id: string;
+  name: string;
+  source: ForecastRuleSource;
+  accountIds: string[]; // empty = every account
+  categoryIds: string[]; // empty = every category
+  excludeLinked: boolean; // skip records already marked individually
+  projection: ForecastProjection;
+  projectionWindow: number; // months of history the projection learns from
+  fixedValue?: number;
+  enabled: boolean;
+  sortOrder: number;
 };
 
 // Forecast flow type - a projected inflow/outflow across months of a year.
@@ -190,6 +216,7 @@ export type Store = {
   savingsContributions: SavingsContribution[];
   spreadsheetEntries: ManualEntry[];
   forecastFlows: ForecastFlow[];
+  forecastRules: ForecastRule[];
 };
 
 // Default categories seed data
@@ -270,6 +297,7 @@ const defaultStore: Store = {
   savingsContributions: [],
   spreadsheetEntries: [],
   forecastFlows: [],
+  forecastRules: [],
 };
 
 function loadStoreFromLocalStorage(): Store {
@@ -295,6 +323,7 @@ function loadStoreFromLocalStorage(): Store {
           savingsContributions: [],
           spreadsheetEntries: [],
           forecastFlows: [],
+          forecastRules: [],
         };
         saveStoreToLocalStorage(migrated);
         return migrated;
@@ -326,6 +355,7 @@ function loadStoreFromLocalStorage(): Store {
       savingsContributions: parsed.savingsContributions ?? [],
       spreadsheetEntries: parsed.spreadsheetEntries ?? [],
       forecastFlows: parsed.forecastFlows ?? [],
+      forecastRules: parsed.forecastRules ?? [],
     };
   } catch {
     return { ...defaultStore };
@@ -3398,6 +3428,292 @@ export class DataService {
     saveStoreToLocalStorage(this.localStore);
   }
 
+  // ============================================
+  // FORECAST RULES (saved queries that aggregate per month)
+  // ============================================
+
+  async getForecastRules(): Promise<ForecastRule[]> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from("forecast_rules")
+          .select("*")
+          .order("sort_order", { ascending: true });
+        if (error) throw error;
+        return ((data as Array<Record<string, unknown>> | null) ?? []).map(
+          ruleRowToRule,
+        );
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+      }
+    }
+    return this.localStore.forecastRules ?? [];
+  }
+
+  async addForecastRule(rule: Omit<ForecastRule, "id">): Promise<ForecastRule> {
+    const created: ForecastRule = { id: crypto.randomUUID(), ...rule };
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser();
+        if (user) {
+          const { error } = await supabase
+            .from("forecast_rules")
+            .insert(ruleToRow(created, user.id) as never);
+          if (error) throw error;
+          return created;
+        }
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+      }
+    }
+    this.localStore.forecastRules = [
+      ...(this.localStore.forecastRules ?? []),
+      created,
+    ];
+    saveStoreToLocalStorage(this.localStore);
+    return created;
+  }
+
+  async updateForecastRule(
+    id: string,
+    updates: Partial<Omit<ForecastRule, "id">>,
+  ): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const u: Record<string, unknown> = {};
+        if (updates.name !== undefined) u.name = updates.name;
+        if (updates.source !== undefined) u.source = updates.source;
+        if (updates.accountIds !== undefined) u.account_ids = updates.accountIds;
+        if (updates.categoryIds !== undefined)
+          u.category_ids = updates.categoryIds;
+        if (updates.excludeLinked !== undefined)
+          u.exclude_linked = updates.excludeLinked;
+        if (updates.projection !== undefined) u.projection = updates.projection;
+        if (updates.projectionWindow !== undefined)
+          u.projection_window = updates.projectionWindow;
+        if (updates.fixedValue !== undefined)
+          u.fixed_value = updates.fixedValue ?? null;
+        if (updates.enabled !== undefined) u.enabled = updates.enabled;
+        if (updates.sortOrder !== undefined) u.sort_order = updates.sortOrder;
+
+        const { error } = await supabase
+          .from("forecast_rules")
+          .update(u as never)
+          .eq("id", id);
+        if (error) throw error;
+        return;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+      }
+    }
+    this.localStore.forecastRules = (this.localStore.forecastRules ?? []).map(
+      (r) => (r.id === id ? { ...r, ...updates } : r),
+    );
+    saveStoreToLocalStorage(this.localStore);
+  }
+
+  async removeForecastRule(id: string): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const { error } = await supabase
+          .from("forecast_rules")
+          .delete()
+          .eq("id", id);
+        if (error) throw error;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+      }
+    }
+    this.localStore.forecastRules = (
+      this.localStore.forecastRules ?? []
+    ).filter((r) => r.id !== id);
+    saveStoreToLocalStorage(this.localStore);
+  }
+
+  // Every rule evaluated against `year`, projected into ForecastFlow shape —
+  // one flow per (rule, month) so the maths and every view treat them like any
+  // other flow. They carry source.kind === "rule" so the UI can group the
+  // twelve back into a single row with a single toggle.
+  //
+  // Months up to and including the current one use the real sum, so the
+  // current (partial) month shows what has actually been spent so far. Later
+  // months use the rule's projection, which is 'none' by default — a rule is a
+  // historical overlay until you ask it to project.
+  async getRuleForecastFlows(year: number): Promise<ForecastFlow[]> {
+    // Disabled rules still emit their lines, flagged disabled, exactly like a
+    // muted manual flow. Dropping them here would make a rule vanish from the
+    // page the moment you switched it off, with no way to switch it back.
+    const rules = await this.getForecastRules();
+    if (rules.length === 0) return [];
+
+    const window = Math.max(1, ...rules.map((r) => r.projectionWindow));
+    const from = addMonths(`${year}-01`, -window);
+    const to = `${year}-12`;
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+    const needed = new Set(rules.map((r) => r.source));
+    const rows: Partial<Record<ForecastRuleSource, AggregateRow[]>> = {};
+    for (const src of needed) {
+      rows[src] = await this.loadAggregateRows(src, from, to);
+    }
+
+    const flows: ForecastFlow[] = [];
+    let order = 0;
+
+    for (const rule of rules) {
+      const all = rows[rule.source] ?? [];
+      const accounts = new Set(rule.accountIds);
+      const categories = new Set(rule.categoryIds);
+
+      // Month -> summed magnitude, over the rows this rule actually matches.
+      const byMonth = new Map<string, number>();
+      for (const r of all) {
+        if (accounts.size > 0 && (!r.accountId || !accounts.has(r.accountId)))
+          continue;
+        if (categories.size > 0 && (!r.categoryId || !categories.has(r.categoryId)))
+          continue;
+        if (rule.excludeLinked && r.inForecast) continue;
+        byMonth.set(r.monthKey, (byMonth.get(r.monthKey) ?? 0) + r.amount);
+      }
+
+      // Projection is learned only from *closed* months — including the
+      // partial current month would drag the figure below a typical one.
+      const closed = [...byMonth.entries()]
+        .filter(([m]) => m < currentMonthKey)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .slice(-rule.projectionWindow)
+        .map(([, v]) => v);
+      const projected = projectValue(rule, closed);
+
+      for (let m = 1; m <= 12; m++) {
+        const monthKey = `${year}-${String(m).padStart(2, "0")}`;
+        const actual = byMonth.get(monthKey) ?? 0;
+        const value = monthKey <= currentMonthKey ? actual : projected;
+        if (!(value > 0)) continue;
+        flows.push({
+          id: `rule:${rule.id}:${monthKey}`,
+          year,
+          months: [m],
+          type: rule.source === "deposits" ? "in" : "out",
+          name: rule.name,
+          uncertain: false,
+          value,
+          isGhost: false,
+          enabled: rule.enabled, // muting happens on the rule, not the line
+          sortOrder: LINKED_SORT_OFFSET + 500_000 + order++,
+          source: { kind: "rule", id: rule.id, monthKey },
+        });
+      }
+    }
+
+    return flows;
+  }
+
+  // Flat rows a rule can aggregate, normalised across the three sources.
+  private async loadAggregateRows(
+    source: ForecastRuleSource,
+    fromMonth: string,
+    toMonth: string,
+  ): Promise<AggregateRow[]> {
+    const out: AggregateRow[] = [];
+
+    if (this.useSupabase && supabase) {
+      try {
+        if (source === "expenses" || source === "plans") {
+          const table = source === "expenses" ? "expenses" : "plans";
+          const dateCol = source === "expenses" ? "date" : "target_date";
+          const { data, error } = await supabase
+            .from(table)
+            .select(
+              `id, month_key, ${dateCol}, amount, account_id, category_id, in_forecast`,
+            )
+            .gte("month_key", fromMonth)
+            .lte("month_key", toMonth);
+          if (error) throw error;
+          for (const r of (data as Array<Record<string, unknown>> | null) ?? []) {
+            const when = (r[dateCol] as string) || (r.month_key as string);
+            out.push({
+              monthKey: String(when).slice(0, 7),
+              amount: Number(r.amount) || 0,
+              accountId: (r.account_id as string) || undefined,
+              categoryId: (r.category_id as string) || undefined,
+              inForecast: !!r.in_forecast,
+            });
+          }
+          return out;
+        }
+
+        // Deposits have no month_key, so the month comes from created_at and
+        // the range filter has to be applied here rather than in the query.
+        const { data, error } = await supabase
+          .from("account_transactions")
+          .select("id, created_at, amount, to_account_id, in_forecast")
+          .eq("transaction_type", "deposit");
+        if (error) throw error;
+        for (const r of (data as Array<Record<string, unknown>> | null) ?? []) {
+          const monthKey = String(r.created_at ?? "").slice(0, 7);
+          if (!monthKey || monthKey < fromMonth || monthKey > toMonth) continue;
+          out.push({
+            monthKey,
+            amount: Number(r.amount) || 0,
+            accountId: (r.to_account_id as string) || undefined,
+            inForecast: !!r.in_forecast,
+          });
+        }
+        return out;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+        out.length = 0;
+      }
+    }
+
+    if (source === "expenses") {
+      for (const [monthKey, list] of Object.entries(
+        this.localStore.expenses ?? {},
+      )) {
+        if (monthKey < fromMonth || monthKey > toMonth) continue;
+        for (const e of list) {
+          out.push({
+            monthKey: (e.date || monthKey).slice(0, 7),
+            amount: e.amount,
+            accountId: e.accountId,
+            categoryId: e.categoryId,
+            inForecast: !!e.inForecast,
+          });
+        }
+      }
+    } else if (source === "plans") {
+      for (const [monthKey, list] of Object.entries(
+        this.localStore.plans ?? {},
+      )) {
+        if (monthKey < fromMonth || monthKey > toMonth) continue;
+        for (const p of list) {
+          out.push({
+            monthKey: (p.targetDate || monthKey).slice(0, 7),
+            amount: p.amount,
+            accountId: p.accountId,
+            categoryId: p.categoryId,
+            inForecast: !!p.inForecast,
+          });
+        }
+      }
+    } else {
+      for (const t of this.localStore.accountTransactions ?? []) {
+        if (t.transactionType !== "deposit") continue;
+        const monthKey = (t.createdAt ?? "").slice(0, 7);
+        if (!monthKey || monthKey < fromMonth || monthKey > toMonth) continue;
+        out.push({
+          monthKey,
+          amount: t.amount,
+          accountId: t.toAccountId,
+          inForecast: !!t.inForecast,
+        });
+      }
+    }
+    return out;
+  }
+
   // Bulk-insert flows (used by the importer). Returns the created flows.
   async addForecastFlows(
     flows: Array<Omit<ForecastFlow, "id">>,
@@ -3470,6 +3786,86 @@ function orderLinkedFlows(flows: ForecastFlow[]): ForecastFlow[] {
         (a.name ?? "").localeCompare(b.name ?? ""),
     )
     .map((f, i) => ({ ...f, sortOrder: LINKED_SORT_OFFSET + i }));
+}
+
+// ---- Forecast rule helpers ----
+
+// A row a rule can aggregate, normalised across expenses / plans / deposits.
+type AggregateRow = {
+  monthKey: string;
+  amount: number;
+  accountId?: string;
+  categoryId?: string;
+  inForecast: boolean;
+};
+
+// Shift a "YYYY-MM" key by a whole number of months.
+function addMonths(monthKey: string, delta: number): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// What a rule shows for a month with no data yet, given the sums of its most
+// recent closed months (oldest first).
+function projectValue(rule: ForecastRule, history: number[]): number {
+  switch (rule.projection) {
+    case "fixed":
+      return rule.fixedValue ?? 0;
+    case "last":
+      return history.length ? history[history.length - 1] : 0;
+    case "average":
+      return history.length
+        ? history.reduce((a, b) => a + b, 0) / history.length
+        : 0;
+    case "median": {
+      if (!history.length) return 0;
+      const s = [...history].sort((a, b) => a - b);
+      const mid = Math.floor(s.length / 2);
+      return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+    }
+    case "none":
+    default:
+      return 0;
+  }
+}
+
+function ruleRowToRule(row: Record<string, unknown>): ForecastRule {
+  return {
+    id: row.id as string,
+    name: (row.name as string) || "Rule",
+    source: (row.source as ForecastRuleSource) ?? "expenses",
+    accountIds: Array.isArray(row.account_ids) ? (row.account_ids as string[]) : [],
+    categoryIds: Array.isArray(row.category_ids)
+      ? (row.category_ids as string[])
+      : [],
+    excludeLinked: row.exclude_linked !== false,
+    projection: (row.projection as ForecastProjection) ?? "none",
+    projectionWindow: Number(row.projection_window ?? 3),
+    fixedValue:
+      row.fixed_value === null || row.fixed_value === undefined
+        ? undefined
+        : Number(row.fixed_value),
+    enabled: row.enabled !== false,
+    sortOrder: Number(row.sort_order ?? 0),
+  };
+}
+
+function ruleToRow(rule: ForecastRule, userId: string): Record<string, unknown> {
+  return {
+    id: rule.id,
+    user_id: userId,
+    name: rule.name,
+    source: rule.source,
+    account_ids: rule.accountIds,
+    category_ids: rule.categoryIds,
+    exclude_linked: rule.excludeLinked,
+    projection: rule.projection,
+    projection_window: rule.projectionWindow,
+    fixed_value: rule.fixedValue ?? null,
+    enabled: rule.enabled,
+    sort_order: rule.sortOrder,
+  };
 }
 
 // ---- Forecast flow row mappers (DB snake_case <-> ForecastFlow) ----

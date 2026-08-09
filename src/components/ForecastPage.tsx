@@ -1,5 +1,10 @@
 import { Button } from "@/components/ui/button";
-import type { ForecastFlow, ForecastSourceKind } from "@/lib/data-service";
+import type {
+  Account,
+  ForecastFlow,
+  ForecastRule,
+  ForecastSourceKind,
+} from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
@@ -17,6 +22,7 @@ import {
   RefreshCw,
   Rows3,
   Settings2,
+  Sigma,
   Table as TableIcon,
   Trash2,
   TrendingUp,
@@ -28,6 +34,7 @@ import { ForecastBars } from "./forecast/ForecastBars";
 import { ForecastChart } from "./forecast/ForecastChart";
 import { ForecastFlowDialog } from "./forecast/ForecastFlowDialog";
 import { ForecastImportDialog } from "./forecast/ForecastImportDialog";
+import { ForecastRuleDialog } from "./forecast/ForecastRuleDialog";
 import { ForecastStartDialog } from "./forecast/ForecastStartDialog";
 import {
   MONTHS_FULL,
@@ -38,7 +45,7 @@ import {
 } from "@/utils/forecast";
 
 type View = "line" | "bars" | "table" | "calendar" | "ledger";
-type SourceFilter = "all" | "manual" | "linked";
+type SourceFilter = "all" | "manual" | "linked" | "rules";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const CURRENT_MONTH_IDX = new Date().getMonth(); // 0..11, for the "now" marker
@@ -48,10 +55,13 @@ const START_KEY = "forecast-opening-balance";
 // everywhere so they read as "came from my real data" at a glance — distinct
 // from amber (hand-written flows), violet (ghosts) and the green/red that
 // already encode direction.
+// Rules get their own colour again — teal — because they behave differently
+// from a linked record: one definition standing in for many transactions.
 const SOURCE_LABEL: Record<ForecastSourceKind, string> = {
   expense: "Expense",
   plan: "Plan",
   deposit: "Income",
+  rule: "Rule",
 };
 
 function loadStartBalance(): number {
@@ -75,6 +85,10 @@ export default function ForecastPage() {
   // and for the maths.
   const [manualFlows, setManualFlows] = useState<ForecastFlow[]>([]);
   const [linkedFlows, setLinkedFlows] = useState<ForecastFlow[]>([]);
+  // Rule-derived flows are re-evaluated per year, so they live apart again.
+  const [ruleFlows, setRuleFlows] = useState<ForecastFlow[]>([]);
+  const [rules, setRules] = useState<ForecastRule[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [year, setYear] = useState(CURRENT_YEAR);
   const [view, setView] = useState<View>("line");
@@ -82,24 +96,33 @@ export default function ForecastPage() {
   const [showFlowDialog, setShowFlowDialog] = useState(false);
   const [editingFlow, setEditingFlow] = useState<ForecastFlow | undefined>();
   const [showImport, setShowImport] = useState(false);
+  const [showRuleDialog, setShowRuleDialog] = useState(false);
+  const [editingRule, setEditingRule] = useState<ForecastRule | undefined>();
   const [flowsView, setFlowsView] = useState<"flow" | "month">("month");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [startBalance, setStartBalance] = useState<number>(loadStartBalance);
   const [showStartDialog, setShowStartDialog] = useState(false);
 
+  // Rules are evaluated against the year on screen, so a year change reloads.
   useEffect(() => {
     loadData();
-  }, []);
+  }, [year]);
 
   async function loadData() {
     try {
       setLoading(true);
-      const [manual, linked] = await Promise.all([
+      const [manual, linked, evaluated, ruleDefs, accts] = await Promise.all([
         dataService.getForecastFlows(),
         dataService.getLinkedForecastFlows(),
+        dataService.getRuleForecastFlows(year),
+        dataService.getForecastRules(),
+        dataService.getAccounts(),
       ]);
       setManualFlows(manual);
       setLinkedFlows(linked);
+      setRuleFlows(evaluated);
+      setRules(ruleDefs);
+      setAccounts(accts);
     } catch (e) {
       console.error("Failed to load forecast:", e);
     } finally {
@@ -108,8 +131,8 @@ export default function ForecastPage() {
   }
 
   const flows = useMemo(
-    () => [...manualFlows, ...linkedFlows],
-    [manualFlows, linkedFlows],
+    () => [...manualFlows, ...linkedFlows, ...ruleFlows],
+    [manualFlows, linkedFlows, ruleFlows],
   );
 
   // The opening balance applies at the earliest year we have flows for; each
@@ -149,18 +172,60 @@ export default function ForecastPage() {
 
   const listedFlows = useMemo(
     () =>
-      yearFlows.filter((f) =>
-        sourceFilter === "all"
-          ? true
-          : sourceFilter === "linked"
-            ? !!f.source
-            : !f.source,
-      ),
+      yearFlows.filter((f) => {
+        const kind = f.source?.kind;
+        switch (sourceFilter) {
+          case "manual":
+            return !kind;
+          case "linked":
+            return !!kind && kind !== "rule";
+          case "rules":
+            return kind === "rule";
+          default:
+            return true;
+        }
+      }),
     [yearFlows, sourceFilter],
   );
 
+  // A rule is one thing with one switch, so the By-flow list shows a single
+  // row per rule — its year total — rather than the twelve monthly lines it
+  // emits. By month they stay separate, which is the whole point of them.
+  // Every rule is listed whether or not it produced anything this year, so a
+  // muted or empty rule stays visible and switchable.
+  const ruleRows = useMemo<ForecastFlow[]>(
+    () =>
+      rules.map((rule, i) => {
+        const mine = ruleFlows.filter((f) => f.source?.id === rule.id);
+        const total = mine.reduce((s, f) => s + (f.value ?? 0), 0);
+        const months = [...new Set(mine.flatMap((f) => f.months))].sort(
+          (a, b) => a - b,
+        );
+        return {
+          id: `rulerow:${rule.id}`,
+          year,
+          months,
+          type: rule.source === "deposits" ? "in" : "out",
+          name: rule.name,
+          uncertain: false,
+          value: total,
+          isGhost: false,
+          enabled: rule.enabled,
+          sortOrder: 2_000_000 + i,
+          source: { kind: "rule", id: rule.id, monthKey: `${year}-01` },
+        };
+      }),
+    [rules, ruleFlows, year],
+  );
+
+  const byFlowList = useMemo(() => {
+    const withoutRules = listedFlows.filter((f) => f.source?.kind !== "rule");
+    const showRules = sourceFilter === "all" || sourceFilter === "rules";
+    return showRules ? [...withoutRules, ...ruleRows] : withoutRules;
+  }, [listedFlows, ruleRows, sourceFilter]);
+
   const linkedCount = useMemo(
-    () => yearFlows.filter((f) => f.source).length,
+    () => yearFlows.filter((f) => f.source && f.source.kind !== "rule").length,
     [yearFlows],
   );
 
@@ -215,6 +280,28 @@ export default function ForecastPage() {
   // analysis, so you can mute a real expense without unlinking or deleting it.
   const toggleFlow = async (f: ForecastFlow) => {
     const next = !f.enabled;
+
+    // A rule's switch lives on the rule, so one click mutes all twelve of the
+    // lines it emits.
+    if (f.source?.kind === "rule") {
+      const ruleId = f.source.id;
+      setRules((prev) =>
+        prev.map((r) => (r.id === ruleId ? { ...r, enabled: next } : r)),
+      );
+      setRuleFlows((prev) =>
+        prev.map((x) =>
+          x.source?.id === ruleId ? { ...x, enabled: next } : x,
+        ),
+      );
+      try {
+        await dataService.updateForecastRule(ruleId, { enabled: next });
+      } catch (e) {
+        console.error(e);
+        await loadData();
+      }
+      return;
+    }
+
     const setter = f.source ? setLinkedFlows : setManualFlows;
     setter((prev) =>
       prev.map((x) => (x.id === f.id ? { ...x, enabled: next } : x)),
@@ -235,6 +322,23 @@ export default function ForecastPage() {
   // takes them off this page and leaves the real record untouched.
   const deleteFlow = async (f: ForecastFlow) => {
     const label = f.name || "flow";
+
+    if (f.source?.kind === "rule") {
+      if (
+        !confirm(
+          `Delete the rule "${label}"?\n\nIt stops totalling on the forecast. None of your expenses, plans or income are touched.`,
+        )
+      )
+        return;
+      try {
+        await dataService.removeForecastRule(f.source.id);
+        await loadData();
+      } catch (e) {
+        console.error(e);
+      }
+      return;
+    }
+
     if (f.source) {
       const kind = SOURCE_LABEL[f.source.kind].toLowerCase();
       if (
@@ -264,9 +368,35 @@ export default function ForecastPage() {
   // Linked flows are read-only here: their amount, name and month belong to the
   // source record, so there is nothing on this page to edit.
   const editFlow = (f: ForecastFlow) => {
+    // A rule is editable — its definition is the thing you'd change. Records
+    // linked one-by-one are not: everything about them lives on the record.
+    if (f.source?.kind === "rule") {
+      const rule = rules.find((r) => r.id === f.source!.id);
+      if (rule) {
+        setEditingRule(rule);
+        setShowRuleDialog(true);
+      }
+      return;
+    }
     if (f.source) return;
     setEditingFlow(f);
     setShowFlowDialog(true);
+  };
+
+  const handleSubmitRule = async (
+    rule: Omit<ForecastRule, "id" | "sortOrder">,
+  ) => {
+    try {
+      if (editingRule) {
+        await dataService.updateForecastRule(editingRule.id, rule);
+      } else {
+        await dataService.addForecastRule({ ...rule, sortOrder: rules.length });
+      }
+      setEditingRule(undefined);
+      await loadData();
+    } catch (e) {
+      console.error("Failed to save rule:", e);
+    }
   };
 
   const netBest = model.yearEnd.best - model.start.best;
@@ -352,6 +482,18 @@ export default function ForecastPage() {
               Import
             </Button>
             <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setEditingRule(undefined);
+                setShowRuleDialog(true);
+              }}
+              className="border-teal-300 text-teal-700 hover:bg-teal-50"
+            >
+              <Sigma className="w-4 h-4 mr-1" />
+              New Rule
+            </Button>
+            <Button
               size="sm"
               onClick={() => {
                 setEditingFlow(undefined);
@@ -415,7 +557,13 @@ export default function ForecastPage() {
               {linkedCount > 0 && (
                 <span className="flex items-center gap-1 text-sky-600">
                   <Link2 className="w-3 h-3" />
-                  Linked from my data
+                  Linked
+                </span>
+              )}
+              {rules.length > 0 && (
+                <span className="flex items-center gap-1 text-teal-600">
+                  <Sigma className="w-3 h-3" />
+                  Rule totals
                 </span>
               )}
             </div>
@@ -478,14 +626,22 @@ export default function ForecastPage() {
                 {linkedCount > 0 && (
                   <span className="text-sky-600"> · {linkedCount} linked</span>
                 )}
+                {rules.length > 0 && (
+                  <span className="text-teal-600"> · {rules.length} rules</span>
+                )}
               </span>
-              {linkedCount > 0 && (
+              {(linkedCount > 0 || rules.length > 0) && (
                 <div className="flex items-center rounded-lg border-2 border-amber-200 bg-white p-0.5">
                   {(
                     [
                       ["all", "All"],
                       ["manual", "Manual"],
-                      ["linked", "Linked"],
+                      ...(linkedCount > 0
+                        ? ([["linked", "Linked"]] as [SourceFilter, string][])
+                        : []),
+                      ...(rules.length > 0
+                        ? ([["rules", "Rules"]] as [SourceFilter, string][])
+                        : []),
                     ] as [SourceFilter, string][]
                   ).map(([key, label]) => (
                     <button
@@ -496,7 +652,9 @@ export default function ForecastPage() {
                         sourceFilter === key
                           ? key === "linked"
                             ? "bg-sky-500 text-white"
-                            : "bg-amber-500 text-white"
+                            : key === "rules"
+                              ? "bg-teal-500 text-white"
+                              : "bg-amber-500 text-white"
                           : "text-stone-500 hover:bg-amber-50",
                       )}
                     >
@@ -528,15 +686,15 @@ export default function ForecastPage() {
             </div>
           </div>
 
-          {listedFlows.length === 0 ? (
+          {byFlowList.length === 0 && listedFlows.length === 0 ? (
             <div className="text-center py-10 text-stone-400 text-sm">
               {yearFlows.length === 0
-                ? `No flows for ${year}. Add one, import your data, or mark an income or expense to show here.`
+                ? `No flows for ${year}. Add one, import your data, mark an income or expense, or set up a rule.`
                 : `No ${sourceFilter} flows for ${year}.`}
             </div>
           ) : flowsView === "flow" ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3">
-              {listedFlows.map((f) => (
+              {byFlowList.map((f) => (
                 <FlowRow
                   key={f.id}
                   flow={f}
@@ -597,6 +755,16 @@ export default function ForecastPage() {
           open={showImport}
           onOpenChange={setShowImport}
           onImport={handleImport}
+        />
+        <ForecastRuleDialog
+          open={showRuleDialog}
+          onOpenChange={(o) => {
+            setShowRuleDialog(o);
+            if (!o) setEditingRule(undefined);
+          }}
+          onSubmit={handleSubmitRule}
+          editingRule={editingRule}
+          accounts={accounts}
         />
         <ForecastStartDialog
           open={showStartDialog}
@@ -707,13 +875,16 @@ function FlowRow({
     ? `${formatCurrency(flow.lowValue ?? 0)}–${formatCurrency(flow.highValue ?? 0)}`
     : formatCurrency(amount);
   const linked = flow.source;
+  const isRule = linked?.kind === "rule";
   return (
     <div
       className={cn(
         "group/row flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors",
-        linked
-          ? "bg-sky-50/70 border-l-[3px] border-sky-400 hover:bg-sky-50"
-          : "hover:bg-white/70",
+        isRule
+          ? "bg-teal-50/70 border-l-[3px] border-teal-400 hover:bg-teal-50"
+          : linked
+            ? "bg-sky-50/70 border-l-[3px] border-sky-400 hover:bg-sky-50"
+            : "hover:bg-white/70",
         !flow.enabled && "opacity-50",
       )}
     >
@@ -722,12 +893,16 @@ function FlowRow({
         onChange={onToggle}
         title={
           flow.enabled
-            ? linked
-              ? "Counted in the forecast — click to mute"
-              : "Enabled"
-            : linked
-              ? "Muted — still linked, not counted"
-              : "Disabled"
+            ? isRule
+              ? "Counted every month — click to mute the whole rule"
+              : linked
+                ? "Counted in the forecast — click to mute"
+                : "Enabled"
+            : isRule
+              ? "Muted — the rule still exists, it just isn't counted"
+              : linked
+                ? "Muted — still linked, not counted"
+                : "Disabled"
         }
       />
       <span
@@ -763,12 +938,12 @@ function FlowRow({
         {amountLabel}
       </span>
       <div className="flex items-center gap-0.5 shrink-0 invisible group-hover/row:visible">
-        {/* Linked rows have no editable fields here — everything about them
-            lives on the source record — so only unlink is offered. */}
-        {!linked && (
+        {/* Records linked one-by-one have no editable fields here — everything
+            about them lives on the record. A rule's definition is editable. */}
+        {(!linked || isRule) && (
           <button
             onClick={onEdit}
-            title="Edit"
+            title={isRule ? "Edit rule" : "Edit"}
             className="w-6 h-6 rounded-md flex items-center justify-center text-stone-400 hover:text-stone-700 hover:bg-stone-100 cursor-pointer"
           >
             <Pencil className="w-3.5 h-3.5" />
@@ -776,15 +951,25 @@ function FlowRow({
         )}
         <button
           onClick={onDelete}
-          title={linked ? "Remove from forecast (keeps the record)" : "Delete"}
+          title={
+            isRule
+              ? "Delete rule (keeps every record it totals)"
+              : linked
+                ? "Remove from forecast (keeps the record)"
+                : "Delete"
+          }
           className={cn(
             "w-6 h-6 rounded-md flex items-center justify-center text-stone-400 cursor-pointer",
-            linked
-              ? "hover:text-sky-700 hover:bg-sky-100"
-              : "hover:text-red-600 hover:bg-red-50",
+            isRule
+              ? "hover:text-teal-700 hover:bg-teal-100"
+              : linked
+                ? "hover:text-sky-700 hover:bg-sky-100"
+                : "hover:text-red-600 hover:bg-red-50",
           )}
         >
-          {linked ? (
+          {isRule ? (
+            <Trash2 className="w-3.5 h-3.5" />
+          ) : linked ? (
             <Link2Off className="w-3.5 h-3.5" />
           ) : (
             <Trash2 className="w-3.5 h-3.5" />
@@ -795,13 +980,22 @@ function FlowRow({
   );
 }
 
-// Marks a flow as coming from a real record rather than being hand-written.
+// Marks a flow as coming from real data rather than being hand-written:
+// sky for a single linked record, teal for a rule standing in for many.
 function SourceChip({ kind }: { kind: ForecastSourceKind }) {
-  const Icon = kind === "deposit" ? Wallet : Link2;
+  const isRule = kind === "rule";
+  const Icon = isRule ? Sigma : kind === "deposit" ? Wallet : Link2;
   return (
     <span
-      title={`Linked from ${SOURCE_LABEL[kind].toLowerCase()}`}
-      className="flex items-center gap-0.5 text-[10px] text-sky-700 bg-sky-100 px-1 py-px rounded shrink-0"
+      title={
+        isRule
+          ? "Totalled by a rule"
+          : `Linked from ${SOURCE_LABEL[kind].toLowerCase()}`
+      }
+      className={cn(
+        "flex items-center gap-0.5 text-[10px] px-1 py-px rounded shrink-0",
+        isRule ? "text-teal-700 bg-teal-100" : "text-sky-700 bg-sky-100",
+      )}
     >
       <Icon className="w-2.5 h-2.5" />
       {SOURCE_LABEL[kind]}
@@ -849,15 +1043,20 @@ function MonthlyPaymentsTable({ flows }: { flows: ForecastFlow[] }) {
                         f.type === "in"
                           ? "bg-green-50 border-green-500"
                           : "bg-red-50 border-red-500",
-                        f.source && "border-sky-400 ring-1 ring-inset ring-sky-200",
+                        f.source &&
+                          (f.source.kind === "rule"
+                            ? "border-teal-400 ring-1 ring-inset ring-teal-200"
+                            : "border-sky-400 ring-1 ring-inset ring-sky-200"),
                         f.uncertain && "border-dashed opacity-80",
                       )}
                     >
                       <div className="text-[11px] font-semibold text-stone-700 leading-tight break-words flex items-center gap-1">
                         {f.name || (f.type === "in" ? "Inflow" : "Outflow")}
-                        {f.source && (
+                        {f.source?.kind === "rule" ? (
+                          <Sigma className="w-3 h-3 text-teal-500 shrink-0" />
+                        ) : f.source ? (
                           <Link2 className="w-3 h-3 text-sky-500 shrink-0" />
-                        )}
+                        ) : null}
                         {f.isGhost && (
                           <Ghost className="w-3 h-3 text-violet-400 shrink-0" />
                         )}
@@ -1059,7 +1258,10 @@ function MonthlyLedger({
                     key={f.id}
                     className={cn(
                       "flex items-center gap-2 px-3 py-1.5",
-                      f.source && "bg-sky-50/70 border-l-[3px] border-sky-400",
+                      f.source &&
+                        (f.source.kind === "rule"
+                          ? "bg-teal-50/70 border-l-[3px] border-teal-400"
+                          : "bg-sky-50/70 border-l-[3px] border-sky-400"),
                     )}
                   >
                     <span
