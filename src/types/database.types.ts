@@ -39,6 +39,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_balances: {
+        Row: {
+          account_id: string
+          currency: string
+          current_balance: number
+          initial_balance: number
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          currency: string
+          current_balance?: number
+          initial_balance?: number
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          currency?: string
+          current_balance?: number
+          initial_balance?: number
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_balances_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       account_group_members: {
         Row: {
           account_id: string
@@ -110,41 +145,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
-      }
-      account_balances: {
-        Row: {
-          account_id: string
-          currency: string
-          current_balance: number
-          initial_balance: number
-          updated_at: string | null
-          user_id: string
-        }
-        Insert: {
-          account_id: string
-          currency: string
-          current_balance?: number
-          initial_balance?: number
-          updated_at?: string | null
-          user_id: string
-        }
-        Update: {
-          account_id?: string
-          currency?: string
-          current_balance?: number
-          initial_balance?: number
-          updated_at?: string | null
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "account_balances_account_id_fkey"
-            columns: ["account_id"]
-            isOneToOne: false
-            referencedRelation: "accounts"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       account_transactions: {
         Row: {
