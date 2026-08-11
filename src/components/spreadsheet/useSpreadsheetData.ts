@@ -153,8 +153,13 @@ export function useSpreadsheetData(
           values.month = MONTH_NAMES[month];
 
           // Income — auto-derived from deposits in account_transactions.
+          // Deposits are native to their account; baseAmount is the snapshot
+          // in the user's base currency (equal to amount for base deposits).
           const monthDeposits = depositsByMonth.get(monthKey) ?? [];
-          const incomeTotal = monthDeposits.reduce((s, tx) => s + tx.amount, 0);
+          const incomeTotal = monthDeposits.reduce(
+            (s, tx) => s + (tx.baseAmount ?? tx.amount),
+            0,
+          );
           values.income_total = incomeTotal;
 
           // Payments — match by categoryId first (stable across renames),

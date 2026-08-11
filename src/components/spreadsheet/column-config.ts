@@ -32,8 +32,8 @@ const netColumns: ColumnDef[] = [
 ];
 
 const savingsColumns: ColumnDef[] = [
-  { key: "savings_drhm", label: "Savings in DRHM", type: "currency", editable: true, width: 120 },
-  { key: "savings_dollar", label: "Savings in Dollar", type: "currency", editable: true, width: 120 },
+  { key: "savings_drhm", label: "Savings in DRHM", type: "currency", editable: true, width: 120, currency: "AED" },
+  { key: "savings_dollar", label: "Savings in Dollar", type: "currency", editable: true, width: 120, currency: "USD" },
   { key: "savings_cash", label: "Cash Savings", type: "currency", editable: true, width: 110 },
 ];
 

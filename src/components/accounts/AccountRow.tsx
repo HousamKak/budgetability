@@ -102,19 +102,19 @@ export function AccountRow({
               account.currentBalance >= 0 ? "text-green-700" : "text-red-600",
             )}
           >
-            {formatCurrency(account.currentBalance)}
+            {formatCurrency(account.currentBalance, account.currency)}
           </span>
           {hasActivity && (
             <span className="text-[11px] tabular-nums text-stone-400">
               {activity.inflow > 0 && (
                 <span className="text-green-600">
-                  +{formatCurrency(activity.inflow)}
+                  +{formatCurrency(activity.inflow, account.currency)}
                 </span>
               )}
               {activity.inflow > 0 && activity.outflow > 0 && " · "}
               {activity.outflow > 0 && (
                 <span className="text-red-500">
-                  −{formatCurrency(activity.outflow)}
+                  −{formatCurrency(activity.outflow, account.currency)}
                 </span>
               )}
             </span>

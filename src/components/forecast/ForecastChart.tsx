@@ -12,14 +12,11 @@ import {
 import type { CumulativePoint } from "@/utils/forecast";
 import { MONTHS_SHORT } from "@/utils/forecast";
 import { cn, formatCurrency } from "@/lib/utils";
+import { formatCurrencyCompact } from "@/lib/currency";
+
+const compact = (n: number) => formatCurrencyCompact(n);
 import { Activity, Spline } from "lucide-react";
 import { useState } from "react";
-
-function compact(n: number): string {
-  const abs = Math.abs(n);
-  if (abs >= 1000) return `${n < 0 ? "-" : ""}$${(abs / 1000).toFixed(abs >= 10000 ? 0 : 1)}k`;
-  return `${n < 0 ? "-" : ""}$${abs.toFixed(0)}`;
-}
 
 interface ForecastChartProps {
   series: CumulativePoint[];

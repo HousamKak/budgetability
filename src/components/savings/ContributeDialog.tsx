@@ -14,6 +14,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  CURRENCIES,
+  convert,
+  getBaseCurrency,
+  toBase,
+} from "@/lib/currency";
 import type { Account, SavingsGoal } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -101,7 +107,11 @@ export function ContributeDialog({
     }
   };
 
-  const quickAmounts = [10, 25, 50, 100];
+  // Contribution-scale quick amounts in the account's own currency.
+  const accountCurrency = selectedAccount?.currency ?? getBaseCurrency();
+  const quickAmounts = CURRENCIES[accountCurrency].presets.map((p) => p / 10);
+  // How much of the goal remains, expressed in the paying account's currency.
+  const remainingNative = convert(remaining, getBaseCurrency(), accountCurrency);
 
   if (!goal) return null;
 
@@ -185,7 +195,7 @@ export function ContributeDialog({
                         <Wallet className="w-4 h-4 text-stone-400" />
                         <span>{account.name}</span>
                         <span className="text-stone-400 ml-auto">
-                          {formatCurrency(account.currentBalance)}
+                          {formatCurrency(account.currentBalance, account.currency)}
                         </span>
                       </div>
                     </SelectItem>
@@ -204,27 +214,34 @@ export function ContributeDialog({
               Amount
             </Label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500">
-                $
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 text-sm">
+                {CURRENCIES[accountCurrency].symbol}
               </span>
               <input
                 id="contribute-amount"
                 type="number"
-                step="0.01"
-                min="0.01"
+                step={CURRENCIES[accountCurrency].inputStep}
+                min={CURRENCIES[accountCurrency].inputStep}
                 max={selectedAccount?.currentBalance || 0}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
+                placeholder={CURRENCIES[accountCurrency].inputPlaceholder}
                 required
                 className={cn(
-                  "w-full pl-7 pr-3 py-2 rounded-lg border text-sm",
+                  "w-full py-2 pr-3 rounded-lg border text-sm",
+                  accountCurrency === "USD" ? "pl-7" : "pl-12",
                   paperTheme.colors.borders.amber,
                   paperTheme.colors.background.white,
                   "focus:outline-none focus:ring-2 focus:ring-amber-400/50"
                 )}
               />
             </div>
+            {accountCurrency !== getBaseCurrency() && amountNum > 0 && (
+              <p className="text-xs text-stone-500">
+                ≈ {formatCurrency(toBase(amountNum, accountCurrency))} toward the
+                goal
+              </p>
+            )}
 
             {/* Quick amounts */}
             <div className="flex gap-2 mt-2">
@@ -240,18 +257,18 @@ export function ContributeDialog({
                     !selectedAccount || quick > selectedAccount.currentBalance
                   }
                 >
-                  ${quick}
+                  {formatCurrency(quick, accountCurrency)}
                 </Button>
               ))}
-              {remaining > 0 &&
+              {remainingNative > 0 &&
                 selectedAccount &&
-                remaining <= selectedAccount.currentBalance && (
+                remainingNative <= selectedAccount.currentBalance && (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     className="flex-1 text-xs bg-green-50 border-green-200 hover:bg-green-100"
-                    onClick={() => setAmount(remaining.toFixed(2))}
+                    onClick={() => setAmount(remainingNative.toFixed(2))}
                   >
                     Fill
                   </Button>
@@ -297,11 +314,17 @@ export function ContributeDialog({
                     {selectedAccount.name}
                   </p>
                   <p className="font-medium">
-                    {formatCurrency(selectedAccount.currentBalance)}
+                    {formatCurrency(
+                      selectedAccount.currentBalance,
+                      selectedAccount.currency,
+                    )}
                   </p>
                   <p className="text-xs text-stone-400">
                     →{" "}
-                    {formatCurrency(selectedAccount.currentBalance - amountNum)}
+                    {formatCurrency(
+                      selectedAccount.currentBalance - amountNum,
+                      selectedAccount.currency,
+                    )}
                   </p>
                 </div>
                 <ArrowRight className="w-4 h-4 text-amber-500" />
@@ -311,7 +334,11 @@ export function ContributeDialog({
                     {formatCurrency(goal.currentAmount)}
                   </p>
                   <p className="text-xs text-green-600">
-                    → {formatCurrency(goal.currentAmount + amountNum)}
+                    →{" "}
+                    {formatCurrency(
+                      goal.currentAmount +
+                        toBase(amountNum, selectedAccount.currency),
+                    )}
                   </p>
                 </div>
               </div>
@@ -322,7 +349,11 @@ export function ContributeDialog({
           {selectedAccount && amountNum > selectedAccount.currentBalance && (
             <p className="text-xs text-red-500">
               Amount exceeds available balance (
-              {formatCurrency(selectedAccount.currentBalance)})
+              {formatCurrency(
+                selectedAccount.currentBalance,
+                selectedAccount.currency,
+              )}
+              )
             </p>
           )}
 

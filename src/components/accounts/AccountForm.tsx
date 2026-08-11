@@ -14,8 +14,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  CURRENCIES,
+  CURRENCY_CODES,
+  type CurrencyCode,
+} from "@/lib/currency";
 import type { Account, AccountGroup } from "@/lib/data-service";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import { useEffect, useState } from "react";
 import {
@@ -63,6 +68,7 @@ export function AccountForm({
   const [name, setName] = useState("");
   const [accountType, setAccountType] =
     useState<Account["accountType"]>("checking");
+  const [currency, setCurrency] = useState<CurrencyCode>("USD");
   const [initialBalance, setInitialBalance] = useState("");
   const [isDefault, setIsDefault] = useState(false);
   const [icon, setIcon] = useState("");
@@ -76,6 +82,7 @@ export function AccountForm({
       if (editingAccount) {
         setName(editingAccount.name);
         setAccountType(editingAccount.accountType);
+        setCurrency(editingAccount.currency);
         setInitialBalance(editingAccount.initialBalance.toString());
         setIsDefault(editingAccount.isDefault);
         setIcon(editingAccount.icon || "");
@@ -83,6 +90,7 @@ export function AccountForm({
       } else {
         setName("");
         setAccountType("checking");
+        setCurrency("USD");
         setInitialBalance("");
         setIsDefault(false);
         setIcon("");
@@ -104,6 +112,7 @@ export function AccountForm({
     onSubmit({
       name: name.trim(),
       accountType,
+      currency,
       initialBalance: balance,
       isDefault,
       icon: icon || undefined,
@@ -264,6 +273,52 @@ export function AccountForm({
             />
           </div>
 
+          {/* Currency */}
+          <div className="space-y-2">
+            <Label className={cn("text-base", paperTheme.fonts.handwriting)}>
+              Currency
+            </Label>
+            {isEditing ? (
+              <>
+                <div
+                  className={cn(
+                    "px-4 py-3 rounded-xl border-2 text-sm shadow-sm bg-stone-50 text-stone-600",
+                    paperTheme.colors.borders.amber,
+                  )}
+                >
+                  {CURRENCIES[currency].symbol} — {CURRENCIES[currency].name}
+                </div>
+                <p className="text-xs text-stone-500">
+                  An account's currency can't change — its whole history is
+                  denominated in it. Create a new account and transfer instead.
+                </p>
+              </>
+            ) : (
+              <div className="flex gap-1.5">
+                {CURRENCY_CODES.map((code) => (
+                  <button
+                    key={code}
+                    type="button"
+                    onClick={() => setCurrency(code)}
+                    className={cn(
+                      "flex-1 px-3 py-2.5 rounded-xl border-2 text-sm transition-all cursor-pointer",
+                      currency === code
+                        ? "border-amber-400 bg-amber-50 font-semibold text-amber-800 shadow-sm"
+                        : "border-stone-200 bg-white/70 text-stone-600 hover:border-amber-300",
+                    )}
+                  >
+                    <span className="block text-base">
+                      {CURRENCIES[code].symbol}
+                    </span>
+                    <span className="block text-[11px] text-stone-500">
+                      {CURRENCIES[code].name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Initial Balance */}
           <div className="space-y-2">
             <Label
@@ -273,19 +328,20 @@ export function AccountForm({
               {isEditing ? "Initial Balance" : "Starting Balance"}
             </Label>
             <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-500">
-                $
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-500 text-sm">
+                {CURRENCIES[currency].symbol}
               </span>
               <input
                 id="balance"
                 type="number"
-                step="0.01"
+                step={CURRENCIES[currency].inputStep}
                 min="0"
                 value={initialBalance}
                 onChange={(e) => setInitialBalance(e.target.value)}
-                placeholder="0.00"
+                placeholder={CURRENCIES[currency].inputPlaceholder}
                 className={cn(
-                  "w-full pl-9 pr-4 py-3 rounded-xl border-2 text-sm shadow-sm",
+                  "w-full pr-4 py-3 rounded-xl border-2 text-sm shadow-sm",
+                  currency === "USD" ? "pl-9" : "pl-14",
                   paperTheme.colors.borders.amber,
                   paperTheme.colors.background.white,
                   "focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:shadow-md transition-shadow"
@@ -341,7 +397,7 @@ export function AccountForm({
                   {name || "Account Name"}
                 </p>
                 <p className="text-xs text-stone-500">
-                  ${parseFloat(initialBalance) || 0}
+                  {formatCurrency(parseFloat(initialBalance) || 0, currency)}
                 </p>
               </div>
             </div>

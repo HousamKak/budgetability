@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/hover-card";
 import { Input } from "@/components/ui/input";
 import type { Account, Expense, PlanItem } from "@/lib/data-service";
-import { formatNumber } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { calendarStyles, cn, conditional } from "@/styles";
 import { Check, GripVertical, Pencil, X } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
@@ -343,7 +343,7 @@ export function Calendar({
                             spent
                           </div>
                           <div className={calendarStyles.dayStats.spent}>
-                            ${formatNumber(spentOn(d))}
+                            {formatCurrency(spentOn(d))}
                           </div>
                         </div>
                         <div>
@@ -351,7 +351,7 @@ export function Calendar({
                             rem
                           </div>
                           <div className={calendarStyles.dayStats.remaining}>
-                            ${formatNumber(leftAfter(d))}
+                            {formatCurrency(leftAfter(d))}
                           </div>
                         </div>
                       </div>
@@ -360,7 +360,7 @@ export function Calendar({
                           planned
                         </div>
                         <div className={calendarStyles.dayStats.planned}>
-                          ${formatNumber(plannedAmountOn(d))}
+                          {formatCurrency(plannedAmountOn(d))}
                         </div>
                       </div>
                     </div>
@@ -399,7 +399,7 @@ export function Calendar({
                     <div className="text-xs text-stone-500">
                       budget:{" "}
                       <span className="font-bold text-stone-800">
-                        ${formatNumber(budget)}
+                        {formatCurrency(budget)}
                       </span>
                     </div>
                   </div>
@@ -409,19 +409,19 @@ export function Calendar({
                     <div className="text-center">
                       <div className="opacity-60">Planned</div>
                       <div className="font-bold text-blue-600">
-                        ${formatNumber(plannedAmountOn(d))}
+                        {formatCurrency(plannedAmountOn(d))}
                       </div>
                     </div>
                     <div className="text-center">
                       <div className="opacity-60">Spent</div>
                       <div className="font-bold text-red-600">
-                        ${formatNumber(spentOn(d))}
+                        {formatCurrency(spentOn(d))}
                       </div>
                     </div>
                     <div className="text-center">
                       <div className="opacity-60">Remaining</div>
                       <div className="font-bold text-emerald-600">
-                        ${formatNumber(leftAfter(d))}
+                        {formatCurrency(leftAfter(d))}
                       </div>
                     </div>
                   </div>
@@ -522,7 +522,7 @@ export function Calendar({
                             <GripVertical className="w-3 h-3 text-stone-300 shrink-0 cursor-grab mr-1" />
                             <div className="min-w-0 flex-1">
                               <div className="text-sm font-semibold">
-                                ${formatNumber(p.amount)}{" "}
+                                {formatCurrency(p.amount)}{" "}
                                 <span className="ml-1 text-xs text-stone-500">
                                   {p.category}
                                 </span>
@@ -669,7 +669,7 @@ export function Calendar({
                             <GripVertical className="w-3 h-3 text-stone-300 shrink-0 cursor-grab mr-1" />
                             <div className="min-w-0 flex-1">
                               <div className="text-sm font-semibold">
-                                ${formatNumber(e.amount)}{" "}
+                                {formatCurrency(e.amount)}{" "}
                                 <span className="ml-1 text-xs text-stone-500">
                                   {e.category}
                                 </span>

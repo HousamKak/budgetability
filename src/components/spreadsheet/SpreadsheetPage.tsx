@@ -708,7 +708,7 @@ export default function SpreadsheetPage() {
                         } else if (col.type === "number") {
                           display = formatNumber(agg);
                         } else {
-                          display = formatCurrency(agg);
+                          display = formatCurrency(agg, col.currency);
                         }
 
                         const isNegative =
@@ -855,7 +855,7 @@ function DrillDownPanel({
               <li key={idx} className="px-3 py-2 text-xs">
                 <div className="flex justify-between items-baseline">
                   <span className="font-semibold text-green-700">
-                    +{formatCurrency(it.tx.amount)}
+                    +{formatCurrency(it.tx.baseAmount ?? it.tx.amount)}
                   </span>
                   <span className="text-[10px] text-stone-400">
                     {new Date(it.tx.createdAt).toLocaleDateString()}
@@ -925,7 +925,7 @@ function SpreadsheetCell({
   if (value == null || value === "" || value === 0) {
     display = col.type === "text" ? (value as string) ?? "" : "";
   } else if (col.type === "currency" || col.type === "computed") {
-    display = formatCurrency(value as number);
+    display = formatCurrency(value as number, col.currency);
   } else if (col.type === "number") {
     display = formatNumber(value as number);
   } else {

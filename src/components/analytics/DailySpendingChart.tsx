@@ -1,6 +1,7 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import type { DailySpending } from '@/utils/analytics';
 import { chartColors, formatCurrency } from '@/utils/analytics';
+import { formatCurrencyCompact } from '@/lib/currency';
 import { paperTheme } from '@/styles';
 
 interface DailySpendingChartProps {
@@ -55,7 +56,7 @@ export function DailySpendingChart({ data }: DailySpendingChartProps) {
         />
         <YAxis
           tick={{ fontSize: 12, fill: '#6b7280' }}
-          tickFormatter={(value) => `$${value}`}
+          tickFormatter={(value) => formatCurrencyCompact(Number(value))}
         />
         <Tooltip content={<CustomTooltip />} />
         <Line

@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { cn, formatNumber } from "@/lib/utils";
+import { cn, currencySymbol, formatCurrency } from "@/lib/utils";
 import { Book, ChevronLeft, ChevronRight, Plus, Trash } from "./Icons";
 import { SummaryCard } from "./SummaryCard";
 import { ClipboardList } from "lucide-react";
@@ -74,7 +74,7 @@ export function DashboardHeader({
                   className="text-lg font-bold tracking-wide text-stone-700"
                   style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
                 >
-                  $
+                  {currencySymbol()}
                 </span>
                 <input
                   type="text"
@@ -138,16 +138,16 @@ export function DashboardHeader({
           <div className="rounded-2xl border-2 border-amber-200 bg-white/70 shadow-sm px-3.5 py-3 min-h-[88px]">
             <div className="text-[13px] text-stone-600 handwriting leading-none">Spent so far</div>
             <div className="text-2xl font-bold text-red-600 handwriting leading-tight mt-1">
-              ${formatNumber(totalSpent)}
+              {formatCurrency(totalSpent)}
             </div>
             <div className="text-xs text-stone-600 handwriting leading-none mt-1.5">
-              ${formatNumber(leftNow)} left now
+              {formatCurrency(leftNow)} left now
             </div>
           </div>
           <div className="rounded-2xl border-2 border-amber-200 bg-white/70 shadow-sm px-3.5 py-3 min-h-[88px]">
             <div className="text-[13px] text-stone-600 handwriting leading-none">Planned so far</div>
             <div className="text-2xl font-bold text-blue-600 handwriting leading-tight mt-1">
-              ${formatNumber(totalPlanned)}
+              {formatCurrency(totalPlanned)}
             </div>
             <div
               className={cn(
@@ -155,7 +155,7 @@ export function DashboardHeader({
                 leftAfterPlanned >= 0 ? "text-emerald-600" : "text-red-600"
               )}
             >
-              ${formatNumber(leftAfterPlanned)} left after
+              {formatCurrency(leftAfterPlanned)} left after
             </div>
           </div>
         </div>
@@ -237,7 +237,7 @@ export function DashboardHeader({
                   className="text-xl font-bold tracking-wide text-stone-700"
                   style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
                 >
-                  $
+                  {currencySymbol()}
                 </span>
                 <input
                   type="text"
@@ -279,7 +279,7 @@ export function DashboardHeader({
           leftAmount={leftNow}
           leftLabel="left now"
           titleTooltip="Total amount you have already spent this month. Calculated by summing all your recorded expenses."
-          leftLabelTooltip={`Money remaining right now. Calculated as: Starting cash - Spent so far = $${formatNumber(budget)} - $${formatNumber(totalSpent)} = $${formatNumber(leftNow)}`}
+          leftLabelTooltip={`Money remaining right now. Calculated as: Starting cash - Spent so far = ${formatCurrency(budget)} - ${formatCurrency(totalSpent)} = ${formatCurrency(leftNow)}`}
         />
 
         {/* Section D: Planned so far */}
@@ -295,7 +295,7 @@ export function DashboardHeader({
             leftAfterPlanned < 0
               ? "Negative means you have overplanned beyond your remaining budget."
               : ""
-          } Calculated as: Starting cash - Spent so far - Planned so far = $${formatNumber(budget)} - $${formatNumber(totalSpent)} - $${formatNumber(totalPlanned)} = $${formatNumber(leftAfterPlanned)}`}
+          } Calculated as: Starting cash - Spent so far - Planned so far = ${formatCurrency(budget)} - ${formatCurrency(totalSpent)} - ${formatCurrency(totalPlanned)} = ${formatCurrency(leftAfterPlanned)}`}
         />
       </div>
     </div>

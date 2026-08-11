@@ -114,6 +114,7 @@ export type Database = {
       account_transactions: {
         Row: {
           amount: number
+          base_amount: number | null
           created_at: string | null
           forecast_enabled: boolean
           forecast_flow_id: string | null
@@ -124,11 +125,13 @@ export type Database = {
           note: string | null
           savings_goal_id: string | null
           to_account_id: string | null
+          to_amount: number | null
           transaction_type: string
           user_id: string
         }
         Insert: {
           amount: number
+          base_amount?: number | null
           created_at?: string | null
           forecast_enabled?: boolean
           forecast_flow_id?: string | null
@@ -139,11 +142,13 @@ export type Database = {
           note?: string | null
           savings_goal_id?: string | null
           to_account_id?: string | null
+          to_amount?: number | null
           transaction_type: string
           user_id: string
         }
         Update: {
           amount?: number
+          base_amount?: number | null
           created_at?: string | null
           forecast_enabled?: boolean
           forecast_flow_id?: string | null
@@ -154,6 +159,7 @@ export type Database = {
           note?: string | null
           savings_goal_id?: string | null
           to_account_id?: string | null
+          to_amount?: number | null
           transaction_type?: string
           user_id?: string
         }
@@ -193,6 +199,7 @@ export type Database = {
           account_type: string
           color: string | null
           created_at: string | null
+          currency: string
           current_balance: number
           icon: string | null
           id: string
@@ -207,6 +214,7 @@ export type Database = {
           account_type: string
           color?: string | null
           created_at?: string | null
+          currency?: string
           current_balance?: number
           icon?: string | null
           id?: string
@@ -221,6 +229,7 @@ export type Database = {
           account_type?: string
           color?: string | null
           created_at?: string | null
+          currency?: string
           current_balance?: number
           icon?: string | null
           id?: string
@@ -411,6 +420,27 @@ export type Database = {
           },
         ]
       }
+      exchange_rates: {
+        Row: {
+          currency: string
+          rate: number
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          currency: string
+          rate: number
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          currency?: string
+          rate?: number
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       expenses: {
         Row: {
           account_id: string | null
@@ -425,6 +455,8 @@ export type Database = {
           in_forecast: boolean
           month_key: string
           note: string | null
+          original_amount: number | null
+          original_currency: string | null
           updated_at: string | null
           user_id: string
         }
@@ -441,6 +473,8 @@ export type Database = {
           in_forecast?: boolean
           month_key: string
           note?: string | null
+          original_amount?: number | null
+          original_currency?: string | null
           updated_at?: string | null
           user_id: string
         }
@@ -457,6 +491,8 @@ export type Database = {
           in_forecast?: boolean
           month_key?: string
           note?: string | null
+          original_amount?: number | null
+          original_currency?: string | null
           updated_at?: string | null
           user_id?: string
         }
@@ -779,6 +815,24 @@ export type Database = {
           month_key?: string
           user_id?: string
           value?: number
+        }
+        Relationships: []
+      }
+      user_settings: {
+        Row: {
+          base_currency: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          base_currency?: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          base_currency?: string
+          updated_at?: string | null
+          user_id?: string
         }
         Relationships: []
       }

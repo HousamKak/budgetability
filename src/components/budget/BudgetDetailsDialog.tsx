@@ -6,8 +6,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { toBase } from "@/lib/currency";
 import type { Account } from "@/lib/data-service";
-import { formatNumber } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { cn, dialogStyles } from "@/styles";
 
 interface BudgetDetailsDialogProps {
@@ -93,7 +94,7 @@ export function BudgetDetailsDialog({
                           Monthly Budget
                         </p>
                         <p className="text-2xl font-bold text-stone-800 handwriting">
-                          ${formatNumber(budget)}
+                          {formatCurrency(budget)}
                         </p>
                       </div>
 
@@ -104,7 +105,7 @@ export function BudgetDetailsDialog({
                             Spent
                           </p>
                           <p className="text-lg font-bold text-red-600 handwriting">
-                            ${formatNumber(totalSpent)}
+                            {formatCurrency(totalSpent)}
                           </p>
                         </div>
                         <div>
@@ -112,7 +113,7 @@ export function BudgetDetailsDialog({
                             Planned
                           </p>
                           <p className="text-lg font-bold text-blue-600 handwriting">
-                            ${formatNumber(totalPlanned)}
+                            {formatCurrency(totalPlanned)}
                           </p>
                         </div>
                       </div>
@@ -129,7 +130,7 @@ export function BudgetDetailsDialog({
                               leftNow > 0 ? "text-emerald-600" : "text-red-600",
                             )}
                           >
-                            ${formatNumber(leftNow)}
+                            {formatCurrency(leftNow)}
                           </p>
                         </div>
                         <div>
@@ -144,7 +145,7 @@ export function BudgetDetailsDialog({
                                 : "text-red-600",
                             )}
                           >
-                            ${formatNumber(leftAfterPlanned)}
+                            {formatCurrency(leftAfterPlanned)}
                           </p>
                         </div>
                       </div>
@@ -176,7 +177,7 @@ export function BudgetDetailsDialog({
                                       {acct.name}
                                     </span>
                                     <span className="text-sm font-bold text-red-600 handwriting">
-                                      ${formatNumber(spent)}
+                                      {formatCurrency(spent)}
                                     </span>
                                     <span className="text-xs text-stone-400 handwriting">
                                       ({pct}%)
@@ -240,11 +241,14 @@ export function BudgetDetailsDialog({
                                         : "text-red-600",
                                     )}
                                   >
-                                    ${formatNumber(acct.currentBalance)}
+                                    {formatCurrency(
+                                      acct.currentBalance,
+                                      acct.currency,
+                                    )}
                                   </p>
                                   {spent > 0 && (
                                     <p className="text-xs text-red-500 handwriting">
-                                      -{formatNumber(spent)} this month
+                                      -{formatCurrency(spent)} this month
                                     </p>
                                   )}
                                 </div>
@@ -263,17 +267,18 @@ export function BudgetDetailsDialog({
                               className={cn(
                                 "text-xl font-bold handwriting",
                                 accounts.reduce(
-                                  (sum, a) => sum + a.currentBalance,
+                                  (sum, a) =>
+                                    sum + toBase(a.currentBalance, a.currency),
                                   0,
                                 ) >= 0
                                   ? "text-green-700"
                                   : "text-red-600",
                               )}
                             >
-                              $
-                              {formatNumber(
+                              {formatCurrency(
                                 accounts.reduce(
-                                  (sum, a) => sum + a.currentBalance,
+                                  (sum, a) =>
+                                    sum + toBase(a.currentBalance, a.currency),
                                   0,
                                 ),
                               )}

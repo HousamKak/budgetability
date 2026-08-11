@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { CURRENCIES } from "@/lib/currency";
 import type { Account } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
@@ -112,7 +113,7 @@ export function DepositDialog({
                 {account.name}
               </p>
               <p className="text-sm text-stone-500">
-                Current: {formatCurrency(account.currentBalance)}
+                Current: {formatCurrency(account.currentBalance, account.currency)}
               </p>
             </div>
           </div>
@@ -123,20 +124,21 @@ export function DepositDialog({
               Deposit Amount
             </Label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500">
-                $
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 text-sm">
+                {CURRENCIES[account.currency].symbol}
               </span>
               <input
                 id="amount"
                 type="number"
-                step="0.01"
-                min="0.01"
+                step={CURRENCIES[account.currency].inputStep}
+                min={CURRENCIES[account.currency].inputStep}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
+                placeholder={CURRENCIES[account.currency].inputPlaceholder}
                 autoFocus
                 className={cn(
-                  "w-full pl-7 pr-3 py-2 rounded-lg border text-sm",
+                  "w-full py-2 pr-3 rounded-lg border text-sm",
+                  account.currency === "USD" ? "pl-7" : "pl-12",
                   paperTheme.colors.borders.amber,
                   paperTheme.colors.background.white,
                   "focus:outline-none focus:ring-2 focus:ring-amber-400/50"
@@ -207,10 +209,13 @@ export function DepositDialog({
             >
               <p className="text-xs text-stone-500 mb-1">After deposit:</p>
               <p className="text-lg font-bold text-green-600">
-                {formatCurrency(account.currentBalance + depositAmount)}
+                {formatCurrency(
+                  account.currentBalance + depositAmount,
+                  account.currency,
+                )}
               </p>
               <p className="text-xs text-green-600">
-                +{formatCurrency(depositAmount)}
+                +{formatCurrency(depositAmount, account.currency)}
               </p>
             </div>
           )}

@@ -7,8 +7,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { getBaseCurrency } from "@/lib/currency";
 import type { SavingsGoal } from "@/lib/data-service";
-import { cn } from "@/lib/utils";
+import { cn, currencySymbol } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import { Target } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -155,8 +156,8 @@ export function SavingsGoalForm({
               Target Amount
             </Label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500">
-                $
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 text-sm">
+                {currencySymbol()}
               </span>
               <input
                 id="amount"
@@ -168,7 +169,8 @@ export function SavingsGoalForm({
                 placeholder="1000.00"
                 required
                 className={cn(
-                  "w-full pl-7 pr-3 py-2 rounded-lg border text-sm",
+                  "w-full pr-3 py-2 rounded-lg border text-sm",
+                  getBaseCurrency() === "USD" ? "pl-7" : "pl-12",
                   paperTheme.colors.borders.amber,
                   paperTheme.colors.background.white,
                   "focus:outline-none focus:ring-2 focus:ring-amber-400/50"

@@ -1,4 +1,15 @@
 import type { ManualEntry } from "@/types/spreadsheet.types";
+import {
+  type CurrencyCode,
+  type CurrencySettings,
+  type ExchangeRates,
+  DEFAULT_RATES,
+  convert,
+  formatCurrency,
+  getBaseCurrency,
+  isCurrencyCode,
+  toBase,
+} from "./currency";
 import { supabase } from "./supabase";
 
 // ============================================
@@ -16,10 +27,13 @@ export type Category = {
 };
 
 // Account type - for envelope budgeting
+// Every account is denominated in one currency; its balance and the account
+// side of every transaction are always in that currency (docs/currency-spec.md).
 export type Account = {
   id: string;
   name: string;
   accountType: "checking" | "savings" | "credit" | "cash" | "other";
+  currency: CurrencyCode;
   initialBalance: number;
   currentBalance: number;
   isDefault: boolean;
@@ -123,12 +137,17 @@ export type AccountGroup = {
   sortOrder: number;
 };
 
-// Account Transaction type - tracks money movement
+// Account Transaction type - tracks money movement.
+// `amount` is native to the SOURCE account. On cross-currency transfers
+// `toAmount` is the destination-side native amount; `baseAmount` snapshots the
+// movement's value in the user's base currency at entry time.
 export type AccountTransaction = {
   id: string;
   fromAccountId?: string;
   toAccountId?: string;
   amount: number;
+  toAmount?: number;
+  baseAmount?: number;
   transactionType:
     | "transfer"
     | "budget_allocation"
@@ -177,11 +196,16 @@ export type SavingsContribution = {
   createdAt: string;
 };
 
-// Expense type - with optional categoryId for new system
+// Expense type - with optional categoryId for new system.
+// `amount` is ALWAYS in the base currency (budget math). When the paying
+// account is denominated differently, originalAmount/originalCurrency record
+// what was physically paid — that native amount moves the account balance.
 export type Expense = {
   id: string;
   date: string; // YYYY-MM-DD
   amount: number;
+  originalAmount?: number;
+  originalCurrency?: CurrencyCode;
   category?: string; // Legacy TEXT field
   categoryId?: string; // NEW: Reference to categories table
   accountId?: string; // Account this expense was paid from
@@ -239,6 +263,8 @@ export type Store = {
   savingsContributions: SavingsContribution[];
   spreadsheetEntries: ManualEntry[];
   forecastFlows: ForecastFlow[];
+  settings: { baseCurrency: CurrencyCode };
+  exchangeRates: ExchangeRates;
 };
 
 // Default categories seed data
@@ -319,6 +345,8 @@ const defaultStore: Store = {
   savingsContributions: [],
   spreadsheetEntries: [],
   forecastFlows: [],
+  settings: { baseCurrency: "USD" },
+  exchangeRates: { ...DEFAULT_RATES },
 };
 
 function loadStoreFromLocalStorage(): Store {
@@ -344,6 +372,8 @@ function loadStoreFromLocalStorage(): Store {
           savingsContributions: [],
           spreadsheetEntries: [],
           forecastFlows: [],
+          settings: { baseCurrency: "USD" },
+          exchangeRates: { ...DEFAULT_RATES },
         };
         saveStoreToLocalStorage(migrated);
         return migrated;
@@ -366,7 +396,11 @@ function loadStoreFromLocalStorage(): Store {
       plans: parsed.plans ?? {},
       drafts: parsed.drafts ?? [],
       categories: parsed.categories ?? [],
-      accounts,
+      // Accounts saved before multi-currency have no currency field: USD.
+      accounts: accounts.map((a) => ({
+        ...a,
+        currency: isCurrencyCode(a.currency) ? a.currency : "USD",
+      })),
       accountGroups: parsed.accountGroups ?? [],
       accountGroupMembers: members,
       accountTransactions: parsed.accountTransactions ?? [],
@@ -375,6 +409,12 @@ function loadStoreFromLocalStorage(): Store {
       savingsContributions: parsed.savingsContributions ?? [],
       spreadsheetEntries: parsed.spreadsheetEntries ?? [],
       forecastFlows: parsed.forecastFlows ?? [],
+      settings: {
+        baseCurrency: isCurrencyCode(parsed.settings?.baseCurrency)
+          ? parsed.settings.baseCurrency
+          : "USD",
+      },
+      exchangeRates: { ...DEFAULT_RATES, ...parsed.exchangeRates },
     };
   } catch {
     return { ...defaultStore };
@@ -427,6 +467,116 @@ export class DataService {
   async isAuthenticated(): Promise<boolean> {
     const user = await this.getCurrentUser();
     return !!user;
+  }
+
+  // ============================================
+  // CURRENCY SETTINGS & EXCHANGE RATES
+  // ============================================
+  // Base currency denominates the planning domain (budgets, expenses, plans,
+  // allocations, savings, forecast). Rates are units of currency per 1 USD;
+  // unset rates fall back to DEFAULT_RATES so conversion always works.
+
+  async getCurrencySettings(): Promise<CurrencySettings> {
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser();
+        if (user) {
+          const [settingsRes, ratesRes] = await Promise.all([
+            supabase
+              .from("user_settings")
+              .select("base_currency")
+              .eq("user_id", user.id)
+              .maybeSingle(),
+            supabase.from("exchange_rates").select("currency, rate"),
+          ]);
+
+          if (settingsRes.error) throw settingsRes.error;
+          if (ratesRes.error) throw ratesRes.error;
+
+          const baseCurrency = isCurrencyCode(settingsRes.data?.base_currency)
+            ? settingsRes.data.base_currency
+            : "USD";
+          const rates: ExchangeRates = { USD: 1, ...DEFAULT_RATES };
+          for (const row of ratesRes.data ?? []) {
+            if (isCurrencyCode(row.currency) && Number(row.rate) > 0) {
+              rates[row.currency] = Number(row.rate);
+            }
+          }
+
+          // Mirror locally so offline sessions keep the same view.
+          this.localStore.settings = { baseCurrency };
+          this.localStore.exchangeRates = rates;
+          saveStoreToLocalStorage(this.localStore);
+
+          return { baseCurrency, rates };
+        }
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+      }
+    }
+
+    return {
+      baseCurrency: this.localStore.settings?.baseCurrency ?? "USD",
+      rates: { USD: 1, ...DEFAULT_RATES, ...this.localStore.exchangeRates },
+    };
+  }
+
+  async setBaseCurrency(code: CurrencyCode): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser();
+        if (!user) throw new Error("Not authenticated");
+
+        const { error } = await supabase.from("user_settings").upsert({
+          user_id: user.id,
+          base_currency: code,
+          updated_at: new Date().toISOString(),
+        });
+
+        if (error) throw error;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+      }
+    }
+
+    this.localStore.settings = { baseCurrency: code };
+    saveStoreToLocalStorage(this.localStore);
+  }
+
+  async setExchangeRate(code: CurrencyCode, rate: number): Promise<void> {
+    if (code === "USD") throw new Error("USD is the anchor; its rate is 1");
+    if (!(rate > 0)) throw new Error("Rate must be positive");
+
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser();
+        if (!user) throw new Error("Not authenticated");
+
+        const { error } = await supabase.from("exchange_rates").upsert({
+          user_id: user.id,
+          currency: code,
+          rate,
+          updated_at: new Date().toISOString(),
+        });
+
+        if (error) throw error;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+      }
+    }
+
+    this.localStore.exchangeRates = {
+      ...this.localStore.exchangeRates,
+      [code]: rate,
+    };
+    saveStoreToLocalStorage(this.localStore);
+  }
+
+  /** The currency an account is denominated in ("USD" when unknown). */
+  private async accountCurrency(accountId?: string): Promise<CurrencyCode> {
+    if (!accountId) return getBaseCurrency();
+    const accounts = await this.getAccounts();
+    return accounts.find((a) => a.id === accountId)?.currency ?? "USD";
   }
 
   // Budget operations
@@ -525,6 +675,13 @@ export class DataService {
             id: row.id,
             date: row.date,
             amount: Number(row.amount),
+            originalAmount:
+              row.original_amount != null
+                ? Number(row.original_amount)
+                : undefined,
+            originalCurrency: isCurrencyCode(row.original_currency)
+              ? row.original_currency
+              : undefined,
             category: row.category || undefined,
             categoryId: row.category_id || undefined,
             accountId: row.account_id || undefined,
@@ -573,6 +730,8 @@ export class DataService {
             month_key: monthKey,
             date: expense.date,
             amount: expense.amount,
+            original_amount: expense.originalAmount ?? null,
+            original_currency: expense.originalCurrency ?? null,
             category: expense.category,
             category_id: expense.categoryId || null,
             account_id: expense.accountId || null,
@@ -583,7 +742,8 @@ export class DataService {
 
           if (error) throw error;
 
-          // Deduct from account if specified
+          // Deduct from account if specified — in the account's native
+          // currency (originalAmount when the account isn't base-denominated).
           if (expense.accountId) {
             const txId = crypto.randomUUID();
             const { error: txError } = await supabase
@@ -592,7 +752,8 @@ export class DataService {
                 id: txId,
                 user_id: user.id,
                 from_account_id: expense.accountId,
-                amount: expense.amount,
+                amount: expense.originalAmount ?? expense.amount,
+                base_amount: expense.amount,
                 transaction_type: "expense",
                 month_key: monthKey,
                 note: expense.note || expense.category || "Expense",
@@ -612,11 +773,12 @@ export class DataService {
     list.push(expense);
     this.localStore.expenses[monthKey] = list;
 
-    // Deduct from account if specified
+    // Deduct from account if specified (native amount)
     if (expense.accountId) {
+      const nativeAmount = expense.originalAmount ?? expense.amount;
       this.localStore.accounts = this.localStore.accounts.map((a) =>
         a.id === expense.accountId
-          ? { ...a, currentBalance: a.currentBalance - expense.amount }
+          ? { ...a, currentBalance: a.currentBalance - nativeAmount }
           : a,
       );
       this.localStore.accountTransactions = [
@@ -624,7 +786,8 @@ export class DataService {
         {
           id: crypto.randomUUID(),
           fromAccountId: expense.accountId,
-          amount: expense.amount,
+          amount: nativeAmount,
+          baseAmount: expense.amount,
           transactionType: "expense",
           monthKey,
           note: expense.note || expense.category || "Expense",
@@ -642,14 +805,14 @@ export class DataService {
         // Fetch the expense first to check for accountId
         const { data: expenseData } = await supabase
           .from("expenses")
-          .select("account_id, amount, category, note")
+          .select("account_id, amount, original_amount, category, note")
           .eq("id", id)
           .single();
 
         const { error } = await supabase.from("expenses").delete().eq("id", id);
         if (error) throw error;
 
-        // Refund the account if the expense was linked
+        // Refund the account if the expense was linked (native amount)
         if (expenseData?.account_id) {
           const user = await this.getCurrentUser();
           if (user) {
@@ -660,7 +823,10 @@ export class DataService {
                 id: txId,
                 user_id: user.id,
                 to_account_id: expenseData.account_id,
-                amount: Number(expenseData.amount),
+                amount: Number(
+                  expenseData.original_amount ?? expenseData.amount,
+                ),
+                base_amount: Number(expenseData.amount),
                 transaction_type: "expense",
                 month_key: monthKey,
                 note: `Refund: ${expenseData.note || expenseData.category || "Expense deleted"}`,
@@ -684,11 +850,12 @@ export class DataService {
     );
     this.localStore.expenses[monthKey] = list;
 
-    // Refund the account if the expense was linked
+    // Refund the account if the expense was linked (native amount)
     if (expense?.accountId) {
+      const nativeAmount = expense.originalAmount ?? expense.amount;
       this.localStore.accounts = this.localStore.accounts.map((a) =>
         a.id === expense.accountId
-          ? { ...a, currentBalance: a.currentBalance + expense.amount }
+          ? { ...a, currentBalance: a.currentBalance + nativeAmount }
           : a,
       );
       this.localStore.accountTransactions = [
@@ -696,7 +863,8 @@ export class DataService {
         {
           id: crypto.randomUUID(),
           toAccountId: expense.accountId,
-          amount: expense.amount,
+          amount: nativeAmount,
+          baseAmount: expense.amount,
           transactionType: "expense",
           monthKey,
           note: `Refund: ${expense.note || expense.category || "Expense deleted"}`,
@@ -857,8 +1025,16 @@ export class DataService {
   }
 
   async clearMonth(monthKey: string): Promise<void> {
-    // First, refund all budget allocations for this month back to accounts
+    // First, refund all budget allocations for this month back to accounts.
+    // Refunds are the natively-deducted snapshots, not rate conversions.
     const allocations = await this.getBudgetAllocations(monthKey);
+    const refundNativeByAccount = new Map<string, number>();
+    for (const alloc of allocations) {
+      refundNativeByAccount.set(
+        alloc.accountId,
+        await this.netAllocatedNative(alloc.accountId, monthKey),
+      );
+    }
 
     if (this.useSupabase && supabase) {
       try {
@@ -866,7 +1042,9 @@ export class DataService {
 
         // Refund each allocation back to its account
         for (const alloc of allocations) {
-          if (alloc.amount > 0 && user) {
+          const refundNative =
+            refundNativeByAccount.get(alloc.accountId) ?? alloc.amount;
+          if (refundNative > 0 && user) {
             const refundTxId = crypto.randomUUID();
             const { error: refundError } = await supabase
               .from("account_transactions")
@@ -874,7 +1052,8 @@ export class DataService {
                 id: refundTxId,
                 user_id: user.id,
                 to_account_id: alloc.accountId,
-                amount: alloc.amount,
+                amount: refundNative,
+                base_amount: alloc.amount,
                 transaction_type: "budget_allocation",
                 month_key: monthKey,
                 note: "Month cleared - allocation refunded",
@@ -899,12 +1078,14 @@ export class DataService {
       }
     }
 
-    // Local: refund allocations back to accounts
+    // Local: refund allocations back to accounts (native snapshot)
     for (const alloc of allocations) {
-      if (alloc.amount > 0) {
+      const refundNative =
+        refundNativeByAccount.get(alloc.accountId) ?? alloc.amount;
+      if (refundNative > 0) {
         this.localStore.accounts = this.localStore.accounts.map((a) =>
           a.id === alloc.accountId
-            ? { ...a, currentBalance: a.currentBalance + alloc.amount }
+            ? { ...a, currentBalance: a.currentBalance + refundNative }
             : a,
         );
 
@@ -914,7 +1095,8 @@ export class DataService {
           {
             id: crypto.randomUUID(),
             toAccountId: alloc.accountId,
-            amount: alloc.amount,
+            amount: refundNative,
+            baseAmount: alloc.amount,
             transactionType: "budget_allocation",
             monthKey,
             note: "Month cleared - allocation refunded",
@@ -1083,12 +1265,19 @@ export class DataService {
         // Fetch old expense to handle account balance adjustments
         const { data: oldExpense } = await supabase
           .from("expenses")
-          .select("account_id, amount")
+          .select("account_id, amount, original_amount")
           .eq("id", id)
           .single();
 
         const dbUpdates: Record<string, unknown> = {};
-        if (updates.amount !== undefined) dbUpdates.amount = updates.amount;
+        if (updates.amount !== undefined) {
+          dbUpdates.amount = updates.amount;
+          // An amount edit re-denominates the expense: callers send the
+          // original* pair alongside it (undefined = entered in base), so a
+          // missing pair must CLEAR any stale native snapshot, not keep it.
+          dbUpdates.original_amount = updates.originalAmount ?? null;
+          dbUpdates.original_currency = updates.originalCurrency ?? null;
+        }
         if (updates.category !== undefined)
           dbUpdates.category = updates.category;
         if (updates.categoryId !== undefined)
@@ -1113,13 +1302,20 @@ export class DataService {
 
         if (error) throw error;
 
-        // Handle account balance adjustments
+        // Handle account balance adjustments (native amounts on each side)
         const user = await this.getCurrentUser();
         if (user && oldExpense) {
           const oldAccountId = oldExpense.account_id;
-          const oldAmount = Number(oldExpense.amount);
+          const oldBase = Number(oldExpense.amount);
+          const oldNative = Number(oldExpense.original_amount ?? oldExpense.amount);
           const newAccountId = updates.accountId !== undefined ? updates.accountId : oldAccountId;
-          const newAmount = updates.amount !== undefined ? updates.amount : oldAmount;
+          const newBase = updates.amount !== undefined ? updates.amount : oldBase;
+          const newNative =
+            updates.originalAmount !== undefined
+              ? (updates.originalAmount ?? newBase)
+              : updates.amount !== undefined
+                ? updates.amount
+                : oldNative;
 
           // Refund old account
           if (oldAccountId) {
@@ -1129,7 +1325,8 @@ export class DataService {
                 id: crypto.randomUUID(),
                 user_id: user.id,
                 to_account_id: oldAccountId,
-                amount: oldAmount,
+                amount: oldNative,
+                base_amount: oldBase,
                 transaction_type: "expense",
                 month_key: monthKey,
                 note: "Expense updated - old amount refunded",
@@ -1144,7 +1341,8 @@ export class DataService {
                 id: crypto.randomUUID(),
                 user_id: user.id,
                 from_account_id: newAccountId,
-                amount: newAmount,
+                amount: newNative,
+                base_amount: newBase,
                 transaction_type: "expense",
                 month_key: monthKey,
                 note: "Expense updated - new amount deducted",
@@ -1162,23 +1360,40 @@ export class DataService {
       (x) => x.id === id,
     );
 
+    // Mirror the DB semantics: an amount edit without an original* pair means
+    // the entry is base-denominated, so any stale native snapshot is cleared.
+    const normalizedUpdates =
+      updates.amount !== undefined
+        ? {
+            originalAmount: undefined,
+            originalCurrency: undefined,
+            ...updates,
+          }
+        : updates;
+
     const list = (this.localStore.expenses[monthKey] ?? []).map((x) =>
-      x.id === id ? { ...x, ...updates } : x,
+      x.id === id ? { ...x, ...normalizedUpdates } : x,
     );
     this.localStore.expenses[monthKey] = list;
 
-    // Handle account balance adjustments for localStorage
+    // Handle account balance adjustments for localStorage (native amounts)
     if (oldExpense) {
       const oldAccountId = oldExpense.accountId;
-      const oldAmount = oldExpense.amount;
+      const oldNative = oldExpense.originalAmount ?? oldExpense.amount;
       const newAccountId = updates.accountId !== undefined ? updates.accountId : oldAccountId;
-      const newAmount = updates.amount !== undefined ? updates.amount : oldAmount;
+      const newBase = updates.amount !== undefined ? updates.amount : oldExpense.amount;
+      const newNative =
+        updates.originalAmount !== undefined
+          ? (updates.originalAmount ?? newBase)
+          : updates.amount !== undefined
+            ? updates.amount
+            : oldNative;
 
       // Refund old account
       if (oldAccountId) {
         this.localStore.accounts = this.localStore.accounts.map((a) =>
           a.id === oldAccountId
-            ? { ...a, currentBalance: a.currentBalance + oldAmount }
+            ? { ...a, currentBalance: a.currentBalance + oldNative }
             : a,
         );
       }
@@ -1186,7 +1401,7 @@ export class DataService {
       if (newAccountId) {
         this.localStore.accounts = this.localStore.accounts.map((a) =>
           a.id === newAccountId
-            ? { ...a, currentBalance: a.currentBalance - newAmount }
+            ? { ...a, currentBalance: a.currentBalance - newNative }
             : a,
         );
       }
@@ -1412,6 +1627,7 @@ export class DataService {
             id: row.id,
             name: row.name,
             accountType: row.account_type as Account["accountType"],
+            currency: isCurrencyCode(row.currency) ? row.currency : "USD",
             initialBalance: Number(row.initial_balance),
             currentBalance: Number(row.current_balance),
             isDefault: row.is_default,
@@ -1434,6 +1650,7 @@ export class DataService {
     const members = this.localStore.accountGroupMembers ?? [];
     return (this.localStore.accounts ?? []).map((a) => ({
       ...a,
+      currency: isCurrencyCode(a.currency) ? a.currency : "USD",
       groupIds: members
         .filter((m) => m.accountId === a.id)
         .map((m) => m.groupId),
@@ -1461,6 +1678,7 @@ export class DataService {
             user_id: user.id,
             name: account.name,
             account_type: account.accountType,
+            currency: account.currency,
             initial_balance: account.initialBalance,
             current_balance: account.initialBalance,
             is_default: account.isDefault,
@@ -1489,6 +1707,8 @@ export class DataService {
         if (updates.name !== undefined) dbUpdates.name = updates.name;
         if (updates.accountType !== undefined)
           dbUpdates.account_type = updates.accountType;
+        if (updates.currency !== undefined)
+          dbUpdates.currency = updates.currency;
         if (updates.initialBalance !== undefined)
           dbUpdates.initial_balance = updates.initialBalance;
         if (updates.currentBalance !== undefined)
@@ -1851,10 +2071,14 @@ export class DataService {
     inForecast = false,
   ): Promise<void> {
     const id = crypto.randomUUID();
+    // `amount` is native to the account; snapshot its base value for totals.
+    const currency = await this.accountCurrency(accountId);
+    const baseAmount = toBase(amount, currency);
     const transaction: AccountTransaction = {
       id,
       toAccountId: accountId,
       amount,
+      baseAmount,
       transactionType: "deposit",
       note,
       createdAt: new Date().toISOString(),
@@ -1873,6 +2097,7 @@ export class DataService {
           user_id: user.id,
           to_account_id: accountId,
           amount,
+          base_amount: baseAmount,
           transaction_type: "deposit",
           note,
           in_forecast: inForecast,
@@ -1907,13 +2132,28 @@ export class DataService {
     toId: string,
     amount: number,
     note?: string,
+    // Destination-side amount for cross-currency transfers. The dialog
+    // pre-fills it from the rate table but the user can override it (street
+    // rates differ), so whatever arrives here is the effective conversion.
+    toAmount?: number,
   ): Promise<void> {
     const id = crypto.randomUUID();
+    const [fromCurrency, toCurrency] = await Promise.all([
+      this.accountCurrency(fromId),
+      this.accountCurrency(toId),
+    ]);
+    const crossCurrency = fromCurrency !== toCurrency;
+    const destinationAmount = crossCurrency
+      ? (toAmount ?? convert(amount, fromCurrency, toCurrency))
+      : undefined;
+    const baseAmount = toBase(amount, fromCurrency);
     const transaction: AccountTransaction = {
       id,
       fromAccountId: fromId,
       toAccountId: toId,
       amount,
+      toAmount: destinationAmount,
+      baseAmount,
       transactionType: "transfer",
       note,
       createdAt: new Date().toISOString(),
@@ -1931,6 +2171,8 @@ export class DataService {
           from_account_id: fromId,
           to_account_id: toId,
           amount,
+          to_amount: destinationAmount ?? null,
+          base_amount: baseAmount,
           transaction_type: "transfer",
           note,
         });
@@ -1947,7 +2189,10 @@ export class DataService {
       if (a.id === fromId)
         return { ...a, currentBalance: a.currentBalance - amount };
       if (a.id === toId)
-        return { ...a, currentBalance: a.currentBalance + amount };
+        return {
+          ...a,
+          currentBalance: a.currentBalance + (destinationAmount ?? amount),
+        };
       return a;
     });
     this.localStore.accountTransactions = [
@@ -1957,6 +2202,8 @@ export class DataService {
     saveStoreToLocalStorage(this.localStore);
   }
 
+  // `amount` is native to the account (what leaves it); the allocation row is
+  // denominated in the base currency, converted at the current rate.
   async allocateToBudget(
     accountId: string,
     monthKey: string,
@@ -1972,10 +2219,11 @@ export class DataService {
     if (!account) throw new Error("Account not found");
     if (amount > account.currentBalance) {
       throw new Error(
-        `Insufficient balance: ${account.name} has $${account.currentBalance.toFixed(2)} but tried to allocate $${amount.toFixed(2)}`,
+        `Insufficient balance: ${account.name} has ${formatCurrency(account.currentBalance, account.currency)} but tried to allocate ${formatCurrency(amount, account.currency)}`,
       );
     }
 
+    const baseAmount = toBase(amount, account.currency);
     const transactionId = crypto.randomUUID();
     const allocationId = crypto.randomUUID();
 
@@ -1992,11 +2240,11 @@ export class DataService {
 
         if (existing) {
           // Already has allocation - delegate to updateBudgetAllocation
-          // which correctly handles the difference
+          // which correctly handles the difference (in base currency)
           await this.updateBudgetAllocation(
             accountId,
             monthKey,
-            existing.amount + amount,
+            existing.amount + baseAmount,
           );
           return;
         }
@@ -2011,7 +2259,7 @@ export class DataService {
             user_id: user.id,
             account_id: accountId,
             month_key: monthKey,
-            amount,
+            amount: baseAmount,
           });
 
         if (allocError) throw allocError;
@@ -2024,6 +2272,7 @@ export class DataService {
             user_id: user.id,
             from_account_id: accountId,
             amount,
+            base_amount: baseAmount,
             transaction_type: "budget_allocation",
             month_key: monthKey,
           });
@@ -2042,16 +2291,21 @@ export class DataService {
         : a,
     );
 
-    // Update or create allocation
+    // Update or create allocation (base currency)
     const allocations = this.localStore.budgetAllocations[monthKey] ?? [];
     const existingIdx = allocations.findIndex((a) => a.accountId === accountId);
     if (existingIdx >= 0) {
       allocations[existingIdx] = {
         ...allocations[existingIdx],
-        amount: allocations[existingIdx].amount + amount,
+        amount: allocations[existingIdx].amount + baseAmount,
       };
     } else {
-      allocations.push({ id: allocationId, accountId, monthKey, amount });
+      allocations.push({
+        id: allocationId,
+        accountId,
+        monthKey,
+        amount: baseAmount,
+      });
     }
     this.localStore.budgetAllocations[monthKey] = allocations;
 
@@ -2062,6 +2316,7 @@ export class DataService {
         id: transactionId,
         fromAccountId: accountId,
         amount,
+        baseAmount,
         transactionType: "budget_allocation",
         monthKey,
         createdAt: new Date().toISOString(),
@@ -2180,11 +2435,50 @@ export class DataService {
     return results;
   }
 
+  // Net native amount this account has put into a month's budget, computed
+  // from its budget_allocation transactions (deducts minus refunds). Exact
+  // snapshot — never depends on the current rate table.
+  private async netAllocatedNative(
+    accountId: string,
+    monthKey: string,
+  ): Promise<number> {
+    const txs = await this.getAllocationTransactions(accountId, monthKey);
+    let net = 0;
+    for (const t of txs) {
+      if (t.transactionType !== "budget_allocation") continue;
+      if (t.fromAccountId === accountId) net += t.amount;
+      if (t.toAccountId === accountId) net -= t.amount;
+    }
+    return Math.round(net * 100) / 100;
+  }
+
+  // `newAmount` is in the BASE currency (allocations are base-denominated).
+  // Increases deduct the account at the current rate; decreases refund
+  // proportionally from the natively-deducted snapshot, so refunds return
+  // exactly what was taken regardless of rate changes since.
   async updateBudgetAllocation(
     accountId: string,
     monthKey: string,
     newAmount: number,
   ): Promise<void> {
+    const account = (await this.getAccounts()).find(
+      (a) => a.id === accountId,
+    );
+    if (!account) throw new Error("Account not found");
+
+    // Native movement for a base-currency difference.
+    const nativeForDiff = async (diffBase: number, currentBase: number) => {
+      if (diffBase > 0) {
+        return convert(diffBase, getBaseCurrency(), account.currency);
+      }
+      const netNative = await this.netAllocatedNative(accountId, monthKey);
+      if (currentBase <= 0 || netNative <= 0) {
+        return convert(-diffBase, getBaseCurrency(), account.currency);
+      }
+      const fraction = Math.min(1, -diffBase / currentBase);
+      return Math.round(netNative * fraction * 100) / 100;
+    };
+
     if (this.useSupabase && supabase) {
       try {
         const user = await this.getCurrentUser();
@@ -2197,6 +2491,10 @@ export class DataService {
         );
         const currentAmount = currentAllocation?.amount ?? 0;
         const amountDifference = newAmount - currentAmount;
+        const nativeAmount = await nativeForDiff(
+          amountDifference,
+          currentAmount,
+        );
 
         // Update the allocation
         const { error: allocError } = await supabase
@@ -2208,7 +2506,7 @@ export class DataService {
         if (allocError) throw allocError;
 
         // Create a transaction for the difference (if any)
-        if (amountDifference !== 0) {
+        if (amountDifference !== 0 && nativeAmount > 0) {
           const transactionId = crypto.randomUUID();
           const { error: txError } = await supabase
             .from("account_transactions")
@@ -2217,7 +2515,8 @@ export class DataService {
               user_id: user.id,
               from_account_id: amountDifference > 0 ? accountId : null,
               to_account_id: amountDifference < 0 ? accountId : null,
-              amount: Math.abs(amountDifference),
+              amount: nativeAmount,
+              base_amount: Math.abs(amountDifference),
               transaction_type: "budget_allocation",
               month_key: monthKey,
               note:
@@ -2241,6 +2540,8 @@ export class DataService {
     if (existingIdx >= 0) {
       const currentAmount = allocations[existingIdx].amount;
       const amountDifference = newAmount - currentAmount;
+      const nativeAmount = await nativeForDiff(amountDifference, currentAmount);
+      const signedNative = amountDifference > 0 ? nativeAmount : -nativeAmount;
 
       // Update allocation
       allocations[existingIdx] = {
@@ -2249,22 +2550,23 @@ export class DataService {
       };
       this.localStore.budgetAllocations[monthKey] = allocations;
 
-      // Update account balance
+      // Update account balance (native)
       this.localStore.accounts = this.localStore.accounts.map((a) =>
         a.id === accountId
-          ? { ...a, currentBalance: a.currentBalance - amountDifference }
+          ? { ...a, currentBalance: a.currentBalance - signedNative }
           : a,
       );
 
       // Add transaction
-      if (amountDifference !== 0) {
+      if (amountDifference !== 0 && nativeAmount > 0) {
         this.localStore.accountTransactions = [
           ...this.localStore.accountTransactions,
           {
             id: crypto.randomUUID(),
             fromAccountId: amountDifference > 0 ? accountId : undefined,
             toAccountId: amountDifference < 0 ? accountId : undefined,
-            amount: Math.abs(amountDifference),
+            amount: nativeAmount,
+            baseAmount: Math.abs(amountDifference),
             transactionType: "budget_allocation",
             monthKey,
             note:
@@ -2294,6 +2596,13 @@ export class DataService {
         const allocation = allocations.find((a) => a.accountId === accountId);
         if (!allocation) return;
 
+        // Refund exactly the native amount that was deducted, from the
+        // transaction snapshot — immune to rate changes since allocation.
+        const refundNative = await this.netAllocatedNative(
+          accountId,
+          monthKey,
+        );
+
         // Delete the allocation
         const { error: allocError } = await supabase
           .from("budget_allocations")
@@ -2304,20 +2613,23 @@ export class DataService {
         if (allocError) throw allocError;
 
         // Create a transaction to refund the amount back to the account
-        const transactionId = crypto.randomUUID();
-        const { error: txError } = await supabase
-          .from("account_transactions")
-          .insert({
-            id: transactionId,
-            user_id: user.id,
-            to_account_id: accountId,
-            amount: allocation.amount,
-            transaction_type: "budget_allocation",
-            month_key: monthKey,
-            note: "Allocation removed - refunded to account",
-          });
+        if (refundNative > 0) {
+          const transactionId = crypto.randomUUID();
+          const { error: txError } = await supabase
+            .from("account_transactions")
+            .insert({
+              id: transactionId,
+              user_id: user.id,
+              to_account_id: accountId,
+              amount: refundNative,
+              base_amount: allocation.amount,
+              transaction_type: "budget_allocation",
+              month_key: monthKey,
+              note: "Allocation removed - refunded to account",
+            });
 
-        if (txError) throw txError;
+          if (txError) throw txError;
+        }
 
         return;
       } catch (error) {
@@ -2330,31 +2642,37 @@ export class DataService {
     const allocation = allocations.find((a) => a.accountId === accountId);
     if (!allocation) return;
 
+    // Refund the natively-deducted snapshot, not a rate-dependent conversion.
+    const refundNative = await this.netAllocatedNative(accountId, monthKey);
+
     // Remove allocation
     this.localStore.budgetAllocations[monthKey] = allocations.filter(
       (a) => a.accountId !== accountId,
     );
 
-    // Refund to account
-    this.localStore.accounts = this.localStore.accounts.map((a) =>
-      a.id === accountId
-        ? { ...a, currentBalance: a.currentBalance + allocation.amount }
-        : a,
-    );
+    if (refundNative > 0) {
+      // Refund to account
+      this.localStore.accounts = this.localStore.accounts.map((a) =>
+        a.id === accountId
+          ? { ...a, currentBalance: a.currentBalance + refundNative }
+          : a,
+      );
 
-    // Add refund transaction
-    this.localStore.accountTransactions = [
-      ...this.localStore.accountTransactions,
-      {
-        id: crypto.randomUUID(),
-        toAccountId: accountId,
-        amount: allocation.amount,
-        transactionType: "budget_allocation",
-        monthKey,
-        note: "Allocation removed - refunded to account",
-        createdAt: new Date().toISOString(),
-      },
-    ];
+      // Add refund transaction
+      this.localStore.accountTransactions = [
+        ...this.localStore.accountTransactions,
+        {
+          id: crypto.randomUUID(),
+          toAccountId: accountId,
+          amount: refundNative,
+          baseAmount: allocation.amount,
+          transactionType: "budget_allocation",
+          monthKey,
+          note: "Allocation removed - refunded to account",
+          createdAt: new Date().toISOString(),
+        },
+      ];
+    }
 
     saveStoreToLocalStorage(this.localStore);
   }
@@ -2380,6 +2698,9 @@ export class DataService {
             fromAccountId: row.from_account_id || undefined,
             toAccountId: row.to_account_id || undefined,
             amount: Number(row.amount),
+            toAmount: row.to_amount != null ? Number(row.to_amount) : undefined,
+            baseAmount:
+              row.base_amount != null ? Number(row.base_amount) : undefined,
             transactionType:
               row.transaction_type as AccountTransaction["transactionType"],
             monthKey: row.month_key || undefined,
@@ -2441,15 +2762,18 @@ export class DataService {
       const txMonth = (t.createdAt ?? "").slice(0, 7);
       if (!txMonth) continue;
 
+      // Each account's numbers stay native to it: the destination side of a
+      // cross-currency transfer moved by toAmount, not the source amount.
+      const inbound = t.toAmount ?? t.amount;
       if (txMonth > monthKey) {
         // Recorded after the month we're looking at — undo it.
         if (t.toAccountId && snapshot[t.toAccountId])
-          snapshot[t.toAccountId].balance -= t.amount;
+          snapshot[t.toAccountId].balance -= inbound;
         if (t.fromAccountId && snapshot[t.fromAccountId])
           snapshot[t.fromAccountId].balance += t.amount;
       } else if (txMonth === monthKey) {
         if (t.toAccountId && snapshot[t.toAccountId])
-          snapshot[t.toAccountId].inflow += t.amount;
+          snapshot[t.toAccountId].inflow += inbound;
         if (t.fromAccountId && snapshot[t.fromAccountId])
           snapshot[t.fromAccountId].outflow += t.amount;
       }
@@ -2513,13 +2837,17 @@ export class DataService {
       );
     }
 
-    // Reverse the balance change.
+    // Reverse the balance change (destination side moved by toAmount on
+    // cross-currency transfers).
     this.localStore.accounts = this.localStore.accounts.map((a) => {
       if (a.id === tx.fromAccountId) {
         return { ...a, currentBalance: a.currentBalance + tx.amount };
       }
       if (a.id === tx.toAccountId) {
-        return { ...a, currentBalance: a.currentBalance - tx.amount };
+        return {
+          ...a,
+          currentBalance: a.currentBalance - (tx.toAmount ?? tx.amount),
+        };
       }
       return a;
     });
@@ -2554,6 +2882,9 @@ export class DataService {
             fromAccountId: row.from_account_id || undefined,
             toAccountId: row.to_account_id || undefined,
             amount: Number(row.amount),
+            toAmount: row.to_amount != null ? Number(row.to_amount) : undefined,
+            baseAmount:
+              row.base_amount != null ? Number(row.base_amount) : undefined,
             transactionType:
               row.transaction_type as AccountTransaction["transactionType"],
             monthKey: row.month_key || undefined,
@@ -2714,6 +3045,8 @@ export class DataService {
     saveStoreToLocalStorage(this.localStore);
   }
 
+  // `amount` is native to the account; goals are base-denominated, so the
+  // goal is credited with the converted base value (snapshotted here).
   async contributeToSavingsGoal(
     goalId: string,
     accountId: string,
@@ -2722,6 +3055,8 @@ export class DataService {
   ): Promise<void> {
     const contributionId = crypto.randomUUID();
     const transactionId = crypto.randomUUID();
+    const currency = await this.accountCurrency(accountId);
+    const baseAmount = toBase(amount, currency);
 
     if (this.useSupabase && supabase) {
       try {
@@ -2736,6 +3071,7 @@ export class DataService {
             user_id: user.id,
             from_account_id: accountId,
             amount,
+            base_amount: baseAmount,
             transaction_type: "savings_contribution",
             savings_goal_id: goalId,
             note,
@@ -2743,7 +3079,7 @@ export class DataService {
 
         if (txError) throw txError;
 
-        // Create contribution (trigger will update goal current_amount)
+        // Create contribution in base (trigger will update goal current_amount)
         const { error: contribError } = await supabase
           .from("savings_contributions")
           .insert({
@@ -2751,7 +3087,7 @@ export class DataService {
             user_id: user.id,
             savings_goal_id: goalId,
             account_id: accountId,
-            amount,
+            amount: baseAmount,
             note,
           });
 
@@ -2771,7 +3107,7 @@ export class DataService {
 
     this.localStore.savingsGoals = this.localStore.savingsGoals.map((g) => {
       if (g.id !== goalId) return g;
-      const newAmount = g.currentAmount + amount;
+      const newAmount = g.currentAmount + baseAmount;
       const isCompleted = newAmount >= g.targetAmount;
       return {
         ...g,
@@ -2790,7 +3126,7 @@ export class DataService {
         id: contributionId,
         savingsGoalId: goalId,
         accountId,
-        amount,
+        amount: baseAmount,
         note,
         createdAt: new Date().toISOString(),
       },
@@ -2802,6 +3138,7 @@ export class DataService {
         id: transactionId,
         fromAccountId: accountId,
         amount,
+        baseAmount,
         transactionType: "savings_contribution",
         savingsGoalId: goalId,
         note,
@@ -2934,6 +3271,13 @@ export class DataService {
             id: row.id,
             date: row.date,
             amount: Number(row.amount),
+            originalAmount:
+              row.original_amount != null
+                ? Number(row.original_amount)
+                : undefined,
+            originalCurrency: isCurrencyCode(row.original_currency)
+              ? row.original_currency
+              : undefined,
             category: row.category || undefined,
             categoryId: row.category_id || undefined,
             accountId: row.account_id || undefined,

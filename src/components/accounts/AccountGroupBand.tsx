@@ -18,7 +18,7 @@ import { useState } from "react";
 import { CategoryIcon } from "@/components/budget/CategoryIcon";
 import { AccountRow } from "./AccountRow";
 import { readAccountDrag } from "./accountDrag";
-import { groupTotal } from "./accountMath";
+import { groupTotal, signedBalance, singleCurrency } from "./accountMath";
 
 interface AccountGroupBandProps {
   group: AccountGroup;
@@ -64,7 +64,12 @@ export function AccountGroupBand({
   activity,
   readOnly = false,
 }: AccountGroupBandProps) {
-  const combined = groupTotal(members);
+  // Single-currency groups display native and exact; mixed groups convert to
+  // the base currency (rendered with a ≈ marker below).
+  const sameCurrency = singleCurrency(members);
+  const combined = sameCurrency
+    ? members.reduce((sum, m) => sum + signedBalance(m), 0)
+    : groupTotal(members);
   const accent = group.color || "#f59e0b";
   const [isOver, setIsOver] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -151,7 +156,9 @@ export function AccountGroupBand({
               combined >= 0 ? "text-green-700" : "text-red-600",
             )}
           >
-            {formatCurrency(combined)}
+            {sameCurrency
+              ? formatCurrency(combined, sameCurrency)
+              : `≈ ${formatCurrency(combined)}`}
           </span>
           <BarChart3 className="w-3.5 h-3.5 text-stone-300" />
         </button>

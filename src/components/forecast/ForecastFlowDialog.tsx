@@ -15,7 +15,7 @@ import type {
   PickableExpense,
 } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, currencySymbol, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import { MONTHS_FULL, MONTHS_SHORT } from "@/utils/forecast";
 import { Lock, Pencil, RefreshCw, Search, Sigma, X } from "lucide-react";
@@ -904,7 +904,7 @@ export function ForecastFlowDialog({
             {uncertain ? (
               <div className="flex gap-3">
                 <div className="flex-1 space-y-1">
-                  <Label className="text-xs text-stone-500">Low ($)</Label>
+                  <Label className="text-xs text-stone-500">Low ({currencySymbol()})</Label>
                   <input
                     type="number"
                     step="0.01"
@@ -915,7 +915,7 @@ export function ForecastFlowDialog({
                   />
                 </div>
                 <div className="flex-1 space-y-1">
-                  <Label className="text-xs text-stone-500">High ($)</Label>
+                  <Label className="text-xs text-stone-500">High ({currencySymbol()})</Label>
                   <input
                     type="number"
                     step="0.01"
@@ -928,7 +928,7 @@ export function ForecastFlowDialog({
               </div>
             ) : (
               <div className="space-y-1">
-                <Label className="text-xs text-stone-500">Amount ($)</Label>
+                <Label className="text-xs text-stone-500">Amount ({currencySymbol()})</Label>
                 <input
                   type="number"
                   step="0.01"
