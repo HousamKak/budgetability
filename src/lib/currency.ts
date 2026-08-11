@@ -126,6 +126,30 @@ export function toBase(amount: number, from: CurrencyCode): number {
   return convert(amount, from, active.baseCurrency);
 }
 
+/** A set of amounts keyed by their currency (wallet balances, in/out totals). */
+export type MoneyByCurrency = Partial<Record<CurrencyCode, number>>;
+
+/** Total base-currency value of a per-currency amount map. */
+export function sumToBase(amounts: MoneyByCurrency): number {
+  let total = 0;
+  for (const code of Object.keys(amounts) as CurrencyCode[]) {
+    total += toBase(amounts[code] ?? 0, code);
+  }
+  return Math.round(total * 100) / 100;
+}
+
+/** Add `delta` to the map's balance for `code`, immutably. */
+export function addMoney(
+  amounts: MoneyByCurrency,
+  code: CurrencyCode,
+  delta: number,
+): MoneyByCurrency {
+  return {
+    ...amounts,
+    [code]: Math.round(((amounts[code] ?? 0) + delta) * 100) / 100,
+  };
+}
+
 // ─── Formatting ──────────────────────────────────────────────────────────────
 
 function def(code?: CurrencyCode): CurrencyDef {

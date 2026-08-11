@@ -27,6 +27,7 @@ import {
   renderAccountLabel,
 } from "./AccountInlineSelect";
 import { getAccountTypeConfig } from "@/components/accounts/AccountTypeBadge";
+import { CurrencyChips } from "@/components/accounts/CurrencyChips";
 import {
   Select,
   SelectContent,
@@ -62,6 +63,9 @@ interface ExpenseDialogProps {
   onNoteChange: (note: string) => void;
   accountId: string;
   onAccountIdChange: (accountId: string) => void;
+  /** Which of the paying wallet's currencies the amount is typed in. */
+  entryCurrency?: CurrencyCode;
+  onEntryCurrencyChange?: (code: CurrencyCode) => void;
   accounts: Account[];
   // "Show in Forecast" — opt this entry in to the Forecast page as an outflow
   // in its own month. Off by default; nothing is forecast unless marked.
@@ -114,6 +118,8 @@ export function ExpenseDialog({
   onNoteChange,
   accountId,
   onAccountIdChange,
+  entryCurrency: entryCurrencyProp,
+  onEntryCurrencyChange,
   accounts,
   inForecast,
   onInForecastChange,
@@ -175,11 +181,12 @@ export function ExpenseDialog({
     });
   };
 
-  // Edits work on the displayed (base) amount; the native side is recomputed
-  // at the current rate when the paying account isn't base-denominated.
+  // Edits work on the displayed (base) amount; the native side pays from the
+  // wallet's base balance when it holds one, else its primary currency at the
+  // current rate.
   const originalFieldsFor = (baseAmount: number, payAccountId?: string) => {
     const acc = accounts.find((x) => x.id === payAccountId);
-    if (!acc || acc.currency === getBaseCurrency()) {
+    if (!acc || acc.currencies.includes(getBaseCurrency())) {
       return { originalAmount: undefined, originalCurrency: undefined };
     }
     return {
@@ -226,15 +233,28 @@ export function ExpenseDialog({
     setInlineEditingPlanId(null);
   };
 
-  // What the typed amount is denominated in: new expenses are entered in the
-  // paying account's currency; edits work on the displayed (base) amount.
+  // What the typed amount is denominated in: new expenses are entered in a
+  // currency the paying wallet holds (user-picked via chips, snapped to the
+  // wallet's primary when the selection isn't held); edits work on the
+  // displayed (base) amount.
+  const payingAccount = accounts.find((x) => x.id === accountId);
   const entryCurrency: CurrencyCode =
-    editingExpense || editingPlan || !accountId
+    editingExpense || editingPlan || !payingAccount
       ? getBaseCurrency()
-      : (accounts.find((x) => x.id === accountId)?.currency ??
-        getBaseCurrency());
+      : payingAccount.currencies.includes(entryCurrencyProp ?? "USD")
+        ? (entryCurrencyProp ?? payingAccount.currency)
+        : payingAccount.currency;
 
-  // Clear selected account if amount exceeds its available balance.
+  // Snap the chip selection into the newly selected wallet's held set.
+  useEffect(() => {
+    if (!payingAccount || !onEntryCurrencyChange) return;
+    if (!payingAccount.currencies.includes(entryCurrencyProp ?? "USD")) {
+      onEntryCurrencyChange(payingAccount.currency);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId]);
+
+  // Clear selected account if amount exceeds the balance being spent.
   // When editing, the original amount is already deducted from the balance,
   // so we only need to check if the *additional* cost is affordable.
   // Plans target a future payment, so today's balance is not a real
@@ -246,18 +266,17 @@ export function ExpenseDialog({
     if (parsedAmount <= 0) return;
     const selectedAccount = accounts.find((a) => a.id === accountId);
     if (!selectedAccount) return;
-    // Compare in the account's own currency.
-    const parsedNative = convert(
-      parsedAmount,
-      entryCurrency,
-      selectedAccount.currency,
-    );
-    const originalNative =
+    // The typed amount leaves the entry-currency balance specifically.
+    const available = selectedAccount.balances[entryCurrency] ?? 0;
+    const originalCredit =
       editingExpense?.accountId === accountId
-        ? (editingExpense.originalAmount ?? editingExpense.amount)
+        ? convert(
+            editingExpense.originalAmount ?? editingExpense.amount,
+            editingExpense.originalCurrency ?? getBaseCurrency(),
+            entryCurrency,
+          )
         : 0;
-    const effectiveBalance = selectedAccount.currentBalance + originalNative;
-    if (effectiveBalance < parsedNative) {
+    if (available + originalCredit < parsedAmount) {
       onAccountIdChange("");
     }
   }, [
@@ -511,12 +530,21 @@ export function ExpenseDialog({
                       />
                     </div>
                     <div className={dialogStyles.form.fieldContainer}>
-                      <Label
-                        htmlFor="amount"
-                        className={dialogStyles.form.label}
-                      >
-                        Amount ({CURRENCIES[entryCurrency].symbol})
-                      </Label>
+                      <div className="flex items-center justify-between">
+                        <Label
+                          htmlFor="amount"
+                          className={dialogStyles.form.label}
+                        >
+                          Amount ({CURRENCIES[entryCurrency].symbol})
+                        </Label>
+                        {!isEditing && payingAccount && onEntryCurrencyChange && (
+                          <CurrencyChips
+                            currencies={payingAccount.currencies}
+                            value={entryCurrency}
+                            onChange={onEntryCurrencyChange}
+                          />
+                        )}
+                      </div>
                       <Input
                         id="amount"
                         type="number"
@@ -584,13 +612,20 @@ export function ExpenseDialog({
                               .sort((a, b) => (a.isDefault ? -1 : b.isDefault ? 1 : 0))
                               .map((acc) => {
                                 const parsedAmount = parseFloat(amount) || 0;
-                                // Compare in each candidate account's currency.
-                                const parsedNative = convert(parsedAmount, entryCurrency, acc.currency);
-                                const originalNative = editingExpense?.accountId === acc.id
-                                  ? (editingExpense.originalAmount ?? editingExpense.amount)
-                                  : 0;
-                                const effectiveBalance = acc.currentBalance + originalNative;
-                                const insufficientFunds = parsedAmount > 0 && effectiveBalance < parsedNative;
+                                // A wallet can cover the amount if ANY of its
+                                // held balances can pay the converted value.
+                                const covers = acc.currencies.some((c) => {
+                                  const needed = convert(parsedAmount, entryCurrency, c);
+                                  const credit = editingExpense?.accountId === acc.id
+                                    ? convert(
+                                        editingExpense.originalAmount ?? editingExpense.amount,
+                                        editingExpense.originalCurrency ?? getBaseCurrency(),
+                                        c,
+                                      )
+                                    : 0;
+                                  return (acc.balances[c] ?? 0) + credit >= needed;
+                                });
+                                const insufficientFunds = parsedAmount > 0 && !covers;
                                 // For plans (future payments) the current balance is not a real
                                 // constraint, so don't disable — show a soft warning instead.
                                 const disableForInsufficient = mode === "expense" && insufficientFunds;

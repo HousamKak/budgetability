@@ -6,6 +6,7 @@ import { SavingsGoalForm } from "./savings/SavingsGoalForm";
 import { ContributeDialog } from "./savings/ContributeDialog";
 import { paperTheme } from "@/styles";
 import { cn, formatCurrency } from "@/lib/utils";
+import type { CurrencyCode } from "@/lib/currency";
 import { dataService } from "@/lib/data-service";
 import type { SavingsGoal } from "@/lib/data-service";
 
@@ -84,10 +85,17 @@ export default function SavingsGoals() {
     goalId: string,
     accountId: string,
     amount: number,
-    note?: string
+    note?: string,
+    currency?: CurrencyCode
   ) => {
     try {
-      await dataService.contributeToSavingsGoal(goalId, accountId, amount, note);
+      await dataService.contributeToSavingsGoal(
+        goalId,
+        accountId,
+        amount,
+        note,
+        currency,
+      );
       await loadGoals();
     } catch (error) {
       console.error("Failed to contribute:", error);

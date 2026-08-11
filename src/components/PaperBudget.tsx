@@ -14,7 +14,12 @@ import {
   type PlanItem,
 } from "@/lib/data-service";
 import { supabase } from "@/lib/supabase";
-import { convert, getBaseCurrency, toBase } from "@/lib/currency";
+import {
+  type CurrencyCode,
+  convert,
+  getBaseCurrency,
+  toBase,
+} from "@/lib/currency";
 import { formatCurrency } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
 
@@ -256,19 +261,23 @@ export default function PaperBudget() {
   }
   function markPlanPaid(p: PlanItem) {
     const date = p.targetDate || ymd(new Date());
-    // Plans are base-denominated; paying from a non-base account converts the
-    // base amount into the account's currency at the current rate.
+    // Plans are base-denominated. Pay from the wallet's base balance when it
+    // holds one; otherwise convert into its primary currency at today's rate.
     const payingAccount = accounts.find((x) => x.id === p.accountId);
-    const nonBase =
-      payingAccount && payingAccount.currency !== getBaseCurrency();
+    const payCur: CurrencyCode = payingAccount
+      ? payingAccount.currencies.includes(getBaseCurrency())
+        ? getBaseCurrency()
+        : payingAccount.currency
+      : getBaseCurrency();
+    const nonBase = payingAccount && payCur !== getBaseCurrency();
     addExpense({
       id: makeId(),
       date,
       amount: p.amount,
       originalAmount: nonBase
-        ? convert(p.amount, getBaseCurrency(), payingAccount.currency)
+        ? convert(p.amount, getBaseCurrency(), payCur)
         : undefined,
-      originalCurrency: nonBase ? payingAccount.currency : undefined,
+      originalCurrency: nonBase ? payCur : undefined,
       category: p.category,
       accountId: p.accountId,
       note: p.note,
@@ -322,6 +331,8 @@ export default function PaperBudget() {
   const [category, setCategory] = useState<string>("groceries");
   const [note, setNote] = useState<string>("");
   const [expenseAccountId, setExpenseAccountId] = useState<string>("");
+  // Which of the paying wallet's currencies the amount is typed in.
+  const [expenseCurrency, setExpenseCurrency] = useState<CurrencyCode>("USD");
   // "Show in Forecast" for the entry being added/edited. Always starts off —
   // an entry only reaches the Forecast page if it is explicitly marked.
   const [inForecast, setInForecast] = useState(false);
@@ -340,20 +351,23 @@ export default function PaperBudget() {
   function submitExpense() {
     const a = Number(amount);
     if (!formDate || isNaN(a) || a <= 0) return;
-    // The amount is typed in the paying account's currency. Budget math runs
-    // in base, so non-base entries store the base value in `amount` and keep
-    // the native figure in originalAmount (which is what leaves the account).
+    // The amount is typed in the chosen currency of the paying wallet.
+    // Budget math runs in base, so non-base entries store the base value in
+    // `amount` and keep the native figure in originalAmount (which is what
+    // leaves that specific balance).
     const payingAccount = accounts.find((x) => x.id === expenseAccountId);
-    const nonBase =
-      payingAccount && payingAccount.currency !== getBaseCurrency();
+    const entryCur: CurrencyCode = payingAccount
+      ? payingAccount.currencies.includes(expenseCurrency)
+        ? expenseCurrency
+        : payingAccount.currency
+      : getBaseCurrency();
+    const nonBase = payingAccount && entryCur !== getBaseCurrency();
     addExpense({
       id: makeId(),
       date: formDate,
-      amount: Number(
-        (nonBase ? toBase(a, payingAccount.currency) : a).toFixed(2),
-      ),
+      amount: Number((nonBase ? toBase(a, entryCur) : a).toFixed(2)),
       originalAmount: nonBase ? Number(a.toFixed(2)) : undefined,
-      originalCurrency: nonBase ? payingAccount.currency : undefined,
+      originalCurrency: nonBase ? entryCur : undefined,
       category,
       accountId: expenseAccountId || undefined,
       note,
@@ -572,6 +586,8 @@ export default function PaperBudget() {
         onNoteChange={setNote}
         accountId={expenseAccountId}
         onAccountIdChange={setExpenseAccountId}
+        entryCurrency={expenseCurrency}
+        onEntryCurrencyChange={setExpenseCurrency}
         accounts={accounts}
         inForecast={inForecast}
         onInForecastChange={setInForecast}

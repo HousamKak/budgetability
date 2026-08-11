@@ -14,7 +14,7 @@ import type {
   BudgetAllocation,
 } from "@/lib/data-service";
 import { cn, currencySymbol, formatCurrency } from "@/lib/utils";
-import { toBase } from "@/lib/currency";
+import { type CurrencyCode, sumToBase } from "@/lib/currency";
 import { paperTheme } from "@/styles";
 import { AlertTriangle, Info, Plus, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -31,7 +31,11 @@ interface BudgetSetupDialogProps {
   allocations: BudgetAllocation[];
   transactions: AccountTransaction[];
   onBudgetInputChange: (value: string) => void;
-  onLinkAccount: (accountId: string, amount: number) => void;
+  onLinkAccount: (
+    accountId: string,
+    amount: number,
+    currency: CurrencyCode,
+  ) => void;
   onAdjustAllocation: (accountId: string, newAmount: number) => void;
   onRemoveAllocation: (accountId: string) => void;
 }
@@ -364,10 +368,8 @@ export function BudgetSetupDialog({
                                   step="0.01"
                                   min="0.01"
                                   max={
-                                    toBase(
-                                      account.currentBalance,
-                                      account.currency,
-                                    ) + allocation.amount
+                                    sumToBase(account.balances) +
+                                    allocation.amount
                                   }
                                   value={adjustAmount}
                                   onChange={(e) =>
@@ -400,10 +402,9 @@ export function BudgetSetupDialog({
                               </Button>
                             </div>
                             <p className="text-xs text-stone-500">
-                              Available:{" "}
+                              Available: ≈{" "}
                               {formatCurrency(
-                                toBase(account.currentBalance, account.currency) +
-                                  allocation.amount,
+                                sumToBase(account.balances) + allocation.amount,
                               )}
                             </p>
                           </div>

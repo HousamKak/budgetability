@@ -7,9 +7,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { CURRENCIES } from "@/lib/currency";
+import { CURRENCIES, type CurrencyCode } from "@/lib/currency";
 import type { Account } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
+import { CurrencyChips } from "./CurrencyChips";
+import { WalletBalances } from "./WalletBalances";
 import { paperTheme } from "@/styles";
 import { ArrowUpRight, TrendingUp } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -24,6 +26,7 @@ interface DepositDialogProps {
     amount: number,
     note?: string,
     inForecast?: boolean,
+    currency?: CurrencyCode,
   ) => void;
 }
 
@@ -39,6 +42,7 @@ export function DepositDialog({
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [inForecast, setInForecast] = useState(false);
+  const [currency, setCurrency] = useState<CurrencyCode>("USD");
 
   useEffect(() => {
     if (open) {
@@ -46,8 +50,9 @@ export function DepositDialog({
       setNote("");
       // Opt-in every time: nothing reaches the forecast unless marked here.
       setInForecast(false);
+      setCurrency(account?.currency ?? "USD");
     }
-  }, [open]);
+  }, [open, account]);
 
   const depositAmount = parseFloat(amount) || 0;
   const canDeposit = account && depositAmount > 0;
@@ -55,7 +60,13 @@ export function DepositDialog({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (canDeposit && account) {
-      onDeposit(account.id, depositAmount, note || undefined, inForecast);
+      onDeposit(
+        account.id,
+        depositAmount,
+        note || undefined,
+        inForecast,
+        currency,
+      );
       onOpenChange(false);
     }
   };
@@ -112,33 +123,42 @@ export function DepositDialog({
               <p className={cn("font-medium", paperTheme.fonts.handwriting)}>
                 {account.name}
               </p>
-              <p className="text-sm text-stone-500">
-                Current: {formatCurrency(account.currentBalance, account.currency)}
-              </p>
+              <WalletBalances
+                account={account}
+                inline
+                amountClassName="text-sm"
+              />
             </div>
           </div>
 
           {/* Amount */}
           <div className="space-y-1.5">
-            <Label htmlFor="amount" className={paperTheme.fonts.handwriting}>
-              Deposit Amount
-            </Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="amount" className={paperTheme.fonts.handwriting}>
+                Deposit Amount
+              </Label>
+              <CurrencyChips
+                currencies={account.currencies}
+                value={currency}
+                onChange={setCurrency}
+              />
+            </div>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 text-sm">
-                {CURRENCIES[account.currency].symbol}
+                {CURRENCIES[currency].symbol}
               </span>
               <input
                 id="amount"
                 type="number"
-                step={CURRENCIES[account.currency].inputStep}
-                min={CURRENCIES[account.currency].inputStep}
+                step={CURRENCIES[currency].inputStep}
+                min={CURRENCIES[currency].inputStep}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder={CURRENCIES[account.currency].inputPlaceholder}
+                placeholder={CURRENCIES[currency].inputPlaceholder}
                 autoFocus
                 className={cn(
                   "w-full py-2 pr-3 rounded-lg border text-sm",
-                  account.currency === "USD" ? "pl-7" : "pl-12",
+                  currency === "USD" ? "pl-7" : "pl-12",
                   paperTheme.colors.borders.amber,
                   paperTheme.colors.background.white,
                   "focus:outline-none focus:ring-2 focus:ring-amber-400/50"
@@ -210,12 +230,12 @@ export function DepositDialog({
               <p className="text-xs text-stone-500 mb-1">After deposit:</p>
               <p className="text-lg font-bold text-green-600">
                 {formatCurrency(
-                  account.currentBalance + depositAmount,
-                  account.currency,
+                  (account.balances[currency] ?? 0) + depositAmount,
+                  currency,
                 )}
               </p>
               <p className="text-xs text-green-600">
-                +{formatCurrency(depositAmount, account.currency)}
+                +{formatCurrency(depositAmount, currency)}
               </p>
             </div>
           )}
