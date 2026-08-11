@@ -4,8 +4,11 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
+import type { MoneyByCurrency } from "@/lib/currency";
+import { sumToBase } from "@/lib/currency";
 import type { Account } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
+import { WalletBalances } from "./WalletBalances";
 import {
   ArrowRightLeft,
   ArrowUpRight,
@@ -31,7 +34,9 @@ interface AccountRowProps {
   onRemove?: () => void;
   removeLabel?: string;
   /** What moved through this account in the month being viewed. */
-  activity?: { inflow: number; outflow: number };
+  activity?: { inflow: MoneyByCurrency; outflow: MoneyByCurrency };
+  /** Historical balances when viewing a past month (else live). */
+  balances?: MoneyByCurrency;
   /**
    * Viewing a past month: the balance shown is historical, so every action
    * that would move money or change the account is withheld.
@@ -55,11 +60,16 @@ export function AccountRow({
   onRemove,
   removeLabel = "Remove from group",
   activity,
+  balances,
   readOnly = false,
 }: AccountRowProps) {
   const typeColor = getAccountTypeConfig(account.accountType).color;
   const icon = account.icon || "wallet";
-  const hasActivity = !!activity && (activity.inflow > 0 || activity.outflow > 0);
+  // Month activity summarized in base — the row is too dense for per-currency
+  // in/out; the transactions dialog has the full native story.
+  const inflowBase = activity ? sumToBase(activity.inflow) : 0;
+  const outflowBase = activity ? sumToBase(activity.outflow) : 0;
+  const hasActivity = inflowBase > 0 || outflowBase > 0;
 
   return (
     <div
@@ -96,25 +106,23 @@ export function AccountRow({
           )}
         </div>
         <div className="flex items-baseline gap-2 flex-wrap">
-          <span
-            className={cn(
-              "text-sm font-bold tabular-nums leading-tight",
-              account.currentBalance >= 0 ? "text-green-700" : "text-red-600",
-            )}
-          >
-            {formatCurrency(account.currentBalance, account.currency)}
-          </span>
+          <WalletBalances
+            account={account}
+            balances={balances}
+            inline
+            amountClassName="text-sm leading-tight"
+          />
           {hasActivity && (
             <span className="text-[11px] tabular-nums text-stone-400">
-              {activity.inflow > 0 && (
+              {inflowBase > 0 && (
                 <span className="text-green-600">
-                  +{formatCurrency(activity.inflow, account.currency)}
+                  +{formatCurrency(inflowBase)}
                 </span>
               )}
-              {activity.inflow > 0 && activity.outflow > 0 && " · "}
-              {activity.outflow > 0 && (
+              {inflowBase > 0 && outflowBase > 0 && " · "}
+              {outflowBase > 0 && (
                 <span className="text-red-500">
-                  −{formatCurrency(activity.outflow, account.currency)}
+                  −{formatCurrency(outflowBase)}
                 </span>
               )}
             </span>

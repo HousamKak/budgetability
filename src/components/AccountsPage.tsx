@@ -1,7 +1,11 @@
 import { Button } from "@/components/ui/button";
 import type { Account, AccountGroup } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
-import { toBase } from "@/lib/currency";
+import {
+  type CurrencyCode,
+  type MoneyByCurrency,
+  sumToBase,
+} from "@/lib/currency";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import {
@@ -37,7 +41,11 @@ const MONTH_NAMES = [
 const NOW = new Date();
 const CURRENT_MONTH_KEY = `${NOW.getFullYear()}-${String(NOW.getMonth() + 1).padStart(2, "0")}`;
 
-type MonthActivity = { balance: number; inflow: number; outflow: number };
+type MonthActivity = {
+  balances: MoneyByCurrency;
+  inflow: MoneyByCurrency;
+  outflow: MoneyByCurrency;
+};
 
 /**
  * Main accounts management page
@@ -111,7 +119,7 @@ export default function AccountsPage() {
   };
 
   const handleCreateAccount = async (
-    account: Omit<Account, "id" | "currentBalance">,
+    account: Omit<Account, "id" | "balances">,
   ) => {
     try {
       const { groupIds = [], ...rest } = account;
@@ -125,7 +133,7 @@ export default function AccountsPage() {
   };
 
   const handleUpdateAccount = async (
-    account: Omit<Account, "id" | "currentBalance">,
+    account: Omit<Account, "id" | "balances">,
   ) => {
     if (!editingAccount) return;
     try {
@@ -165,6 +173,8 @@ export default function AccountsPage() {
     amount: number,
     note?: string,
     toAmount?: number,
+    fromCurrency?: CurrencyCode,
+    toCurrency?: CurrencyCode,
   ) => {
     try {
       await dataService.transferBetweenAccounts(
@@ -173,6 +183,8 @@ export default function AccountsPage() {
         amount,
         note,
         toAmount,
+        fromCurrency,
+        toCurrency,
       );
       await loadData();
     } catch (error) {
@@ -185,9 +197,16 @@ export default function AccountsPage() {
     amount: number,
     note?: string,
     inForecast?: boolean,
+    currency?: CurrencyCode,
   ) => {
     try {
-      await dataService.depositToAccount(accountId, amount, note, inForecast);
+      await dataService.depositToAccount(
+        accountId,
+        amount,
+        note,
+        inForecast,
+        currency,
+      );
       await loadData();
     } catch (error) {
       console.error("Failed to deposit:", error);
@@ -322,30 +341,26 @@ export default function AccountsPage() {
         ? accounts
         : accounts.map((a) => ({
             ...a,
-            currentBalance: snapshot[a.id]?.balance ?? a.currentBalance,
+            balances: snapshot[a.id]?.balances ?? a.balances,
           })),
     [accounts, snapshot, isCurrentMonth],
   );
 
-  // Accounts can be denominated differently, so cross-account totals are
-  // converted into the base currency (displayed with ≈ when currencies mix).
-  const mixedCurrencies =
-    new Set(viewAccounts.map((a) => a.currency)).size > 1;
+  // Wallets hold several currencies, so cross-account totals are converted
+  // into the base currency and marked with ≈.
   const totalBalance = viewAccounts.reduce(
-    (sum, a) => sum + toBase(a.currentBalance, a.currency),
+    (sum, a) => sum + sumToBase(a.balances),
     0,
   );
   const monthTotals = useMemo(() => {
-    const currencyById = new Map(accounts.map((a) => [a.id, a.currency]));
     let inflow = 0;
     let outflow = 0;
-    for (const [accountId, s] of Object.entries(snapshot)) {
-      const currency = currencyById.get(accountId) ?? "USD";
-      inflow += toBase(s.inflow, currency);
-      outflow += toBase(s.outflow, currency);
+    for (const s of Object.values(snapshot)) {
+      inflow += sumToBase(s.inflow);
+      outflow += sumToBase(s.outflow);
     }
     return { inflow, outflow };
-  }, [snapshot, accounts]);
+  }, [snapshot]);
 
   // Actions still operate on the live account (never the rewound copy), so a
   // deposit opened from a past month would still hit the real balance — hence
@@ -560,8 +575,7 @@ export default function AccountsPage() {
                     totalBalance >= 0 ? "text-green-700" : "text-red-600",
                   )}
                 >
-                  {mixedCurrencies ? "≈ " : ""}
-                  {formatCurrency(totalBalance)}
+                  ≈ {formatCurrency(totalBalance)}
                 </p>
               </div>
               <div>
@@ -572,8 +586,7 @@ export default function AccountsPage() {
                     paperTheme.fonts.handwriting,
                   )}
                 >
-                  +{mixedCurrencies ? "≈ " : ""}
-                  {formatCurrency(monthTotals.inflow)}
+                  +{formatCurrency(monthTotals.inflow)}
                 </p>
               </div>
               <div>
@@ -584,8 +597,7 @@ export default function AccountsPage() {
                     paperTheme.fonts.handwriting,
                   )}
                 >
-                  −{mixedCurrencies ? "≈ " : ""}
-                  {formatCurrency(monthTotals.outflow)}
+                  −{formatCurrency(monthTotals.outflow)}
                 </p>
               </div>
               <div>

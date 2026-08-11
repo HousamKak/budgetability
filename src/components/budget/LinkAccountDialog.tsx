@@ -7,9 +7,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { CURRENCIES, getBaseCurrency, toBase } from "@/lib/currency";
+import {
+  CURRENCIES,
+  type CurrencyCode,
+  getBaseCurrency,
+  toBase,
+} from "@/lib/currency";
 import type { Account, BudgetAllocation } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
+import { CurrencyChips } from "@/components/accounts/CurrencyChips";
 import { paperTheme } from "@/styles";
 import { PiggyBank, Check } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -21,7 +27,11 @@ interface LinkAccountDialogProps {
   accounts: Account[];
   existingAllocations: BudgetAllocation[];
   monthKey: string;
-  onLinkAccount: (accountId: string, amount: number) => void;
+  onLinkAccount: (
+    accountId: string,
+    amount: number,
+    currency: CurrencyCode,
+  ) => void;
 }
 
 /**
@@ -41,12 +51,14 @@ export function LinkAccountDialog({
     null
   );
   const [amount, setAmount] = useState<string>("");
+  const [currency, setCurrency] = useState<CurrencyCode>("USD");
 
   // Reset state when dialog opens
   useEffect(() => {
     if (open) {
       setSelectedAccountId(null);
       setAmount("");
+      setCurrency("USD");
     }
   }, [open]);
 
@@ -57,19 +69,28 @@ export function LinkAccountDialog({
   );
 
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
+  // Keep the chosen currency inside the wallet's held set.
+  useEffect(() => {
+    if (selectedAccount && !selectedAccount.currencies.includes(currency)) {
+      setCurrency(selectedAccount.currency);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAccountId]);
+
   const allocationAmount = parseFloat(amount) || 0;
+  const available = selectedAccount?.balances[currency] ?? 0;
 
   // Validate form
   const canSubmit =
     selectedAccountId &&
     allocationAmount > 0 &&
     selectedAccount &&
-    allocationAmount <= selectedAccount.currentBalance;
+    allocationAmount <= available;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (canSubmit && selectedAccountId) {
-      onLinkAccount(selectedAccountId, allocationAmount);
+      onLinkAccount(selectedAccountId, allocationAmount, currency);
       onOpenChange(false);
     }
   };
@@ -162,8 +183,11 @@ export function LinkAccountDialog({
                           {account.name}
                         </p>
                         <p className="text-xs text-stone-500">
-                          Available:{" "}
-                          {formatCurrency(account.currentBalance, account.currency)}
+                          {account.currencies
+                            .map((c) =>
+                              formatCurrency(account.balances[c] ?? 0, c),
+                            )
+                            .join(" · ")}
                         </p>
                       </div>
                     </div>
@@ -179,51 +203,54 @@ export function LinkAccountDialog({
           {/* Amount Input - Only show when account is selected */}
           {selectedAccountId && selectedAccount && (
             <div className="space-y-1.5">
-              <Label htmlFor="amount" className={paperTheme.fonts.handwriting}>
-                Allocation Amount
-              </Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="amount" className={paperTheme.fonts.handwriting}>
+                  Allocation Amount
+                </Label>
+                <CurrencyChips
+                  currencies={selectedAccount.currencies}
+                  value={currency}
+                  onChange={setCurrency}
+                />
+              </div>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 text-sm">
-                  {CURRENCIES[selectedAccount.currency].symbol}
+                  {CURRENCIES[currency].symbol}
                 </span>
                 <input
                   id="amount"
                   type="number"
-                  step={CURRENCIES[selectedAccount.currency].inputStep}
-                  min={CURRENCIES[selectedAccount.currency].inputStep}
-                  max={selectedAccount.currentBalance}
+                  step={CURRENCIES[currency].inputStep}
+                  min={CURRENCIES[currency].inputStep}
+                  max={available}
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  placeholder={CURRENCIES[selectedAccount.currency].inputPlaceholder}
+                  placeholder={CURRENCIES[currency].inputPlaceholder}
                   autoFocus
                   className={cn(
                     "w-full py-2 pr-3 rounded-lg border text-sm",
-                    selectedAccount.currency === "USD" ? "pl-7" : "pl-12",
+                    currency === "USD" ? "pl-7" : "pl-12",
                     paperTheme.colors.borders.amber,
                     paperTheme.colors.background.white,
                     "focus:outline-none focus:ring-2 focus:ring-amber-400/50"
                   )}
                 />
               </div>
-              {allocationAmount > selectedAccount.currentBalance && (
+              {allocationAmount > available && (
                 <p className="text-xs text-red-500">
                   Exceeds available balance
                 </p>
               )}
-              {selectedAccount.currency !== getBaseCurrency() &&
-                allocationAmount > 0 && (
-                  <p className="text-xs text-stone-500">
-                    ≈{" "}
-                    {formatCurrency(
-                      toBase(allocationAmount, selectedAccount.currency)
-                    )}{" "}
-                    added to the budget
-                  </p>
-                )}
+              {currency !== getBaseCurrency() && allocationAmount > 0 && (
+                <p className="text-xs text-stone-500">
+                  ≈ {formatCurrency(toBase(allocationAmount, currency))} added
+                  to the budget
+                </p>
+              )}
 
               {/* Quick amounts */}
               <div className="flex gap-2 flex-wrap pt-1">
-                {CURRENCIES[selectedAccount.currency].presets.map((preset) => (
+                {CURRENCIES[currency].presets.map((preset) => (
                   <Button
                     key={preset}
                     type="button"
@@ -231,9 +258,9 @@ export function LinkAccountDialog({
                     size="sm"
                     className={cn("h-7 text-xs", paperTheme.colors.borders.amber)}
                     onClick={() => setAmount(preset.toString())}
-                    disabled={preset > selectedAccount.currentBalance}
+                    disabled={preset > available}
                   >
-                    {formatCurrency(preset, selectedAccount.currency)}
+                    {formatCurrency(preset, currency)}
                   </Button>
                 ))}
                 <Button
@@ -241,16 +268,9 @@ export function LinkAccountDialog({
                   variant="outline"
                   size="sm"
                   className={cn("h-7 text-xs", paperTheme.colors.borders.amber)}
-                  onClick={() =>
-                    setAmount(selectedAccount.currentBalance.toString())
-                  }
+                  onClick={() => setAmount(available.toString())}
                 >
-                  All (
-                  {formatCurrency(
-                    selectedAccount.currentBalance,
-                    selectedAccount.currency
-                  )}
-                  )
+                  All ({formatCurrency(available, currency)})
                 </Button>
               </div>
             </div>
@@ -259,7 +279,7 @@ export function LinkAccountDialog({
           {/* Preview */}
           {selectedAccount &&
             allocationAmount > 0 &&
-            allocationAmount <= selectedAccount.currentBalance && (
+            allocationAmount <= available && (
               <div
                 className={cn(
                   "p-3 rounded-lg border space-y-2",
@@ -272,19 +292,13 @@ export function LinkAccountDialog({
                   <div>
                     <p className="text-xs text-stone-400">Account Balance</p>
                     <p className="font-medium text-stone-700">
-                      {formatCurrency(
-                        selectedAccount.currentBalance - allocationAmount,
-                        selectedAccount.currency
-                      )}
+                      {formatCurrency(available - allocationAmount, currency)}
                     </p>
                   </div>
                   <div>
                     <p className="text-xs text-stone-400">Added to Budget</p>
                     <p className="font-medium text-green-600">
-                      +
-                      {formatCurrency(
-                        toBase(allocationAmount, selectedAccount.currency)
-                      )}
+                      +{formatCurrency(toBase(allocationAmount, currency))}
                     </p>
                   </div>
                 </div>

@@ -5,7 +5,8 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import type { Account } from "@/lib/data-service";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { WalletBalances } from "./WalletBalances";
 import { paperTheme } from "@/styles";
 import {
   ArrowRightLeft,
@@ -158,17 +159,12 @@ export function AccountCard({
           </HoverCard>
         </div>
 
-        {/* Balance */}
+        {/* Balances (one line per held currency) */}
         <div className="mb-3">
-          <p
-            className={cn(
-              "text-2xl font-bold",
-              paperTheme.fonts.handwriting,
-              account.currentBalance >= 0 ? "text-green-700" : "text-red-600",
-            )}
-          >
-            {formatCurrency(account.currentBalance, account.currency)}
-          </p>
+          <WalletBalances
+            account={account}
+            amountClassName={cn("text-2xl", paperTheme.fonts.handwriting)}
+          />
         </div>
 
         {/* Action buttons */}

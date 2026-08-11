@@ -162,14 +162,21 @@ export function AccountBudgetCard({
 
             <div className="flex justify-between items-center">
               <span className="text-xs text-stone-500">Account Balance</span>
-              <span
-                className={cn(
-                  "text-sm font-semibold",
-                  paperTheme.fonts.handwriting,
-                  account.currentBalance >= 0 ? "text-green-600" : "text-red-600"
-                )}
-              >
-                {formatCurrency(account.currentBalance, account.currency)}
+              <span className="text-right">
+                {account.currencies.map((c) => (
+                  <span
+                    key={c}
+                    className={cn(
+                      "block text-sm font-semibold leading-tight",
+                      paperTheme.fonts.handwriting,
+                      (account.balances[c] ?? 0) >= 0
+                        ? "text-green-600"
+                        : "text-red-600"
+                    )}
+                  >
+                    {formatCurrency(account.balances[c] ?? 0, c)}
+                  </span>
+                ))}
               </span>
             </div>
 
@@ -212,7 +219,7 @@ export function AccountBudgetCard({
                           )}
                         >
                           {details.isOutgoing ? "-" : "+"}
-                          {formatCurrency(tx.amount, account.currency)}
+                          {formatCurrency(tx.amount, tx.currency)}
                         </span>
                         <span className="text-stone-400">
                           {formatDate(tx.createdAt)}

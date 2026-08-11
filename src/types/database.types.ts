@@ -111,11 +111,47 @@ export type Database = {
         }
         Relationships: []
       }
+      account_balances: {
+        Row: {
+          account_id: string
+          currency: string
+          current_balance: number
+          initial_balance: number
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          currency: string
+          current_balance?: number
+          initial_balance?: number
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          currency?: string
+          current_balance?: number
+          initial_balance?: number
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_balances_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       account_transactions: {
         Row: {
           amount: number
           base_amount: number | null
           created_at: string | null
+          currency: string | null
           forecast_enabled: boolean
           forecast_flow_id: string | null
           from_account_id: string | null
@@ -126,6 +162,7 @@ export type Database = {
           savings_goal_id: string | null
           to_account_id: string | null
           to_amount: number | null
+          to_currency: string | null
           transaction_type: string
           user_id: string
         }
@@ -133,6 +170,7 @@ export type Database = {
           amount: number
           base_amount?: number | null
           created_at?: string | null
+          currency?: string | null
           forecast_enabled?: boolean
           forecast_flow_id?: string | null
           from_account_id?: string | null
@@ -143,6 +181,7 @@ export type Database = {
           savings_goal_id?: string | null
           to_account_id?: string | null
           to_amount?: number | null
+          to_currency?: string | null
           transaction_type: string
           user_id: string
         }
@@ -150,6 +189,7 @@ export type Database = {
           amount?: number
           base_amount?: number | null
           created_at?: string | null
+          currency?: string | null
           forecast_enabled?: boolean
           forecast_flow_id?: string | null
           from_account_id?: string | null
@@ -160,6 +200,7 @@ export type Database = {
           savings_goal_id?: string | null
           to_account_id?: string | null
           to_amount?: number | null
+          to_currency?: string | null
           transaction_type?: string
           user_id?: string
         }
@@ -199,6 +240,7 @@ export type Database = {
           account_type: string
           color: string | null
           created_at: string | null
+          currencies: string[]
           currency: string
           current_balance: number
           icon: string | null
@@ -214,6 +256,7 @@ export type Database = {
           account_type: string
           color?: string | null
           created_at?: string | null
+          currencies?: string[]
           currency?: string
           current_balance?: number
           icon?: string | null
@@ -229,6 +272,7 @@ export type Database = {
           account_type?: string
           color?: string | null
           created_at?: string | null
+          currencies?: string[]
           currency?: string
           current_balance?: number
           icon?: string | null

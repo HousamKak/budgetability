@@ -6,6 +6,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  type CurrencyCode,
+  type MoneyByCurrency,
+  addMoney,
+} from "@/lib/currency";
 import type { Account, AccountTransaction } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
 import { formatCurrency } from "@/lib/utils";
@@ -108,13 +113,15 @@ export function AccountTransactionsDialog({
     }
   }, [open, initialMonthKey]);
 
-  // Reload when dialog opens, account changes, or account balance updates
+  // Reload when dialog opens, account changes, or any balance updates
   // (balance update means a deposit/transfer happened)
+  const balancesKey = JSON.stringify(account?.balances ?? {});
   useEffect(() => {
     if (open && account) {
       loadTransactions();
     }
-  }, [open, account?.id, account?.currentBalance]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, account?.id, balancesKey]);
 
   async function loadTransactions() {
     if (!account) return;
@@ -185,41 +192,72 @@ export function AccountTransactionsDialog({
     return { priorTxs: prior, monthTxs: current };
   }, [allTransactions, currentMonthKey, account]);
 
-  // The amount this account actually moved by. Cross-currency transfers carry
-  // a destination-side amount (toAmount) that differs from the source amount.
-  const nativeAmount = (tx: AccountTransaction, accountId: string) =>
-    tx.toAccountId === accountId ? (tx.toAmount ?? tx.amount) : tx.amount;
+  // Which balance a transaction touched on this wallet's side, and by how
+  // much. Inbound movements land on the destination currency/amount.
+  const sideOf = (tx: AccountTransaction, accountId: string) =>
+    tx.toAccountId === accountId
+      ? {
+          currency: (tx.toCurrency ?? tx.currency ?? "USD") as CurrencyCode,
+          amount: tx.toAmount ?? tx.amount,
+        }
+      : {
+          currency: (tx.currency ?? "USD") as CurrencyCode,
+          amount: tx.amount,
+        };
 
-  // Compute opening balance = initialBalance + net of all prior transactions
-  const openingBalance = useMemo(() => {
-    if (!account) return 0;
-    let balance = account.initialBalance;
+  // Compute opening balances = initial + net of all prior transactions,
+  // independently per currency the wallet holds.
+  const openingBalances = useMemo<MoneyByCurrency>(() => {
+    if (!account) return {};
+    let balances: MoneyByCurrency = { ...account.initialBalances };
     for (const tx of priorTxs) {
-      if (txIsInflow(tx, account.id)) {
-        balance += nativeAmount(tx, account.id);
-      } else {
-        balance -= tx.amount;
-      }
+      const side = sideOf(tx, account.id);
+      balances = addMoney(
+        balances,
+        side.currency,
+        txIsInflow(tx, account.id) ? side.amount : -side.amount,
+      );
     }
-    return balance;
+    return balances;
   }, [account, priorTxs]);
 
-  // Monthly totals
+  // Monthly totals, per currency
   const { monthIn, monthOut } = useMemo(() => {
-    if (!account) return { monthIn: 0, monthOut: 0 };
-    let inflow = 0;
-    let outflow = 0;
+    const inflow: MoneyByCurrency = {};
+    const outflow: MoneyByCurrency = {};
+    if (!account) return { monthIn: inflow, monthOut: outflow };
+    let inAcc: MoneyByCurrency = {};
+    let outAcc: MoneyByCurrency = {};
     for (const tx of monthTxs) {
+      const side = sideOf(tx, account.id);
       if (txIsInflow(tx, account.id)) {
-        inflow += nativeAmount(tx, account.id);
+        inAcc = addMoney(inAcc, side.currency, side.amount);
       } else {
-        outflow += tx.amount;
+        outAcc = addMoney(outAcc, side.currency, side.amount);
       }
     }
-    return { monthIn: inflow, monthOut: outflow };
+    return { monthIn: inAcc, monthOut: outAcc };
   }, [account, monthTxs]);
 
-  const closingBalance = openingBalance + monthIn - monthOut;
+  const closingBalances = useMemo<MoneyByCurrency>(() => {
+    let balances = { ...openingBalances };
+    for (const code of Object.keys(monthIn) as CurrencyCode[]) {
+      balances = addMoney(balances, code, monthIn[code] ?? 0);
+    }
+    for (const code of Object.keys(monthOut) as CurrencyCode[]) {
+      balances = addMoney(balances, code, -(monthOut[code] ?? 0));
+    }
+    return balances;
+  }, [openingBalances, monthIn, monthOut]);
+
+  // One display line per currency the wallet holds or moved.
+  const moneyLines = (amounts: MoneyByCurrency): [CurrencyCode, number][] => {
+    const codes = new Set<CurrencyCode>([
+      ...((account?.currencies ?? []) as CurrencyCode[]),
+      ...(Object.keys(amounts) as CurrencyCode[]),
+    ]);
+    return Array.from(codes).map((c) => [c, amounts[c] ?? 0]);
+  };
 
   function gotoPrev() {
     if (month === 0) {
@@ -315,30 +353,36 @@ export function AccountTransactionsDialog({
                       </div>
                     ) : (
                       <div className="space-y-4">
-                        {/* Opening / Closing */}
+                        {/* Opening / Closing — one line per held currency */}
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <p className="text-xs text-stone-500 handwriting">
                               Opening Balance
                             </p>
-                            <p className="text-lg font-bold text-stone-700 handwriting">
-                              {formatCurrency(openingBalance, account.currency)}
-                            </p>
+                            {moneyLines(openingBalances).map(([c, v]) => (
+                              <p
+                                key={c}
+                                className="text-lg font-bold text-stone-700 handwriting leading-tight"
+                              >
+                                {formatCurrency(v, c)}
+                              </p>
+                            ))}
                           </div>
                           <div>
                             <p className="text-xs text-stone-500 handwriting">
                               Closing Balance
                             </p>
-                            <p
-                              className={cn(
-                                "text-lg font-bold handwriting",
-                                closingBalance >= 0
-                                  ? "text-green-700"
-                                  : "text-red-600",
-                              )}
-                            >
-                              {formatCurrency(closingBalance, account.currency)}
-                            </p>
+                            {moneyLines(closingBalances).map(([c, v]) => (
+                              <p
+                                key={c}
+                                className={cn(
+                                  "text-lg font-bold handwriting leading-tight",
+                                  v >= 0 ? "text-green-700" : "text-red-600",
+                                )}
+                              >
+                                {formatCurrency(v, c)}
+                              </p>
+                            ))}
                           </div>
                         </div>
 
@@ -348,17 +392,27 @@ export function AccountTransactionsDialog({
                             <p className="text-xs text-stone-500 handwriting">
                               Money In
                             </p>
-                            <p className="text-lg font-bold text-green-600 handwriting">
-                              +{formatCurrency(monthIn, account.currency)}
-                            </p>
+                            {moneyLines(monthIn).map(([c, v]) => (
+                              <p
+                                key={c}
+                                className="text-lg font-bold text-green-600 handwriting leading-tight"
+                              >
+                                +{formatCurrency(v, c)}
+                              </p>
+                            ))}
                           </div>
                           <div>
                             <p className="text-xs text-stone-500 handwriting">
                               Money Out
                             </p>
-                            <p className="text-lg font-bold text-red-600 handwriting">
-                              -{formatCurrency(monthOut, account.currency)}
-                            </p>
+                            {moneyLines(monthOut).map(([c, v]) => (
+                              <p
+                                key={c}
+                                className="text-lg font-bold text-red-600 handwriting leading-tight"
+                              >
+                                -{formatCurrency(v, c)}
+                              </p>
+                            ))}
                           </div>
                         </div>
 
@@ -367,17 +421,22 @@ export function AccountTransactionsDialog({
                           <p className="text-xs text-stone-500 handwriting">
                             Net Change
                           </p>
-                          <p
-                            className={cn(
-                              "text-xl font-bold handwriting",
-                              monthIn - monthOut >= 0
-                                ? "text-green-600"
-                                : "text-red-600",
-                            )}
-                          >
-                            {monthIn - monthOut >= 0 ? "+" : ""}
-                            {formatCurrency(monthIn - monthOut, account.currency)}
-                          </p>
+                          {moneyLines(monthIn).map(([c]) => {
+                            const net =
+                              (monthIn[c] ?? 0) - (monthOut[c] ?? 0);
+                            return (
+                              <p
+                                key={c}
+                                className={cn(
+                                  "text-xl font-bold handwriting leading-tight",
+                                  net >= 0 ? "text-green-600" : "text-red-600",
+                                )}
+                              >
+                                {net >= 0 ? "+" : ""}
+                                {formatCurrency(net, c)}
+                              </p>
+                            );
+                          })}
                         </div>
 
                         {/* Transactions count */}
@@ -465,12 +524,13 @@ export function AccountTransactionsDialog({
                                       )}
                                     >
                                       {isInflow ? "+" : "-"}
-                                      {formatCurrency(
-                                        isInflow
-                                          ? nativeAmount(tx, account.id)
-                                          : tx.amount,
-                                        account.currency,
-                                      )}
+                                      {(() => {
+                                        const side = sideOf(tx, account.id);
+                                        return formatCurrency(
+                                          side.amount,
+                                          side.currency,
+                                        );
+                                      })()}
                                     </span>
                                     <span className="text-xs text-stone-500 ml-2">
                                       {label}

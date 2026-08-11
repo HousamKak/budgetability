@@ -14,9 +14,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CURRENCIES, convert } from "@/lib/currency";
+import { CURRENCIES, type CurrencyCode, convert } from "@/lib/currency";
 import type { Account } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
+import { CurrencyChips } from "./CurrencyChips";
 import { paperTheme } from "@/styles";
 import { ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -32,12 +33,15 @@ interface TransferDialogProps {
     toId: string,
     amount: number,
     note?: string,
-    toAmount?: number
+    toAmount?: number,
+    fromCurrency?: CurrencyCode,
+    toCurrency?: CurrencyCode
   ) => void;
 }
 
 /**
- * Dialog for transferring money between accounts
+ * Dialog for transferring money between accounts — or between two currency
+ * balances of the SAME wallet (an exchange: LL → $ inside one cash envelope).
  */
 export function TransferDialog({
   open,
@@ -48,6 +52,8 @@ export function TransferDialog({
 }: TransferDialogProps) {
   const [fromAccountId, setFromAccountId] = useState("");
   const [toAccountId, setToAccountId] = useState("");
+  const [fromCurrency, setFromCurrency] = useState<CurrencyCode>("USD");
+  const [toCurrency, setToCurrency] = useState<CurrencyCode>("USD");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   // Cross-currency: destination-side amount, pre-filled from the rate table
@@ -59,6 +65,8 @@ export function TransferDialog({
     if (open) {
       setFromAccountId(sourceAccount?.id || "");
       setToAccountId("");
+      setFromCurrency(sourceAccount?.currency ?? "USD");
+      setToCurrency("USD");
       setAmount("");
       setNote("");
       setToAmountText("");
@@ -69,34 +77,56 @@ export function TransferDialog({
   const fromAccount = accounts.find((a) => a.id === fromAccountId);
   const toAccount = accounts.find((a) => a.id === toAccountId);
   const transferAmount = parseFloat(amount) || 0;
-  const crossCurrency =
-    !!fromAccount && !!toAccount && fromAccount.currency !== toAccount.currency;
+  const crossCurrency = fromCurrency !== toCurrency;
+  const availableFrom = fromAccount?.balances[fromCurrency] ?? 0;
+
+  // Snap the currency selections into each account's held set.
+  useEffect(() => {
+    if (fromAccount && !fromAccount.currencies.includes(fromCurrency)) {
+      setFromCurrency(fromAccount.currency);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromAccountId]);
+  useEffect(() => {
+    if (toAccount && !toAccount.currencies.includes(toCurrency)) {
+      // Default the destination to the source currency when held (a plain
+      // move), else the destination wallet's primary (an exchange).
+      setToCurrency(
+        toAccount.currencies.includes(fromCurrency)
+          ? fromCurrency
+          : toAccount.currency,
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toAccountId, fromCurrency]);
 
   // Keep the converted amount in sync until the user overrides it.
   useEffect(() => {
-    if (!crossCurrency || !fromAccount || !toAccount) return;
+    if (!crossCurrency) return;
     if (toAmountTouched) return;
     setToAmountText(
       transferAmount > 0
-        ? String(convert(transferAmount, fromAccount.currency, toAccount.currency))
+        ? String(convert(transferAmount, fromCurrency, toCurrency))
         : "",
     );
-  }, [crossCurrency, transferAmount, fromAccount, toAccount, toAmountTouched]);
+  }, [crossCurrency, transferAmount, fromCurrency, toCurrency, toAmountTouched]);
 
-  // A new destination account resets any manual override.
+  // A new destination or currency pair resets any manual override.
   useEffect(() => {
     setToAmountTouched(false);
-  }, [toAccountId, fromAccountId]);
+  }, [toAccountId, fromAccountId, fromCurrency, toCurrency]);
 
   const toAmountNum = parseFloat(toAmountText) || 0;
+  // Same wallet is allowed when the currencies differ (an exchange).
+  const sameAccountNoop = fromAccountId === toAccountId && !crossCurrency;
 
   const canTransfer =
     fromAccountId &&
     toAccountId &&
-    fromAccountId !== toAccountId &&
+    !sameAccountNoop &&
     transferAmount > 0 &&
     fromAccount &&
-    transferAmount <= fromAccount.currentBalance &&
+    transferAmount <= availableFrom &&
     (!crossCurrency || toAmountNum > 0);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -108,6 +138,8 @@ export function TransferDialog({
         transferAmount,
         note || undefined,
         crossCurrency ? toAmountNum : undefined,
+        fromCurrency,
+        toCurrency,
       );
       onOpenChange(false);
     }
@@ -166,37 +198,39 @@ export function TransferDialog({
                       />
                       <span>{fromAccount.name}</span>
                       <span className="text-xs text-stone-500">
-                        (
-                        {formatCurrency(
-                          fromAccount.currentBalance,
-                          fromAccount.currency,
-                        )}
-                        )
+                        ({formatCurrency(availableFrom, fromCurrency)})
                       </span>
                     </div>
                   )}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {accounts
-                  .filter((a) => a.id !== toAccountId)
-                  .map((account) => (
-                    <SelectItem key={account.id} value={account.id}>
-                      <div className="flex items-center gap-2">
-                        <AccountTypeBadge
-                          type={account.accountType}
-                          showLabel={false}
-                          size="sm"
-                        />
-                        <span>{account.name}</span>
-                        <span className="text-xs text-stone-500">
-                          ({formatCurrency(account.currentBalance, account.currency)})
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))}
+                {accounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    <div className="flex items-center gap-2">
+                      <AccountTypeBadge
+                        type={account.accountType}
+                        showLabel={false}
+                        size="sm"
+                      />
+                      <span>{account.name}</span>
+                    </div>
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {fromAccount && (
+              <div className="flex items-center justify-between">
+                <CurrencyChips
+                  currencies={fromAccount.currencies}
+                  value={fromCurrency}
+                  onChange={setFromCurrency}
+                />
+                <span className="text-xs text-stone-400">
+                  Available: {formatCurrency(availableFrom, fromCurrency)}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Arrow indicator */}
@@ -227,8 +261,8 @@ export function TransferDialog({
                       <span className="text-xs text-stone-500">
                         (
                         {formatCurrency(
-                          toAccount.currentBalance,
-                          toAccount.currency,
+                          toAccount.balances[toCurrency] ?? 0,
+                          toCurrency,
                         )}
                         )
                       </span>
@@ -237,25 +271,37 @@ export function TransferDialog({
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {accounts
-                  .filter((a) => a.id !== fromAccountId)
-                  .map((account) => (
-                    <SelectItem key={account.id} value={account.id}>
-                      <div className="flex items-center gap-2">
-                        <AccountTypeBadge
-                          type={account.accountType}
-                          showLabel={false}
-                          size="sm"
-                        />
-                        <span>{account.name}</span>
-                        <span className="text-xs text-stone-500">
-                          ({formatCurrency(account.currentBalance, account.currency)})
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))}
+                {/* The same wallet is a valid destination when exchanging
+                    between two of its currencies. */}
+                {accounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    <div className="flex items-center gap-2">
+                      <AccountTypeBadge
+                        type={account.accountType}
+                        showLabel={false}
+                        size="sm"
+                      />
+                      <span>
+                        {account.name}
+                        {account.id === fromAccountId ? " (exchange)" : ""}
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {toAccount && (
+              <CurrencyChips
+                currencies={toAccount.currencies}
+                value={toCurrency}
+                onChange={setToCurrency}
+              />
+            )}
+            {sameAccountNoop && (
+              <p className="text-xs text-red-500">
+                Pick a different currency to exchange within this account.
+              </p>
+            )}
           </div>
 
           {/* Amount */}
@@ -265,44 +311,30 @@ export function TransferDialog({
             </Label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 text-sm">
-                {fromAccount ? CURRENCIES[fromAccount.currency].symbol : "$"}
+                {CURRENCIES[fromCurrency].symbol}
               </span>
               <input
                 id="amount"
                 type="number"
-                step={
-                  fromAccount
-                    ? CURRENCIES[fromAccount.currency].inputStep
-                    : "0.01"
-                }
+                step={CURRENCIES[fromCurrency].inputStep}
                 min="0.01"
-                max={fromAccount?.currentBalance || undefined}
+                max={fromAccount ? availableFrom : undefined}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder={
-                  fromAccount
-                    ? CURRENCIES[fromAccount.currency].inputPlaceholder
-                    : "0.00"
-                }
+                placeholder={CURRENCIES[fromCurrency].inputPlaceholder}
                 className={cn(
                   "w-full py-2 pr-3 rounded-lg border text-sm",
-                  !fromAccount || fromAccount.currency === "USD"
-                    ? "pl-7"
-                    : "pl-12",
+                  fromCurrency === "USD" ? "pl-7" : "pl-12",
                   paperTheme.colors.borders.amber,
                   paperTheme.colors.background.white,
                   "focus:outline-none focus:ring-2 focus:ring-amber-400/50"
                 )}
               />
             </div>
-            {fromAccount && transferAmount > fromAccount.currentBalance && (
+            {fromAccount && transferAmount > availableFrom && (
               <p className="text-xs text-red-500">
                 Exceeds available balance (
-                {formatCurrency(
-                  fromAccount.currentBalance,
-                  fromAccount.currency,
-                )}
-                )
+                {formatCurrency(availableFrom, fromCurrency)})
               </p>
             )}
           </div>
@@ -314,26 +346,26 @@ export function TransferDialog({
                 htmlFor="to-amount"
                 className={paperTheme.fonts.handwriting}
               >
-                Amount received ({toAccount.currency})
+                Amount received ({toCurrency})
               </Label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 text-sm">
-                  {CURRENCIES[toAccount.currency].symbol}
+                  {CURRENCIES[toCurrency].symbol}
                 </span>
                 <input
                   id="to-amount"
                   type="number"
-                  step={CURRENCIES[toAccount.currency].inputStep}
+                  step={CURRENCIES[toCurrency].inputStep}
                   min="0.01"
                   value={toAmountText}
                   onChange={(e) => {
                     setToAmountTouched(true);
                     setToAmountText(e.target.value);
                   }}
-                  placeholder={CURRENCIES[toAccount.currency].inputPlaceholder}
+                  placeholder={CURRENCIES[toCurrency].inputPlaceholder}
                   className={cn(
                     "w-full py-2 pr-3 rounded-lg border text-sm",
-                    toAccount.currency === "USD" ? "pl-7" : "pl-12",
+                    toCurrency === "USD" ? "pl-7" : "pl-12",
                     paperTheme.colors.borders.amber,
                     paperTheme.colors.background.white,
                     "focus:outline-none focus:ring-2 focus:ring-amber-400/50"
@@ -347,8 +379,8 @@ export function TransferDialog({
                   <>
                     {" "}
                     Effective rate:{" "}
-                    {formatCurrency(transferAmount, fromAccount.currency)} ={" "}
-                    {formatCurrency(toAmountNum, toAccount.currency)}
+                    {formatCurrency(transferAmount, fromCurrency)} ={" "}
+                    {formatCurrency(toAmountNum, toCurrency)}
                   </>
                 )}
               </p>
@@ -387,21 +419,28 @@ export function TransferDialog({
               <p className="text-xs text-stone-500 mb-1">After transfer:</p>
               <div className="space-y-1 text-sm">
                 <p>
-                  <span className="font-medium">{fromAccount.name}:</span>{" "}
+                  <span className="font-medium">
+                    {fromAccount.name} ({fromCurrency}):
+                  </span>{" "}
                   <span className="text-red-600">
-                    {formatCurrency(
-                      fromAccount.currentBalance - transferAmount,
-                      fromAccount.currency,
-                    )}
+                    {formatCurrency(availableFrom - transferAmount, fromCurrency)}
                   </span>
                 </p>
                 <p>
-                  <span className="font-medium">{toAccount.name}:</span>{" "}
+                  <span className="font-medium">
+                    {toAccount.name} ({toCurrency}):
+                  </span>{" "}
                   <span className="text-green-600">
                     {formatCurrency(
-                      toAccount.currentBalance +
-                        (crossCurrency ? toAmountNum : transferAmount),
-                      toAccount.currency,
+                      (toAccount.balances[toCurrency] ?? 0) +
+                        (crossCurrency ? toAmountNum : transferAmount) -
+                        // In-wallet exchange: the same map also lost the
+                        // source amount when currencies share a wallet.
+                        (fromAccountId === toAccountId &&
+                        toCurrency === fromCurrency
+                          ? transferAmount
+                          : 0),
+                      toCurrency,
                     )}
                   </span>
                 </p>

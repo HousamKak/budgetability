@@ -6,7 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { toBase } from "@/lib/currency";
+import { sumToBase } from "@/lib/currency";
 import type { Account } from "@/lib/data-service";
 import { formatCurrency } from "@/lib/utils";
 import { cn, dialogStyles } from "@/styles";
@@ -233,19 +233,19 @@ export function BudgetDetailsDialog({
                                   </div>
                                 </div>
                                 <div className="text-right">
-                                  <p
-                                    className={cn(
-                                      "text-lg font-bold handwriting",
-                                      acct.currentBalance >= 0
-                                        ? "text-green-700"
-                                        : "text-red-600",
-                                    )}
-                                  >
-                                    {formatCurrency(
-                                      acct.currentBalance,
-                                      acct.currency,
-                                    )}
-                                  </p>
+                                  {acct.currencies.map((c) => (
+                                    <p
+                                      key={c}
+                                      className={cn(
+                                        "text-lg font-bold handwriting leading-tight",
+                                        (acct.balances[c] ?? 0) >= 0
+                                          ? "text-green-700"
+                                          : "text-red-600",
+                                      )}
+                                    >
+                                      {formatCurrency(acct.balances[c] ?? 0, c)}
+                                    </p>
+                                  ))}
                                   {spent > 0 && (
                                     <p className="text-xs text-red-500 handwriting">
                                       -{formatCurrency(spent)} this month
@@ -267,18 +267,17 @@ export function BudgetDetailsDialog({
                               className={cn(
                                 "text-xl font-bold handwriting",
                                 accounts.reduce(
-                                  (sum, a) =>
-                                    sum + toBase(a.currentBalance, a.currency),
+                                  (sum, a) => sum + sumToBase(a.balances),
                                   0,
                                 ) >= 0
                                   ? "text-green-700"
                                   : "text-red-600",
                               )}
                             >
+                              ≈{" "}
                               {formatCurrency(
                                 accounts.reduce(
-                                  (sum, a) =>
-                                    sum + toBase(a.currentBalance, a.currency),
+                                  (sum, a) => sum + sumToBase(a.balances),
                                   0,
                                 ),
                               )}

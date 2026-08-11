@@ -5,6 +5,7 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import type { Account, AccountGroup } from "@/lib/data-service";
+import type { MoneyByCurrency } from "@/lib/currency";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
   BarChart3,
@@ -18,7 +19,7 @@ import { useState } from "react";
 import { CategoryIcon } from "@/components/budget/CategoryIcon";
 import { AccountRow } from "./AccountRow";
 import { readAccountDrag } from "./accountDrag";
-import { groupTotal, signedBalance, singleCurrency } from "./accountMath";
+import { groupTotal } from "./accountMath";
 
 interface AccountGroupBandProps {
   group: AccountGroup;
@@ -36,7 +37,10 @@ interface AccountGroupBandProps {
   onDeposit: (account: Account) => void;
   onSetDefault: (account: Account) => void;
   /** Per-account movement for the month being viewed, keyed by account id. */
-  activity?: Record<string, { inflow: number; outflow: number }>;
+  activity?: Record<
+    string,
+    { inflow: MoneyByCurrency; outflow: MoneyByCurrency }
+  >;
   /** Viewing a past month — balances are historical, so no actions. */
   readOnly?: boolean;
 }
@@ -64,12 +68,9 @@ export function AccountGroupBand({
   activity,
   readOnly = false,
 }: AccountGroupBandProps) {
-  // Single-currency groups display native and exact; mixed groups convert to
-  // the base currency (rendered with a ≈ marker below).
-  const sameCurrency = singleCurrency(members);
-  const combined = sameCurrency
-    ? members.reduce((sum, m) => sum + signedBalance(m), 0)
-    : groupTotal(members);
+  // Wallets hold several currencies, so a combined group total only means
+  // something in base — rendered with a ≈ marker below.
+  const combined = groupTotal(members);
   const accent = group.color || "#f59e0b";
   const [isOver, setIsOver] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -156,9 +157,7 @@ export function AccountGroupBand({
               combined >= 0 ? "text-green-700" : "text-red-600",
             )}
           >
-            {sameCurrency
-              ? formatCurrency(combined, sameCurrency)
-              : `≈ ${formatCurrency(combined)}`}
+            ≈ {formatCurrency(combined)}
           </span>
           <BarChart3 className="w-3.5 h-3.5 text-stone-300" />
         </button>

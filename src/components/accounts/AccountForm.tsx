@@ -46,7 +46,7 @@ function getDefaultIconForType(type: Account["accountType"]): string {
 interface AccountFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (account: Omit<Account, "id" | "currentBalance">) => void;
+  onSubmit: (account: Omit<Account, "id" | "balances">) => void;
   editingAccount?: Account;
   /** Available groups to assign this account to ("mother accounts"). */
   groups?: AccountGroup[];
@@ -68,13 +68,18 @@ export function AccountForm({
   const [name, setName] = useState("");
   const [accountType, setAccountType] =
     useState<Account["accountType"]>("checking");
-  const [currency, setCurrency] = useState<CurrencyCode>("USD");
-  const [initialBalance, setInitialBalance] = useState("");
+  // Which currencies this wallet holds, and its opening balance for each.
+  const [currencies, setCurrencies] = useState<CurrencyCode[]>(["USD"]);
+  const [initialInputs, setInitialInputs] = useState<Record<string, string>>(
+    {},
+  );
   const [isDefault, setIsDefault] = useState(false);
   const [icon, setIcon] = useState("");
   const [groupIds, setGroupIds] = useState<string[]>([]);
 
   const isEditing = !!editingAccount;
+  // Primary (default-input) currency: the first held currency.
+  const primary = currencies[0] ?? "USD";
 
   // Reset form when dialog opens/closes or when editing changes
   useEffect(() => {
@@ -82,16 +87,32 @@ export function AccountForm({
       if (editingAccount) {
         setName(editingAccount.name);
         setAccountType(editingAccount.accountType);
-        setCurrency(editingAccount.currency);
-        setInitialBalance(editingAccount.initialBalance.toString());
+        setCurrencies(
+          editingAccount.currencies.length
+            ? [
+                editingAccount.currency,
+                ...editingAccount.currencies.filter(
+                  (c) => c !== editingAccount.currency,
+                ),
+              ]
+            : [editingAccount.currency],
+        );
+        setInitialInputs(
+          Object.fromEntries(
+            Object.entries(editingAccount.initialBalances).map(([c, v]) => [
+              c,
+              String(v ?? 0),
+            ]),
+          ),
+        );
         setIsDefault(editingAccount.isDefault);
         setIcon(editingAccount.icon || "");
         setGroupIds(editingAccount.groupIds ?? []);
       } else {
         setName("");
         setAccountType("checking");
-        setCurrency("USD");
-        setInitialBalance("");
+        setCurrencies(["USD"]);
+        setInitialInputs({});
         setIsDefault(false);
         setIcon("");
         setGroupIds(defaultGroupIds ?? []);
@@ -104,16 +125,29 @@ export function AccountForm({
       prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id],
     );
 
+  const toggleCurrency = (code: CurrencyCode) =>
+    setCurrencies((prev) => {
+      if (prev.includes(code)) {
+        // Always hold at least one currency.
+        return prev.length > 1 ? prev.filter((c) => c !== code) : prev;
+      }
+      return [...prev, code];
+    });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    const balance = parseFloat(initialBalance) || 0;
+    const initialBalances: Partial<Record<CurrencyCode, number>> = {};
+    for (const code of currencies) {
+      initialBalances[code] = parseFloat(initialInputs[code] ?? "") || 0;
+    }
 
     onSubmit({
       name: name.trim(),
       accountType,
-      currency,
-      initialBalance: balance,
+      currency: primary,
+      currencies,
+      initialBalances,
       isDefault,
       icon: icon || undefined,
       sortOrder: 0,
@@ -273,36 +307,27 @@ export function AccountForm({
             />
           </div>
 
-          {/* Currency */}
+          {/* Currencies the wallet holds */}
           <div className="space-y-2">
             <Label className={cn("text-base", paperTheme.fonts.handwriting)}>
-              Currency
+              Currencies
+              <span className="ml-1 text-xs font-normal text-stone-400">
+                this account can hold several
+              </span>
             </Label>
-            {isEditing ? (
-              <>
-                <div
-                  className={cn(
-                    "px-4 py-3 rounded-xl border-2 text-sm shadow-sm bg-stone-50 text-stone-600",
-                    paperTheme.colors.borders.amber,
-                  )}
-                >
-                  {CURRENCIES[currency].symbol} — {CURRENCIES[currency].name}
-                </div>
-                <p className="text-xs text-stone-500">
-                  An account's currency can't change — its whole history is
-                  denominated in it. Create a new account and transfer instead.
-                </p>
-              </>
-            ) : (
-              <div className="flex gap-1.5">
-                {CURRENCY_CODES.map((code) => (
+            <div className="flex gap-1.5">
+              {CURRENCY_CODES.map((code) => {
+                const held = currencies.includes(code);
+                return (
                   <button
                     key={code}
                     type="button"
-                    onClick={() => setCurrency(code)}
+                    disabled={isEditing}
+                    onClick={() => toggleCurrency(code)}
                     className={cn(
-                      "flex-1 px-3 py-2.5 rounded-xl border-2 text-sm transition-all cursor-pointer",
-                      currency === code
+                      "flex-1 px-3 py-2.5 rounded-xl border-2 text-sm transition-all",
+                      isEditing ? "cursor-default opacity-80" : "cursor-pointer",
+                      held
                         ? "border-amber-400 bg-amber-50 font-semibold text-amber-800 shadow-sm"
                         : "border-stone-200 bg-white/70 text-stone-600 hover:border-amber-300",
                     )}
@@ -314,43 +339,58 @@ export function AccountForm({
                       {CURRENCIES[code].name}
                     </span>
                   </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Initial Balance */}
-          <div className="space-y-2">
-            <Label
-              htmlFor="balance"
-              className={cn("text-base", paperTheme.fonts.handwriting)}
-            >
-              {isEditing ? "Initial Balance" : "Starting Balance"}
-            </Label>
-            <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-500 text-sm">
-                {CURRENCIES[currency].symbol}
-              </span>
-              <input
-                id="balance"
-                type="number"
-                step={CURRENCIES[currency].inputStep}
-                min="0"
-                value={initialBalance}
-                onChange={(e) => setInitialBalance(e.target.value)}
-                placeholder={CURRENCIES[currency].inputPlaceholder}
-                className={cn(
-                  "w-full pr-4 py-3 rounded-xl border-2 text-sm shadow-sm",
-                  currency === "USD" ? "pl-9" : "pl-14",
-                  paperTheme.colors.borders.amber,
-                  paperTheme.colors.background.white,
-                  "focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:shadow-md transition-shadow"
-                )}
-              />
+                );
+              })}
             </div>
             {isEditing && (
               <p className="text-xs text-stone-500">
-                Note: Changing initial balance won't affect current balance
+                The held currencies can't change after creation — their
+                balances have history.
+              </p>
+            )}
+          </div>
+
+          {/* Starting balance per held currency */}
+          <div className="space-y-2">
+            <Label className={cn("text-base", paperTheme.fonts.handwriting)}>
+              {isEditing ? "Initial Balances" : "Starting Balances"}
+            </Label>
+            <div className="space-y-1.5">
+              {currencies.map((code) => (
+                <div key={code} className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-500 text-sm">
+                    {CURRENCIES[code].symbol}
+                  </span>
+                  <input
+                    type="number"
+                    step={CURRENCIES[code].inputStep}
+                    min="0"
+                    value={initialInputs[code] ?? ""}
+                    onChange={(e) =>
+                      setInitialInputs((prev) => ({
+                        ...prev,
+                        [code]: e.target.value,
+                      }))
+                    }
+                    disabled={isEditing}
+                    placeholder={CURRENCIES[code].inputPlaceholder}
+                    className={cn(
+                      "w-full pr-4 py-3 rounded-xl border-2 text-sm shadow-sm",
+                      code === "USD" ? "pl-9" : "pl-14",
+                      paperTheme.colors.borders.amber,
+                      isEditing
+                        ? "bg-stone-50 text-stone-500"
+                        : paperTheme.colors.background.white,
+                      "focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:shadow-md transition-shadow"
+                    )}
+                  />
+                </div>
+              ))}
+            </div>
+            {isEditing && (
+              <p className="text-xs text-stone-500">
+                Opening balances are history — deposit or transfer to change
+                today's balances.
               </p>
             )}
           </div>
@@ -397,7 +437,14 @@ export function AccountForm({
                   {name || "Account Name"}
                 </p>
                 <p className="text-xs text-stone-500">
-                  {formatCurrency(parseFloat(initialBalance) || 0, currency)}
+                  {currencies
+                    .map((code) =>
+                      formatCurrency(
+                        parseFloat(initialInputs[code] ?? "") || 0,
+                        code,
+                      ),
+                    )
+                    .join(" · ")}
                 </p>
               </div>
             </div>
