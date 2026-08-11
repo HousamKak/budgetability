@@ -1,5 +1,6 @@
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { chartColors, formatCurrency } from '@/utils/analytics';
+import { formatCurrencyCompact } from '@/lib/currency';
 import { paperTheme } from '@/styles';
 
 interface BudgetPerformanceData {
@@ -70,7 +71,7 @@ export function BudgetPerformanceChart({ data }: BudgetPerformanceChartProps) {
         />
         <YAxis
           tick={{ fontSize: 12, fill: '#6b7280' }}
-          tickFormatter={(value) => `$${value}`}
+          tickFormatter={(value) => formatCurrencyCompact(Number(value))}
         />
         <Tooltip content={<CustomTooltip />} />
         <ReferenceLine

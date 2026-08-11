@@ -13,7 +13,8 @@ import type {
   AccountTransaction,
   BudgetAllocation,
 } from "@/lib/data-service";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, currencySymbol, formatCurrency } from "@/lib/utils";
+import { toBase } from "@/lib/currency";
 import { paperTheme } from "@/styles";
 import { AlertTriangle, Info, Plus, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -162,7 +163,7 @@ export function BudgetSetupDialog({
               </Label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 text-lg">
-                  $
+                  {currencySymbol()}
                 </span>
                 <Input
                   id="budget-amount"
@@ -355,15 +356,18 @@ export function BudgetSetupDialog({
                             </div>
                             <div className="flex gap-2">
                               <div className="relative flex-1">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500">
-                                  $
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 text-sm">
+                                  {currencySymbol()}
                                 </span>
                                 <input
                                   type="number"
                                   step="0.01"
                                   min="0.01"
                                   max={
-                                    account.currentBalance + allocation.amount
+                                    toBase(
+                                      account.currentBalance,
+                                      account.currency,
+                                    ) + allocation.amount
                                   }
                                   value={adjustAmount}
                                   onChange={(e) =>
@@ -398,7 +402,8 @@ export function BudgetSetupDialog({
                             <p className="text-xs text-stone-500">
                               Available:{" "}
                               {formatCurrency(
-                                account.currentBalance + allocation.amount,
+                                toBase(account.currentBalance, account.currency) +
+                                  allocation.amount,
                               )}
                             </p>
                           </div>

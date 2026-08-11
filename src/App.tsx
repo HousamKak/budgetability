@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
+import { CurrencyProvider } from './contexts/CurrencyContext'
 import PaperBudget from './components/PaperBudget'
 import SavingsGoals from './components/SavingsGoals'
 import AccountsPage from './components/AccountsPage'
@@ -30,6 +31,7 @@ const basename = import.meta.env.BASE_URL.replace(/\/+$/, '')
 function App() {
   return (
     <AuthProvider>
+      <CurrencyProvider>
       <Router basename={basename}>
         <div className="relative">
           <NavigationPanel />
@@ -50,6 +52,7 @@ function App() {
           </Suspense>
         </div>
       </Router>
+      </CurrencyProvider>
     </AuthProvider>
   )
 }

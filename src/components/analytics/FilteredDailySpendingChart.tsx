@@ -3,6 +3,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { Filter, TrendingUp } from 'lucide-react';
 import type { Expense } from '@/lib/data-service';
 import { chartColors, formatCurrency } from '@/utils/analytics';
+import { formatCurrencyCompact } from '@/lib/currency';
 import { paperTheme } from '@/styles';
 
 interface FilteredDailySpendingChartProps {
@@ -119,7 +120,7 @@ export function FilteredDailySpendingChart({ expenses }: FilteredDailySpendingCh
             />
             <YAxis
               tick={{ fontSize: 12, fill: '#6b7280' }}
-              tickFormatter={(value) => `$${value}`}
+              tickFormatter={(value) => formatCurrencyCompact(Number(value))}
             />
             <Tooltip content={<CustomTooltip />} />
             <Line

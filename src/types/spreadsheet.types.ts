@@ -16,6 +16,11 @@ export interface ColumnDef {
   type: "currency" | "text" | "number" | "computed";
   editable: boolean;
   width?: number;
+  /**
+   * Denomination for currency/computed columns. Unset = the user's base
+   * currency. Lets e.g. "Savings in DRHM" render as AED, not "$".
+   */
+  currency?: "USD" | "AED" | "LBP";
 }
 
 export interface ColumnGroup {

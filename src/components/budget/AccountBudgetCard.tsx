@@ -169,7 +169,7 @@ export function AccountBudgetCard({
                   account.currentBalance >= 0 ? "text-green-600" : "text-red-600"
                 )}
               >
-                {formatCurrency(account.currentBalance)}
+                {formatCurrency(account.currentBalance, account.currency)}
               </span>
             </div>
 
@@ -212,7 +212,7 @@ export function AccountBudgetCard({
                           )}
                         >
                           {details.isOutgoing ? "-" : "+"}
-                          {formatCurrency(tx.amount)}
+                          {formatCurrency(tx.amount, account.currency)}
                         </span>
                         <span className="text-stone-400">
                           {formatDate(tx.createdAt)}

@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
+import { cn, currencySymbol } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import { useEffect, useState } from "react";
 
@@ -77,7 +77,7 @@ export function ForecastStartDialog({
         >
           <div className="space-y-1.5">
             <Label className={cn("text-sm", paperTheme.fonts.handwriting)}>
-              Starting amount ($)
+              Starting amount ({currencySymbol()})
             </Label>
             <input
               type="number"

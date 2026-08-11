@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import type { Account, AccountTransaction } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
-import { formatNumber } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { cn, dialogStyles } from "@/styles";
 import {
   ArrowRightLeft,
@@ -132,11 +132,12 @@ export function AccountTransactionsDialog({
   async function handleRevertTransaction(tx: AccountTransaction) {
     let message: string;
     if (tx.transactionType === "deposit") {
-      message = `Delete this deposit of $${formatNumber(tx.amount)}? The account balance will be reduced accordingly.`;
+      const depositAcct = accounts.find((a) => a.id === tx.toAccountId);
+      message = `Delete this deposit of ${formatCurrency(tx.amount, depositAcct?.currency)}? The account balance will be reduced accordingly.`;
     } else if (tx.transactionType === "transfer") {
       const fromAcct = accounts.find((a) => a.id === tx.fromAccountId);
       const toAcct = accounts.find((a) => a.id === tx.toAccountId);
-      message = `Revert this transfer of $${formatNumber(tx.amount)}${
+      message = `Revert this transfer of ${formatCurrency(tx.amount, fromAcct?.currency)}${
         fromAcct && toAcct
           ? ` from ${fromAcct.name} to ${toAcct.name}`
           : ""
@@ -184,13 +185,18 @@ export function AccountTransactionsDialog({
     return { priorTxs: prior, monthTxs: current };
   }, [allTransactions, currentMonthKey, account]);
 
+  // The amount this account actually moved by. Cross-currency transfers carry
+  // a destination-side amount (toAmount) that differs from the source amount.
+  const nativeAmount = (tx: AccountTransaction, accountId: string) =>
+    tx.toAccountId === accountId ? (tx.toAmount ?? tx.amount) : tx.amount;
+
   // Compute opening balance = initialBalance + net of all prior transactions
   const openingBalance = useMemo(() => {
     if (!account) return 0;
     let balance = account.initialBalance;
     for (const tx of priorTxs) {
       if (txIsInflow(tx, account.id)) {
-        balance += tx.amount;
+        balance += nativeAmount(tx, account.id);
       } else {
         balance -= tx.amount;
       }
@@ -205,7 +211,7 @@ export function AccountTransactionsDialog({
     let outflow = 0;
     for (const tx of monthTxs) {
       if (txIsInflow(tx, account.id)) {
-        inflow += tx.amount;
+        inflow += nativeAmount(tx, account.id);
       } else {
         outflow += tx.amount;
       }
@@ -316,7 +322,7 @@ export function AccountTransactionsDialog({
                               Opening Balance
                             </p>
                             <p className="text-lg font-bold text-stone-700 handwriting">
-                              ${formatNumber(openingBalance)}
+                              {formatCurrency(openingBalance, account.currency)}
                             </p>
                           </div>
                           <div>
@@ -331,7 +337,7 @@ export function AccountTransactionsDialog({
                                   : "text-red-600",
                               )}
                             >
-                              ${formatNumber(closingBalance)}
+                              {formatCurrency(closingBalance, account.currency)}
                             </p>
                           </div>
                         </div>
@@ -343,7 +349,7 @@ export function AccountTransactionsDialog({
                               Money In
                             </p>
                             <p className="text-lg font-bold text-green-600 handwriting">
-                              +${formatNumber(monthIn)}
+                              +{formatCurrency(monthIn, account.currency)}
                             </p>
                           </div>
                           <div>
@@ -351,7 +357,7 @@ export function AccountTransactionsDialog({
                               Money Out
                             </p>
                             <p className="text-lg font-bold text-red-600 handwriting">
-                              -${formatNumber(monthOut)}
+                              -{formatCurrency(monthOut, account.currency)}
                             </p>
                           </div>
                         </div>
@@ -369,8 +375,8 @@ export function AccountTransactionsDialog({
                                 : "text-red-600",
                             )}
                           >
-                            {monthIn - monthOut >= 0 ? "+" : ""}$
-                            {formatNumber(monthIn - monthOut)}
+                            {monthIn - monthOut >= 0 ? "+" : ""}
+                            {formatCurrency(monthIn - monthOut, account.currency)}
                           </p>
                         </div>
 
@@ -458,8 +464,13 @@ export function AccountTransactionsDialog({
                                           : "text-red-600",
                                       )}
                                     >
-                                      {isInflow ? "+" : "-"}$
-                                      {formatNumber(tx.amount)}
+                                      {isInflow ? "+" : "-"}
+                                      {formatCurrency(
+                                        isInflow
+                                          ? nativeAmount(tx, account.id)
+                                          : tx.amount,
+                                        account.currency,
+                                      )}
                                     </span>
                                     <span className="text-xs text-stone-500 ml-2">
                                       {label}

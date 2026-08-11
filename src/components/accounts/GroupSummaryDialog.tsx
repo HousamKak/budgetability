@@ -12,12 +12,17 @@ import type {
   AccountTransaction,
 } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
-import { cn, formatCurrency, formatNumber } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { dialogStyles } from "@/styles";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CategoryIcon } from "@/components/budget/CategoryIcon";
-import { groupTotal, signedBalance } from "./accountMath";
+import {
+  groupTotal,
+  signedBalance,
+  signedBalanceBase,
+  singleCurrency,
+} from "./accountMath";
 
 interface GroupSummaryDialogProps {
   open: boolean;
@@ -120,8 +125,16 @@ export function GroupSummaryDialog({
     }
   }
 
-  const combined = groupTotal(members);
-  const maxAbs = Math.max(1, ...members.map((m) => Math.abs(signedBalance(m))));
+  // Mixed-currency groups total in base (marked ≈); single-currency groups
+  // stay native and exact.
+  const sameCurrency = singleCurrency(members);
+  const combined = sameCurrency
+    ? members.reduce((sum, m) => sum + signedBalance(m), 0)
+    : groupTotal(members);
+  const maxAbs = Math.max(
+    1,
+    ...members.map((m) => Math.abs(signedBalanceBase(m))),
+  );
   const accent = group?.color || "#f59e0b";
 
   if (!group) return null;
@@ -173,7 +186,9 @@ export function GroupSummaryDialog({
                       combined >= 0 ? "text-green-700" : "text-red-600",
                     )}
                   >
-                    {formatCurrency(combined)}
+                    {sameCurrency
+                      ? formatCurrency(combined, sameCurrency)
+                      : `≈ ${formatCurrency(combined)}`}
                   </p>
                 </div>
               </div>
@@ -193,7 +208,8 @@ export function GroupSummaryDialog({
                       {members.map((m) => {
                         const signed = signedBalance(m);
                         const isLiability = m.accountType === "credit";
-                        const pct = (Math.abs(signed) / maxAbs) * 100;
+                        const pct =
+                          (Math.abs(signedBalanceBase(m)) / maxAbs) * 100;
                         return (
                           <div key={m.id} className="space-y-1">
                             <div className="flex items-center justify-between gap-2">
@@ -221,8 +237,8 @@ export function GroupSummaryDialog({
                                     : "text-red-600",
                                 )}
                               >
-                                {signed < 0 ? "-" : ""}$
-                                {formatNumber(Math.abs(signed))}
+                                {signed < 0 ? "-" : ""}
+                                {formatCurrency(Math.abs(signed), m.currency)}
                               </span>
                             </div>
                             {/* Contribution bar (magnitude) */}
@@ -263,6 +279,16 @@ export function GroupSummaryDialog({
                       {txs.slice(0, 60).map((tx) => {
                         const internal = tx.groupDirection === "internal";
                         const isIn = tx.groupDirection === "in";
+                        // Show the member-side amount in its own currency:
+                        // inbound movements credit toAmount on cross-currency
+                        // transfers, outbound ones debit the source amount.
+                        const sideAccount = accounts.find(
+                          (a) =>
+                            a.id === (isIn ? tx.toAccountId : tx.fromAccountId),
+                        );
+                        const sideAmount = isIn
+                          ? (tx.toAmount ?? tx.amount)
+                          : tx.amount;
                         return (
                           <div
                             key={tx.id}
@@ -281,8 +307,11 @@ export function GroupSummaryDialog({
                                           : "text-red-600",
                                     )}
                                   >
-                                    {internal ? "" : isIn ? "+" : "-"}$
-                                    {formatNumber(tx.amount)}
+                                    {internal ? "" : isIn ? "+" : "-"}
+                                    {formatCurrency(
+                                      sideAmount,
+                                      sideAccount?.currency,
+                                    )}
                                   </span>
                                   <span className="text-xs text-stone-500 ml-2">
                                     {txLabelForGroup(tx, accounts)}

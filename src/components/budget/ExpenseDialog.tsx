@@ -9,7 +9,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Account, type Expense, type PlanItem } from "@/lib/data-service";
-import { formatNumber } from "@/lib/utils";
+import {
+  CURRENCIES,
+  type CurrencyCode,
+  convert,
+  getBaseCurrency,
+  toBase,
+} from "@/lib/currency";
+import { formatCurrency } from "@/lib/utils";
 import { cn, dialogStyles } from "@/styles";
 import { Check, Pencil, TrendingUp, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -72,6 +79,8 @@ interface ExpenseDialogProps {
   dayExpenses?: Array<{
     id: string;
     amount: number;
+    originalAmount?: number;
+    originalCurrency?: CurrencyCode;
     category?: string;
     accountId?: string;
     note?: string;
@@ -166,6 +175,19 @@ export function ExpenseDialog({
     });
   };
 
+  // Edits work on the displayed (base) amount; the native side is recomputed
+  // at the current rate when the paying account isn't base-denominated.
+  const originalFieldsFor = (baseAmount: number, payAccountId?: string) => {
+    const acc = accounts.find((x) => x.id === payAccountId);
+    if (!acc || acc.currency === getBaseCurrency()) {
+      return { originalAmount: undefined, originalCurrency: undefined };
+    }
+    return {
+      originalAmount: convert(baseAmount, getBaseCurrency(), acc.currency),
+      originalCurrency: acc.currency,
+    };
+  };
+
   const saveInlineExpenseEdit = (expenseId: string) => {
     const updateFn = onInlineUpdateExpense || onUpdateExpense;
     if (updateFn) {
@@ -173,6 +195,7 @@ export function ExpenseDialog({
       if (!isNaN(amount) && amount > 0) {
         updateFn(expenseId, {
           amount,
+          ...originalFieldsFor(amount, inlineEditFormData.accountId || undefined),
           category: inlineEditFormData.category,
           accountId: inlineEditFormData.accountId || undefined,
           note: inlineEditFormData.note,
@@ -203,6 +226,14 @@ export function ExpenseDialog({
     setInlineEditingPlanId(null);
   };
 
+  // What the typed amount is denominated in: new expenses are entered in the
+  // paying account's currency; edits work on the displayed (base) amount.
+  const entryCurrency: CurrencyCode =
+    editingExpense || editingPlan || !accountId
+      ? getBaseCurrency()
+      : (accounts.find((x) => x.id === accountId)?.currency ??
+        getBaseCurrency());
+
   // Clear selected account if amount exceeds its available balance.
   // When editing, the original amount is already deducted from the balance,
   // so we only need to check if the *additional* cost is affordable.
@@ -215,12 +246,29 @@ export function ExpenseDialog({
     if (parsedAmount <= 0) return;
     const selectedAccount = accounts.find((a) => a.id === accountId);
     if (!selectedAccount) return;
-    const originalAmount = editingExpense?.accountId === accountId ? editingExpense.amount : 0;
-    const effectiveBalance = selectedAccount.currentBalance + originalAmount;
-    if (effectiveBalance < parsedAmount) {
+    // Compare in the account's own currency.
+    const parsedNative = convert(
+      parsedAmount,
+      entryCurrency,
+      selectedAccount.currency,
+    );
+    const originalNative =
+      editingExpense?.accountId === accountId
+        ? (editingExpense.originalAmount ?? editingExpense.amount)
+        : 0;
+    const effectiveBalance = selectedAccount.currentBalance + originalNative;
+    if (effectiveBalance < parsedNative) {
       onAccountIdChange("");
     }
-  }, [amount, accountId, accounts, onAccountIdChange, editingExpense, mode]);
+  }, [
+    amount,
+    accountId,
+    accounts,
+    onAccountIdChange,
+    editingExpense,
+    mode,
+    entryCurrency,
+  ]);
 
   // Determine if we're in edit mode
   const isEditing = !!(editingExpense || editingPlan);
@@ -244,6 +292,7 @@ export function ExpenseDialog({
         onUpdateExpense(editingExpense.id, {
           date: formDate,
           amount: Number(a.toFixed(2)),
+          ...originalFieldsFor(Number(a.toFixed(2)), accountId || undefined),
           category,
           accountId: accountId || undefined,
           note,
@@ -466,20 +515,30 @@ export function ExpenseDialog({
                         htmlFor="amount"
                         className={dialogStyles.form.label}
                       >
-                        Amount
+                        Amount ({CURRENCIES[entryCurrency].symbol})
                       </Label>
                       <Input
                         id="amount"
                         type="number"
-                        step="0.01"
+                        step={CURRENCIES[entryCurrency].inputStep}
                         min="0"
-                        placeholder="0.00"
+                        placeholder={CURRENCIES[entryCurrency].inputPlaceholder}
                         value={amount}
                         onChange={(e) => onAmountChange(e.target.value)}
                         autoFocus={typeof window !== "undefined" && window.innerWidth >= 1024}
                         inputMode="decimal"
                         className={dialogStyles.form.input}
                       />
+                      {entryCurrency !== getBaseCurrency() &&
+                        (parseFloat(amount) || 0) > 0 && (
+                          <p className="text-xs text-stone-500 mt-1">
+                            ≈{" "}
+                            {formatCurrency(
+                              toBase(parseFloat(amount) || 0, entryCurrency),
+                            )}{" "}
+                            on the budget
+                          </p>
+                        )}
                     </div>
                     <div className={dialogStyles.form.fieldContainer}>
                       <Label className={dialogStyles.form.label}>
@@ -525,9 +584,13 @@ export function ExpenseDialog({
                               .sort((a, b) => (a.isDefault ? -1 : b.isDefault ? 1 : 0))
                               .map((acc) => {
                                 const parsedAmount = parseFloat(amount) || 0;
-                                const originalAmount = editingExpense?.accountId === acc.id ? editingExpense.amount : 0;
-                                const effectiveBalance = acc.currentBalance + originalAmount;
-                                const insufficientFunds = parsedAmount > 0 && effectiveBalance < parsedAmount;
+                                // Compare in each candidate account's currency.
+                                const parsedNative = convert(parsedAmount, entryCurrency, acc.currency);
+                                const originalNative = editingExpense?.accountId === acc.id
+                                  ? (editingExpense.originalAmount ?? editingExpense.amount)
+                                  : 0;
+                                const effectiveBalance = acc.currentBalance + originalNative;
+                                const insufficientFunds = parsedAmount > 0 && effectiveBalance < parsedNative;
                                 // For plans (future payments) the current balance is not a real
                                 // constraint, so don't disable — show a soft warning instead.
                                 const disableForInsufficient = mode === "expense" && insufficientFunds;
@@ -960,9 +1023,20 @@ export function ExpenseDialog({
                                             <div className="flex-1">
                                               <div className="handwriting text-red-600 text-base leading-relaxed">
                                                 <span className="font-bold">
-                                                  $
-                                                  {formatNumber(expense.amount)}
+                                                  {formatCurrency(expense.amount)}
                                                 </span>
+                                                {expense.originalAmount != null &&
+                                                  expense.originalCurrency && (
+                                                    <span className="text-xs opacity-75">
+                                                      {" "}
+                                                      (paid{" "}
+                                                      {formatCurrency(
+                                                        expense.originalAmount,
+                                                        expense.originalCurrency,
+                                                      )}
+                                                      )
+                                                    </span>
+                                                  )}
                                                 {expense.category && (
                                                   <span className="text-sm opacity-75">
                                                     {" "}
@@ -1130,7 +1204,7 @@ export function ExpenseDialog({
                                             <div className="flex-1">
                                               <div className="handwriting text-blue-600 text-base leading-relaxed">
                                                 <span className="font-bold">
-                                                  ${formatNumber(plan.amount)}
+                                                  {formatCurrency(plan.amount)}
                                                 </span>
                                                 {plan.category && (
                                                   <span className="text-sm opacity-75">

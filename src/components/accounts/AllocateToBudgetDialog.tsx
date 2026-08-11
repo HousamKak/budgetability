@@ -7,6 +7,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import {
+  CURRENCIES,
+  formatCurrency,
+  getBaseCurrency,
+  toBase,
+} from "@/lib/currency";
 import type { Account } from "@/lib/data-service";
 import { cn } from "@/lib/utils";
 import { paperTheme } from "@/styles";
@@ -54,13 +60,6 @@ export function AllocateToBudgetDialog({
       onAllocate(account.id, monthKey, allocateAmount);
       onOpenChange(false);
     }
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(amount);
   };
 
   const formatMonth = (key: string) => {
@@ -134,7 +133,7 @@ export function AllocateToBudgetDialog({
                 {account.name}
               </p>
               <p className="text-sm text-stone-500">
-                Available: {formatCurrency(account.currentBalance)}
+                Available: {formatCurrency(account.currentBalance, account.currency)}
               </p>
             </div>
           </div>
@@ -174,21 +173,22 @@ export function AllocateToBudgetDialog({
               Allocation Amount
             </Label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500">
-                $
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 text-sm">
+                {CURRENCIES[account.currency].symbol}
               </span>
               <input
                 id="amount"
                 type="number"
-                step="0.01"
-                min="0.01"
+                step={CURRENCIES[account.currency].inputStep}
+                min={CURRENCIES[account.currency].inputStep}
                 max={account.currentBalance}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
+                placeholder={CURRENCIES[account.currency].inputPlaceholder}
                 autoFocus
                 className={cn(
-                  "w-full pl-7 pr-3 py-2 rounded-lg border text-sm",
+                  "w-full py-2 pr-3 rounded-lg border text-sm",
+                  account.currency === "USD" ? "pl-7" : "pl-12",
                   paperTheme.colors.borders.amber,
                   paperTheme.colors.background.white,
                   "focus:outline-none focus:ring-2 focus:ring-amber-400/50"
@@ -198,11 +198,17 @@ export function AllocateToBudgetDialog({
             {allocateAmount > account.currentBalance && (
               <p className="text-xs text-red-500">Exceeds available balance</p>
             )}
+            {account.currency !== getBaseCurrency() && allocateAmount > 0 && (
+              <p className="text-xs text-stone-500">
+                ≈ {formatCurrency(toBase(allocateAmount, account.currency))} added
+                to the budget
+              </p>
+            )}
           </div>
 
           {/* Quick amounts */}
           <div className="flex gap-2 flex-wrap">
-            {[100, 250, 500, 1000].map((preset) => (
+            {CURRENCIES[account.currency].presets.map((preset) => (
               <Button
                 key={preset}
                 type="button"
@@ -212,7 +218,7 @@ export function AllocateToBudgetDialog({
                 onClick={() => setAmount(preset.toString())}
                 disabled={preset > account.currentBalance}
               >
-                ${preset}
+                {formatCurrency(preset, account.currency)}
               </Button>
             ))}
             <Button
@@ -222,7 +228,7 @@ export function AllocateToBudgetDialog({
               className={cn("h-7 text-xs", paperTheme.colors.borders.amber)}
               onClick={() => setAmount(account.currentBalance.toString())}
             >
-              All ({formatCurrency(account.currentBalance)})
+              All ({formatCurrency(account.currentBalance, account.currency)})
             </Button>
           </div>
 
@@ -240,7 +246,10 @@ export function AllocateToBudgetDialog({
                 <div>
                   <p className="text-xs text-stone-400">Account Balance</p>
                   <p className="font-medium text-stone-700">
-                    {formatCurrency(account.currentBalance - allocateAmount)}
+                    {formatCurrency(
+                      account.currentBalance - allocateAmount,
+                      account.currency,
+                    )}
                   </p>
                 </div>
                 <div>
@@ -248,7 +257,9 @@ export function AllocateToBudgetDialog({
                     {formatMonth(monthKey)} Budget
                   </p>
                   <p className="font-medium text-green-600">
-                    {formatCurrency(currentBudget + allocateAmount)}
+                    {formatCurrency(
+                      currentBudget + toBase(allocateAmount, account.currency),
+                    )}
                   </p>
                 </div>
               </div>

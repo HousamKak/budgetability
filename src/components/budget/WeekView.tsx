@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import type { Expense, PlanItem } from "@/lib/data-service";
-import { formatNumber } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Trash } from "./Icons";
 import { daysInMonth, monStartOffset } from "./utils";
@@ -115,12 +115,12 @@ export function WeekView({
       <div className="flex items-center justify-center gap-6 py-2 px-3 bg-gradient-to-r from-amber-50/80 to-orange-50/60 rounded-xl border border-amber-200/50">
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-stone-500">Spent</span>
-          <span className="text-sm font-bold text-red-600">${formatNumber(currentSummary.spent)}</span>
+          <span className="text-sm font-bold text-red-600">{formatCurrency(currentSummary.spent)}</span>
         </div>
         <div className="w-px h-4 bg-amber-300/50" />
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-stone-500">Planned</span>
-          <span className="text-sm font-bold text-amber-700">${formatNumber(currentSummary.planned)}</span>
+          <span className="text-sm font-bold text-amber-700">{formatCurrency(currentSummary.planned)}</span>
         </div>
       </div>
 
@@ -152,7 +152,7 @@ export function WeekView({
               >
                 <div className="flex-1 min-w-0 flex items-center gap-2">
                   <span className="font-bold text-stone-800 text-sm">
-                    ${formatNumber(p.amount)}
+                    {formatCurrency(p.amount)}
                   </span>
                   <span className="text-xs text-stone-600 truncate">{p.category}</span>
                   {p.note && (

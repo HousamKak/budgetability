@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { formatNumber } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { ChevronRight, Trash } from "./Icons";
 import { monStartOffset, daysInMonth } from "./utils";
 import type { Expense, PlanItem } from "@/lib/data-service";
@@ -99,15 +99,15 @@ export function MonthView({
           <div className="flex items-center gap-4">
             <div className="text-center">
               <div className="text-xs text-stone-500">Budget</div>
-              <div className="font-bold text-stone-700">${formatNumber(monthSummary.budget)}</div>
+              <div className="font-bold text-stone-700">{formatCurrency(monthSummary.budget)}</div>
             </div>
             <div className="text-center">
               <div className="text-xs text-stone-500">Spent</div>
-              <div className="font-bold text-red-600">${formatNumber(monthSummary.totalSpent)}</div>
+              <div className="font-bold text-red-600">{formatCurrency(monthSummary.totalSpent)}</div>
             </div>
             <div className="text-center">
               <div className="text-xs text-stone-500">Left</div>
-              <div className="font-bold text-amber-700">${formatNumber(monthSummary.remaining)}</div>
+              <div className="font-bold text-amber-700">{formatCurrency(monthSummary.remaining)}</div>
             </div>
           </div>
           <div
@@ -183,10 +183,10 @@ export function MonthView({
                     <span className="text-stone-400">{weekSummary.weekPlans.length} items</span>
                   )}
                   {weekSummary.spent > 0 && (
-                    <span className="text-red-500">${formatNumber(weekSummary.spent)}</span>
+                    <span className="text-red-500">{formatCurrency(weekSummary.spent)}</span>
                   )}
                   {weekSummary.planned > 0 && (
-                    <span className="text-amber-600 font-medium">${formatNumber(weekSummary.planned)}</span>
+                    <span className="text-amber-600 font-medium">{formatCurrency(weekSummary.planned)}</span>
                   )}
                 </div>
               </div>
@@ -199,7 +199,7 @@ export function MonthView({
                       key={item.id}
                       className="group flex items-center gap-2 px-2 py-1.5 rounded bg-stone-50/80 text-sm"
                     >
-                      <span className="font-bold text-stone-800">${formatNumber(item.amount)}</span>
+                      <span className="font-bold text-stone-800">{formatCurrency(item.amount)}</span>
                       <span className="text-xs text-stone-600">{item.category}</span>
                       {item.note && (
                         <span className="text-xs text-stone-400 truncate max-w-24">· {item.note}</span>

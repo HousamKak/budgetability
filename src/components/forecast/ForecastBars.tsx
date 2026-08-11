@@ -12,12 +12,9 @@ import {
 import type { MonthBucket } from "@/utils/forecast";
 import { MONTHS_SHORT } from "@/utils/forecast";
 import { formatCurrency } from "@/lib/utils";
+import { formatCurrencyCompact } from "@/lib/currency";
 
-function compact(n: number): string {
-  const abs = Math.abs(n);
-  if (abs >= 1000) return `${n < 0 ? "-" : ""}$${(abs / 1000).toFixed(abs >= 10000 ? 0 : 1)}k`;
-  return `${n < 0 ? "-" : ""}$${abs.toFixed(0)}`;
-}
+const compact = (n: number) => formatCurrencyCompact(n);
 
 interface ForecastBarsProps {
   buckets: MonthBucket[];

@@ -270,16 +270,8 @@ export function getBudgetHealthScore(expenses: Expense[], budget: number, daysIn
   return { score, status, message };
 }
 
-/**
- * Format currency for display
- */
-export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2
-  }).format(amount);
-}
+// Format currency for display — analytics amounts are base-currency.
+export { formatCurrency } from '@/lib/currency';
 
 /**
  * Format percentage for display

@@ -11,6 +11,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useCurrency } from "@/contexts/CurrencyContext";
+import {
+  CURRENCIES,
+  CURRENCY_CODES,
+  DEFAULT_RATES,
+  type CurrencyCode,
+} from "@/lib/currency";
 import { dataService, type Category } from "@/lib/data-service";
 import { cn } from "@/lib/utils";
 import { paperTheme } from "@/styles";
@@ -38,21 +45,8 @@ import { useEffect, useState } from "react";
 
 type SettingsTab = "categories" | "preferences" | "display" | "data";
 
-const CURRENCIES = [
-  { code: "USD", symbol: "$", name: "US Dollar" },
-  { code: "EUR", symbol: "\u20ac", name: "Euro" },
-  { code: "GBP", symbol: "\u00a3", name: "British Pound" },
-  { code: "CAD", symbol: "CA$", name: "Canadian Dollar" },
-  { code: "AUD", symbol: "A$", name: "Australian Dollar" },
-  { code: "JPY", symbol: "\u00a5", name: "Japanese Yen" },
-  { code: "CHF", symbol: "CHF", name: "Swiss Franc" },
-  { code: "INR", symbol: "\u20b9", name: "Indian Rupee" },
-  { code: "BRL", symbol: "R$", name: "Brazilian Real" },
-  { code: "MXN", symbol: "MX$", name: "Mexican Peso" },
-  { code: "TRY", symbol: "\u20ba", name: "Turkish Lira" },
-  { code: "SAR", symbol: "SAR", name: "Saudi Riyal" },
-  { code: "AED", symbol: "AED", name: "UAE Dirham" },
-];
+// Supported currencies come from the currency module \u2014 each needs formatting
+// rules and an exchange rate, so the list is deliberately short.
 
 const TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: "categories", label: "Categories", icon: <Tag className="w-4 h-4" /> },
@@ -85,8 +79,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     icon: "circle",
   });
 
+  // Currency preferences — live, persisted through CurrencyContext.
+  const { baseCurrency, rates, setBaseCurrency, setRate, refreshView } =
+    useCurrency();
+  const [rateInputs, setRateInputs] = useState<Record<string, string>>({});
+  const [currencyDirty, setCurrencyDirty] = useState(false);
+
   // Preferences state (placeholders)
-  const [currency, setCurrency] = useState("USD");
   const [weekStart, setWeekStart] = useState<"monday" | "sunday">("monday");
   const [defaultBudget, setDefaultBudget] = useState("");
 
@@ -96,8 +95,48 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   useEffect(() => {
     if (open) {
       loadCategories();
+      setRateInputs({
+        AED: String(rates.AED ?? DEFAULT_RATES.AED),
+        LBP: String(rates.LBP ?? DEFAULT_RATES.LBP),
+      });
+      setCurrencyDirty(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Currency/rate edits repaint the whole app once the dialog closes (doing it
+  // live would remount — and close — this very dialog).
+  const handleOpenChange = (next: boolean) => {
+    if (!next && currencyDirty) refreshView();
+    onOpenChange(next);
+  };
+
+  async function handleBaseCurrencyChange(code: CurrencyCode) {
+    try {
+      await setBaseCurrency(code);
+      setCurrencyDirty(true);
+    } catch (error) {
+      console.error("Failed to save base currency:", error);
+    }
+  }
+
+  async function handleRateBlur(code: CurrencyCode) {
+    const value = parseFloat(rateInputs[code] ?? "");
+    if (!(value > 0)) {
+      setRateInputs((prev) => ({
+        ...prev,
+        [code]: String(rates[code] ?? DEFAULT_RATES[code as "AED" | "LBP"]),
+      }));
+      return;
+    }
+    if (value === rates[code]) return;
+    try {
+      await setRate(code, value);
+      setCurrencyDirty(true);
+    } catch (error) {
+      console.error("Failed to save exchange rate:", error);
+    }
+  }
 
   // ─── Category handlers ──────────────────────────────────────────────────
 
@@ -488,27 +527,52 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           Preferences
         </h3>
 
-        {/* Currency */}
+        {/* Base currency */}
         <SettingRow
           icon={<Coins className="w-4 h-4" />}
-          label="Currency"
-          description="Used for all amounts across the app"
+          label="Base currency"
+          description="Denominates budgets, expenses, savings and the forecast. Accounts keep their own currency."
         >
-          <div className="flex items-center gap-2">
-            <select
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-              className="h-8 px-2 pr-7 text-sm rounded-lg border border-stone-300 bg-white text-stone-700 focus:outline-none focus:border-amber-400 appearance-none cursor-pointer"
-            >
-              {CURRENCIES.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.symbol} {c.code}
-                </option>
-              ))}
-            </select>
-            <ComingSoonBadge />
-          </div>
+          <select
+            value={baseCurrency}
+            onChange={(e) =>
+              handleBaseCurrencyChange(e.target.value as CurrencyCode)
+            }
+            className="h-8 px-2 pr-7 text-sm rounded-lg border border-stone-300 bg-white text-stone-700 focus:outline-none focus:border-amber-400 appearance-none cursor-pointer"
+          >
+            {CURRENCY_CODES.map((code) => (
+              <option key={code} value={code}>
+                {CURRENCIES[code].symbol} {code}
+              </option>
+            ))}
+          </select>
         </SettingRow>
+        <p className="text-[11px] text-stone-400 -mt-1.5 pl-1">
+          Changing it relabels existing budgets and expenses — past numbers are
+          not converted.
+        </p>
+
+        {/* Exchange rates */}
+        {(["AED", "LBP"] as const).map((code) => (
+          <SettingRow
+            key={code}
+            icon={<Coins className="w-4 h-4" />}
+            label={`${CURRENCIES[code].name} rate`}
+            description={`${code} per 1 USD — used to convert between currencies`}
+          >
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={rateInputs[code] ?? ""}
+              onChange={(e) =>
+                setRateInputs((prev) => ({ ...prev, [code]: e.target.value }))
+              }
+              onBlur={() => handleRateBlur(code)}
+              className="h-8 w-28 px-2 text-sm text-right rounded-lg border border-stone-300 bg-white text-stone-700 focus:outline-none focus:border-amber-400"
+            />
+          </SettingRow>
+        ))}
 
         {/* Week starts on */}
         <SettingRow
@@ -556,14 +620,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <div className="flex items-center gap-2">
             <div className="relative">
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-stone-400">
-                $
+                {CURRENCIES[baseCurrency].symbol}
               </span>
               <Input
                 type="number"
                 value={defaultBudget}
                 onChange={(e) => setDefaultBudget(e.target.value)}
                 placeholder="0"
-                className="h-8 w-24 pl-5 text-sm text-right"
+                className={cn(
+                  "h-8 w-24 text-sm text-right",
+                  baseCurrency === "USD" ? "pl-5" : "pl-10",
+                )}
               />
             </div>
             <ComingSoonBadge />
@@ -665,7 +732,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   // ─── Main render ─────────────────────────────────────────────────────────
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         className={cn(
           "sm:max-w-3xl max-h-[85vh] overflow-hidden p-0",

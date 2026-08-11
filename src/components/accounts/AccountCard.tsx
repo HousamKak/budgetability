@@ -167,7 +167,7 @@ export function AccountCard({
               account.currentBalance >= 0 ? "text-green-700" : "text-red-600",
             )}
           >
-            {formatCurrency(account.currentBalance)}
+            {formatCurrency(account.currentBalance, account.currency)}
           </p>
         </div>
 

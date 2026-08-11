@@ -14,7 +14,8 @@ import {
   type PlanItem,
 } from "@/lib/data-service";
 import { supabase } from "@/lib/supabase";
-import { formatNumber } from "@/lib/utils";
+import { convert, getBaseCurrency, toBase } from "@/lib/currency";
+import { formatCurrency } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
 
 // Import our new components
@@ -255,10 +256,19 @@ export default function PaperBudget() {
   }
   function markPlanPaid(p: PlanItem) {
     const date = p.targetDate || ymd(new Date());
+    // Plans are base-denominated; paying from a non-base account converts the
+    // base amount into the account's currency at the current rate.
+    const payingAccount = accounts.find((x) => x.id === p.accountId);
+    const nonBase =
+      payingAccount && payingAccount.currency !== getBaseCurrency();
     addExpense({
       id: makeId(),
       date,
       amount: p.amount,
+      originalAmount: nonBase
+        ? convert(p.amount, getBaseCurrency(), payingAccount.currency)
+        : undefined,
+      originalCurrency: nonBase ? payingAccount.currency : undefined,
       category: p.category,
       accountId: p.accountId,
       note: p.note,
@@ -330,10 +340,20 @@ export default function PaperBudget() {
   function submitExpense() {
     const a = Number(amount);
     if (!formDate || isNaN(a) || a <= 0) return;
+    // The amount is typed in the paying account's currency. Budget math runs
+    // in base, so non-base entries store the base value in `amount` and keep
+    // the native figure in originalAmount (which is what leaves the account).
+    const payingAccount = accounts.find((x) => x.id === expenseAccountId);
+    const nonBase =
+      payingAccount && payingAccount.currency !== getBaseCurrency();
     addExpense({
       id: makeId(),
       date: formDate,
-      amount: Number(a.toFixed(2)),
+      amount: Number(
+        (nonBase ? toBase(a, payingAccount.currency) : a).toFixed(2),
+      ),
+      originalAmount: nonBase ? Number(a.toFixed(2)) : undefined,
+      originalCurrency: nonBase ? payingAccount.currency : undefined,
       category,
       accountId: expenseAccountId || undefined,
       note,
@@ -613,12 +633,12 @@ export default function PaperBudget() {
                 </p>
                 <ul className="text-sm text-stone-600 space-y-1 ml-4">
                   <li>
-                    • Budget amount: <strong>${formatNumber(budget)}</strong>
+                    • Budget amount: <strong>{formatCurrency(budget)}</strong>
                   </li>
                   <li>
                     • All expenses:{" "}
                     <strong>
-                      {expenses.length} items (${formatNumber(totalSpent)})
+                      {expenses.length} items ({formatCurrency(totalSpent)})
                     </strong>
                   </li>
                   <li>

@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import type { Account, AccountGroup } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
+import { toBase } from "@/lib/currency";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
 import {
@@ -163,9 +164,16 @@ export default function AccountsPage() {
     toId: string,
     amount: number,
     note?: string,
+    toAmount?: number,
   ) => {
     try {
-      await dataService.transferBetweenAccounts(fromId, toId, amount, note);
+      await dataService.transferBetweenAccounts(
+        fromId,
+        toId,
+        amount,
+        note,
+        toAmount,
+      );
       await loadData();
     } catch (error) {
       console.error("Failed to transfer:", error);
@@ -319,21 +327,25 @@ export default function AccountsPage() {
     [accounts, snapshot, isCurrentMonth],
   );
 
+  // Accounts can be denominated differently, so cross-account totals are
+  // converted into the base currency (displayed with ≈ when currencies mix).
+  const mixedCurrencies =
+    new Set(viewAccounts.map((a) => a.currency)).size > 1;
   const totalBalance = viewAccounts.reduce(
-    (sum, a) => sum + a.currentBalance,
+    (sum, a) => sum + toBase(a.currentBalance, a.currency),
     0,
   );
-  const monthTotals = useMemo(
-    () =>
-      Object.values(snapshot).reduce(
-        (acc, s) => ({
-          inflow: acc.inflow + s.inflow,
-          outflow: acc.outflow + s.outflow,
-        }),
-        { inflow: 0, outflow: 0 },
-      ),
-    [snapshot],
-  );
+  const monthTotals = useMemo(() => {
+    const currencyById = new Map(accounts.map((a) => [a.id, a.currency]));
+    let inflow = 0;
+    let outflow = 0;
+    for (const [accountId, s] of Object.entries(snapshot)) {
+      const currency = currencyById.get(accountId) ?? "USD";
+      inflow += toBase(s.inflow, currency);
+      outflow += toBase(s.outflow, currency);
+    }
+    return { inflow, outflow };
+  }, [snapshot, accounts]);
 
   // Actions still operate on the live account (never the rewound copy), so a
   // deposit opened from a past month would still hit the real balance — hence
@@ -548,6 +560,7 @@ export default function AccountsPage() {
                     totalBalance >= 0 ? "text-green-700" : "text-red-600",
                   )}
                 >
+                  {mixedCurrencies ? "≈ " : ""}
                   {formatCurrency(totalBalance)}
                 </p>
               </div>
@@ -559,7 +572,8 @@ export default function AccountsPage() {
                     paperTheme.fonts.handwriting,
                   )}
                 >
-                  +{formatCurrency(monthTotals.inflow)}
+                  +{mixedCurrencies ? "≈ " : ""}
+                  {formatCurrency(monthTotals.inflow)}
                 </p>
               </div>
               <div>
@@ -570,7 +584,8 @@ export default function AccountsPage() {
                     paperTheme.fonts.handwriting,
                   )}
                 >
-                  −{formatCurrency(monthTotals.outflow)}
+                  −{mixedCurrencies ? "≈ " : ""}
+                  {formatCurrency(monthTotals.outflow)}
                 </p>
               </div>
               <div>

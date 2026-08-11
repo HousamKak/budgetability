@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { CURRENCIES, getBaseCurrency, toBase } from "@/lib/currency";
 import type { Account, BudgetAllocation } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { paperTheme } from "@/styles";
@@ -161,7 +162,8 @@ export function LinkAccountDialog({
                           {account.name}
                         </p>
                         <p className="text-xs text-stone-500">
-                          Available: {formatCurrency(account.currentBalance)}
+                          Available:{" "}
+                          {formatCurrency(account.currentBalance, account.currency)}
                         </p>
                       </div>
                     </div>
@@ -181,21 +183,22 @@ export function LinkAccountDialog({
                 Allocation Amount
               </Label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500">
-                  $
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 text-sm">
+                  {CURRENCIES[selectedAccount.currency].symbol}
                 </span>
                 <input
                   id="amount"
                   type="number"
-                  step="0.01"
-                  min="0.01"
+                  step={CURRENCIES[selectedAccount.currency].inputStep}
+                  min={CURRENCIES[selectedAccount.currency].inputStep}
                   max={selectedAccount.currentBalance}
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0.00"
+                  placeholder={CURRENCIES[selectedAccount.currency].inputPlaceholder}
                   autoFocus
                   className={cn(
-                    "w-full pl-7 pr-3 py-2 rounded-lg border text-sm",
+                    "w-full py-2 pr-3 rounded-lg border text-sm",
+                    selectedAccount.currency === "USD" ? "pl-7" : "pl-12",
                     paperTheme.colors.borders.amber,
                     paperTheme.colors.background.white,
                     "focus:outline-none focus:ring-2 focus:ring-amber-400/50"
@@ -207,10 +210,20 @@ export function LinkAccountDialog({
                   Exceeds available balance
                 </p>
               )}
+              {selectedAccount.currency !== getBaseCurrency() &&
+                allocationAmount > 0 && (
+                  <p className="text-xs text-stone-500">
+                    ≈{" "}
+                    {formatCurrency(
+                      toBase(allocationAmount, selectedAccount.currency)
+                    )}{" "}
+                    added to the budget
+                  </p>
+                )}
 
               {/* Quick amounts */}
               <div className="flex gap-2 flex-wrap pt-1">
-                {[100, 250, 500, 1000].map((preset) => (
+                {CURRENCIES[selectedAccount.currency].presets.map((preset) => (
                   <Button
                     key={preset}
                     type="button"
@@ -220,7 +233,7 @@ export function LinkAccountDialog({
                     onClick={() => setAmount(preset.toString())}
                     disabled={preset > selectedAccount.currentBalance}
                   >
-                    ${preset}
+                    {formatCurrency(preset, selectedAccount.currency)}
                   </Button>
                 ))}
                 <Button
@@ -232,7 +245,12 @@ export function LinkAccountDialog({
                     setAmount(selectedAccount.currentBalance.toString())
                   }
                 >
-                  All ({formatCurrency(selectedAccount.currentBalance)})
+                  All (
+                  {formatCurrency(
+                    selectedAccount.currentBalance,
+                    selectedAccount.currency
+                  )}
+                  )
                 </Button>
               </div>
             </div>
@@ -255,14 +273,18 @@ export function LinkAccountDialog({
                     <p className="text-xs text-stone-400">Account Balance</p>
                     <p className="font-medium text-stone-700">
                       {formatCurrency(
-                        selectedAccount.currentBalance - allocationAmount
+                        selectedAccount.currentBalance - allocationAmount,
+                        selectedAccount.currency
                       )}
                     </p>
                   </div>
                   <div>
                     <p className="text-xs text-stone-400">Added to Budget</p>
                     <p className="font-medium text-green-600">
-                      +{formatCurrency(allocationAmount)}
+                      +
+                      {formatCurrency(
+                        toBase(allocationAmount, selectedAccount.currency)
+                      )}
                     </p>
                   </div>
                 </div>

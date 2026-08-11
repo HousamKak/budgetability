@@ -1,6 +1,7 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import type { CategoryAnalytics } from '@/utils/analytics';
 import { chartColors, formatCurrency } from '@/utils/analytics';
+import { formatCurrencyCompact } from '@/lib/currency';
 import { paperTheme } from '@/styles';
 
 interface CategoryBarChartProps {
@@ -60,7 +61,7 @@ export function CategoryBarChart({ data }: CategoryBarChartProps) {
         />
         <YAxis
           tick={{ fontSize: 12, fill: '#6b7280' }}
-          tickFormatter={(value) => `$${value}`}
+          tickFormatter={(value) => formatCurrencyCompact(Number(value))}
         />
         <Tooltip content={<CustomTooltip />} />
         <Bar
