@@ -317,7 +317,7 @@ export function TransferDialog({
                 id="amount"
                 type="number"
                 step={CURRENCIES[fromCurrency].inputStep}
-                min="0.01"
+                min={CURRENCIES[fromCurrency].inputStep}
                 max={fromAccount ? availableFrom : undefined}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
@@ -356,7 +356,7 @@ export function TransferDialog({
                   id="to-amount"
                   type="number"
                   step={CURRENCIES[toCurrency].inputStep}
-                  min="0.01"
+                  min={CURRENCIES[toCurrency].inputStep}
                   value={toAmountText}
                   onChange={(e) => {
                     setToAmountTouched(true);
