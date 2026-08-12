@@ -231,6 +231,23 @@ export function TransferDialog({
                 </span>
               </div>
             )}
+            {/* One-tap exchange: same wallet, different currency */}
+            {fromAccount && fromAccount.currencies.length > 1 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setToAccountId(fromAccount.id);
+                  const other = fromAccount.currencies.find(
+                    (c) => c !== fromCurrency,
+                  );
+                  if (other) setToCurrency(other);
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-dashed border-amber-300 bg-amber-50/50 text-xs text-amber-700 hover:bg-amber-100/70 transition-colors cursor-pointer text-left"
+              >
+                ⇄ Exchange within {fromAccount.name} — swap between its
+                currencies at your rate
+              </button>
+            )}
           </div>
 
           {/* Arrow indicator */}

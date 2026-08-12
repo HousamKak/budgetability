@@ -140,7 +140,7 @@ export function DraftView({
           placeholder="Plan a new expense..."
           className="text-sm bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-2 border-amber-300/70 rounded-xl shadow-sm handwriting placeholder:handwriting placeholder:opacity-60"
           style={{
-            fontFamily: '"Patrick Hand", "Comic Sans MS", cursive',
+            fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive',
             height: "40px",
             flex: "1 1 0",
             minWidth: "0",
@@ -238,7 +238,7 @@ export function DraftView({
           <div className="flex items-center justify-between">
             <h3
               className="text-sm font-medium text-stone-700 handwriting"
-              style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+              style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive' }}
             >
               Draft Items ({draftItems.length})
             </h3>
@@ -425,13 +425,13 @@ export function DraftView({
           <div className="text-center space-y-2">
             <p
               className="text-stone-500 text-lg handwriting"
-              style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+              style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive' }}
             >
               Your draft pad is empty
             </p>
             <p
               className="text-stone-400 text-sm handwriting"
-              style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+              style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive' }}
             >
               Start planning by adding an expense
             </p>

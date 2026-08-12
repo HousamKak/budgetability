@@ -112,7 +112,7 @@ export function MonthView({
           </div>
           <div
             className="text-2xl font-bold text-amber-600"
-            style={{ fontFamily: '"Patrick Hand", cursive' }}
+            style={{ fontFamily: '"Patrick Hand", "Dirham", cursive' }}
           >
             {monthSummary.percentUsed.toFixed(0)}%
           </div>
@@ -136,7 +136,7 @@ export function MonthView({
       <div className="space-y-1.5">
         <div
           className="text-xs font-medium text-stone-500 px-1"
-          style={{ fontFamily: '"Patrick Hand", cursive' }}
+          style={{ fontFamily: '"Patrick Hand", "Dirham", cursive' }}
         >
           Weekly Breakdown
         </div>
@@ -168,7 +168,7 @@ export function MonthView({
 
                 <span
                   className="text-sm font-medium text-stone-700"
-                  style={{ fontFamily: '"Patrick Hand", cursive' }}
+                  style={{ fontFamily: '"Patrick Hand", "Dirham", cursive' }}
                 >
                   Week {weekLabel.weekNum}
                 </span>

@@ -72,7 +72,7 @@ export function DashboardHeader({
               <div className="flex items-center justify-center gap-0.5">
                 <span
                   className="text-lg font-bold tracking-wide text-stone-700"
-                  style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+                  style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive' }}
                 >
                   {currencySymbol()}
                 </span>
@@ -85,7 +85,7 @@ export function DashboardHeader({
                     "w-16 text-lg font-bold tracking-wide bg-transparent border-none outline-none text-center text-stone-800",
                     "focus:bg-white/50 rounded transition-colors"
                   )}
-                  style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+                  style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive' }}
                   placeholder="0"
                 />
               </div>
@@ -98,7 +98,7 @@ export function DashboardHeader({
               <ClipboardList className="w-4 h-4 text-amber-600" />
               <span
                 className="text-[9px] font-bold text-amber-700 mt-0.5"
-                style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+                style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive' }}
               >
                 Details
               </span>
@@ -235,7 +235,7 @@ export function DashboardHeader({
               <div className="flex items-center justify-center gap-0.5">
                 <span
                   className="text-xl font-bold tracking-wide text-stone-700"
-                  style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+                  style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive' }}
                 >
                   {currencySymbol()}
                 </span>
@@ -248,7 +248,7 @@ export function DashboardHeader({
                     "w-20 text-xl font-bold tracking-wide bg-transparent border-none outline-none text-center text-stone-800",
                     "focus:bg-white/50 rounded transition-colors"
                   )}
-                  style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+                  style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive' }}
                   placeholder="0"
                 />
               </div>
@@ -263,7 +263,7 @@ export function DashboardHeader({
               <ClipboardList className="w-4 h-4 text-amber-600" />
               <span
                 className="text-[10px] font-bold text-amber-700 mt-0.5"
-                style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+                style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive' }}
               >
                 Details
               </span>

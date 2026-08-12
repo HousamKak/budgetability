@@ -34,8 +34,8 @@ export const paperTheme = {
 
   // Typography
   fonts: {
-    handwriting: '"Patrick Hand", "Comic Sans MS", cursive',
-    system: 'system-ui, sans-serif',
+    handwriting: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive',
+    system: '"Dirham", system-ui, sans-serif',
   },
 
   // Shadows and Effects

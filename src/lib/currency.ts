@@ -41,7 +41,9 @@ export const CURRENCIES: Record<CurrencyCode, CurrencyDef> = {
   AED: {
     code: "AED",
     name: "UAE Dirham",
-    symbol: "AED",
+    // U+20C3 — the official dirham sign (Unicode 18.0). No OS font ships it
+    // yet, so index.css bundles a unicode-range web font for this one glyph.
+    symbol: "⃃",
     symbolSpace: true,
     decimals: 2,
     inputPlaceholder: "0.00",
@@ -51,7 +53,7 @@ export const CURRENCIES: Record<CurrencyCode, CurrencyDef> = {
   LBP: {
     code: "LBP",
     name: "Lebanese Lira",
-    symbol: "LBP",
+    symbol: "L.L.",
     symbolSpace: true,
     decimals: 0,
     inputPlaceholder: "0",

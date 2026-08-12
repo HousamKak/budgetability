@@ -37,7 +37,7 @@ export function QuoteModal({ open, onOpenChange, quote }: QuoteModalProps) {
               <DialogTitle
                 className="text-xl font-bold text-stone-700"
                 style={{
-                  fontFamily: '"Patrick Hand", "Comic Sans MS", cursive',
+                  fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive',
                 }}
               >
                 Quote of the Day
@@ -48,7 +48,7 @@ export function QuoteModal({ open, onOpenChange, quote }: QuoteModalProps) {
               <p
                 className="text-stone-700 text-lg leading-relaxed font-medium"
                 style={{
-                  fontFamily: '"Patrick Hand", "Comic Sans MS", cursive',
+                  fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive',
                 }}
               >
                 {quote}
@@ -58,7 +58,7 @@ export function QuoteModal({ open, onOpenChange, quote }: QuoteModalProps) {
             <Button
               onClick={() => onOpenChange(false)}
               className={`px-6 py-2 ${dialogStyles.buttons.primary}`}
-              style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+              style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive' }}
             >
               Thanks! 😊
             </Button>

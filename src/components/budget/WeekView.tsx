@@ -91,7 +91,7 @@ export function WeekView({
         <div className="flex-1 flex items-center justify-center gap-3">
           <span
             className="text-lg font-bold text-amber-700"
-            style={{ fontFamily: '"Patrick Hand", cursive' }}
+            style={{ fontFamily: '"Patrick Hand", "Dirham", cursive' }}
           >
             Week {weekLabel.weekNum}
           </span>
@@ -128,7 +128,7 @@ export function WeekView({
       <div className="space-y-1.5">
         <div
           className="text-xs font-medium text-stone-500 px-1"
-          style={{ fontFamily: '"Patrick Hand", cursive' }}
+          style={{ fontFamily: '"Patrick Hand", "Dirham", cursive' }}
         >
           {thisWeekItems.length} item{thisWeekItems.length !== 1 ? 's' : ''} planned
         </div>
@@ -137,7 +137,7 @@ export function WeekView({
           <div className="text-center py-8 text-stone-400">
             <div
               className="text-base mb-1"
-              style={{ fontFamily: '"Patrick Hand", cursive' }}
+              style={{ fontFamily: '"Patrick Hand", "Dirham", cursive' }}
             >
               Nothing planned yet
             </div>

@@ -31,7 +31,7 @@ export const commonStyles = {
   tornEdge: 'absolute -top-1 left-4 right-4 h-3 bg-[repeating-linear-gradient(90deg,#fcd34d,#fcd34d_8px,#fde68a_8px,#fde68a_16px)] rounded-t-2xl opacity-70',
 
   // Handwriting font
-  handwriting: '"Patrick Hand", "Comic Sans MS", cursive',
+  handwriting: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive',
 
   // Primary button
   primaryButton: 'bg-amber-200/80 hover:bg-amber-300/80 text-stone-900 border border-amber-300 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer',

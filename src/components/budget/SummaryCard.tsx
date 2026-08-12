@@ -52,7 +52,7 @@ export function SummaryCard({ title, value, highlight = false, red = false, blue
               conditional(red, summaryCardStyles.valueRed),
               conditional(blue, 'text-blue-600')
             )}
-            style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+            style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive' }}
           >
             {formatCurrency(value || 0)}
           </div>
@@ -83,7 +83,7 @@ export function SummaryCard({ title, value, highlight = false, red = false, blue
                 "text-lg font-bold tracking-wide",
                 leftAmountRed ? "text-red-600" : "text-emerald-600"
               )}
-              style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+              style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive' }}
             >
               {formatCurrency(leftAmount || 0)}
             </div>

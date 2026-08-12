@@ -114,7 +114,7 @@ export function PlannerPanel({
           <CalendarIcon className="w-5 h-5 text-stone-600" />
           <h2
             className="font-bold text-lg"
-            style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", cursive' }}
+            style={{ fontFamily: '"Patrick Hand", "Comic Sans MS", "Dirham", cursive' }}
           >
             Financial Planner
           </h2>
