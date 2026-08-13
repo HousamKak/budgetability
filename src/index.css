@@ -1,5 +1,21 @@
 @import 'tailwindcss';
 
+/* U+20C3 — the official UAE dirham sign (Unicode 18.0). No OS font ships the
+ * glyph yet, so this self-hosted font (from the MIT-licensed "dirham" npm
+ * package, v1.x) covers exactly that one codepoint. size-adjust tames the
+ * glyph, which is drawn noticeably larger than surrounding digits. */
+@font-face {
+  font-family: "Dirham";
+  src:
+    url("./assets/fonts/dirham.woff2") format("woff2"),
+    url("./assets/fonts/dirham.woff") format("woff");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+20C3;
+  size-adjust: 72%;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
