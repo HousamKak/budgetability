@@ -221,34 +221,59 @@ export function AccountTransactionsDialog({
     return balances;
   }, [account, priorTxs]);
 
-  // Monthly totals, per currency
-  const { monthIn, monthOut } = useMemo(() => {
-    const inflow: MoneyByCurrency = {};
-    const outflow: MoneyByCurrency = {};
-    if (!account) return { monthIn: inflow, monthOut: outflow };
+  // Monthly totals, per currency. Money In / Money Out are ECONOMIC flows:
+  // deposits are income, expenses are spending (refunds reverse spending).
+  // Transfers, exchanges, allocations and savings moves are money staying in
+  // the system — tracked separately as "internal" so the ledger reconciles.
+  const { monthIn, monthOut, monthInternal } = useMemo(() => {
+    const empty = {
+      monthIn: {} as MoneyByCurrency,
+      monthOut: {} as MoneyByCurrency,
+      monthInternal: {} as MoneyByCurrency,
+    };
+    if (!account) return empty;
     let inAcc: MoneyByCurrency = {};
     let outAcc: MoneyByCurrency = {};
+    let internalAcc: MoneyByCurrency = {};
     for (const tx of monthTxs) {
       const side = sideOf(tx, account.id);
-      if (txIsInflow(tx, account.id)) {
-        inAcc = addMoney(inAcc, side.currency, side.amount);
+      const inflow = txIsInflow(tx, account.id);
+      if (tx.transactionType === "deposit") {
+        if (inflow) inAcc = addMoney(inAcc, side.currency, side.amount);
+        else outAcc = addMoney(outAcc, side.currency, side.amount);
+      } else if (tx.transactionType === "expense") {
+        // Refunds (inflow side) reverse spending rather than count as income.
+        outAcc = addMoney(
+          outAcc,
+          side.currency,
+          inflow ? -side.amount : side.amount,
+        );
       } else {
-        outAcc = addMoney(outAcc, side.currency, side.amount);
+        internalAcc = addMoney(
+          internalAcc,
+          side.currency,
+          inflow ? side.amount : -side.amount,
+        );
       }
     }
-    return { monthIn: inAcc, monthOut: outAcc };
+    return { monthIn: inAcc, monthOut: outAcc, monthInternal: internalAcc };
   }, [account, monthTxs]);
 
+  // Closing = opening + every movement, whatever its kind. Computed from the
+  // full ledger so it stays exact even though In/Out exclude internal moves.
   const closingBalances = useMemo<MoneyByCurrency>(() => {
+    if (!account) return {};
     let balances = { ...openingBalances };
-    for (const code of Object.keys(monthIn) as CurrencyCode[]) {
-      balances = addMoney(balances, code, monthIn[code] ?? 0);
-    }
-    for (const code of Object.keys(monthOut) as CurrencyCode[]) {
-      balances = addMoney(balances, code, -(monthOut[code] ?? 0));
+    for (const tx of monthTxs) {
+      const side = sideOf(tx, account.id);
+      balances = addMoney(
+        balances,
+        side.currency,
+        txIsInflow(tx, account.id) ? side.amount : -side.amount,
+      );
     }
     return balances;
-  }, [openingBalances, monthIn, monthOut]);
+  }, [account, openingBalances, monthTxs]);
 
   // One display line per currency the wallet holds or moved.
   const moneyLines = (amounts: MoneyByCurrency): [CurrencyCode, number][] => {
@@ -410,20 +435,43 @@ export function AccountTransactionsDialog({
                                 key={c}
                                 className="text-lg font-bold text-red-600 handwriting leading-tight"
                               >
-                                -{formatCurrency(v, c)}
+                                {v >= 0 ? "-" : "+"}
+                                {formatCurrency(Math.abs(v), c)}
                               </p>
                             ))}
                           </div>
                         </div>
 
-                        {/* Net change */}
+                        {/* Internal moves: transfers, exchanges, allocations,
+                            savings — money staying in the system */}
+                        {Object.values(monthInternal).some((v) => v !== 0) && (
+                          <div className="pt-3 border-t border-amber-200/50">
+                            <p className="text-xs text-stone-500 handwriting">
+                              Internal Moves (not income or spending)
+                            </p>
+                            {moneyLines(monthInternal)
+                              .filter(([, v]) => v !== 0)
+                              .map(([c, v]) => (
+                                <p
+                                  key={c}
+                                  className="text-lg font-bold text-stone-500 handwriting leading-tight"
+                                >
+                                  {v >= 0 ? "+" : ""}
+                                  {formatCurrency(v, c)}
+                                </p>
+                              ))}
+                          </div>
+                        )}
+
+                        {/* Net change (closing − opening, every movement) */}
                         <div className="pt-3 border-t border-amber-200/50">
                           <p className="text-xs text-stone-500 handwriting">
                             Net Change
                           </p>
-                          {moneyLines(monthIn).map(([c]) => {
+                          {moneyLines(closingBalances).map(([c]) => {
                             const net =
-                              (monthIn[c] ?? 0) - (monthOut[c] ?? 0);
+                              (closingBalances[c] ?? 0) -
+                              (openingBalances[c] ?? 0);
                             return (
                               <p
                                 key={c}

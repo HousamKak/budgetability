@@ -3016,13 +3016,27 @@ export class DataService {
           s.balances = addMoney(s.balances, srcCurrency, t.amount);
         }
       } else if (txMonth === monthKey) {
-        if (t.toAccountId && snapshot[t.toAccountId]) {
-          const s = snapshot[t.toAccountId];
-          s.inflow = addMoney(s.inflow, dstCurrency, inbound);
-        }
-        if (t.fromAccountId && snapshot[t.fromAccountId]) {
-          const s = snapshot[t.fromAccountId];
-          s.outflow = addMoney(s.outflow, srcCurrency, t.amount);
+        // In/Out are ECONOMIC flows — money entering or leaving the system.
+        // Deposits are income; expenses are spending (refunds reverse the
+        // spending rather than counting as income). Everything else —
+        // transfers, in-wallet exchanges, budget allocations and their
+        // refunds, savings contributions, overdraft coverage — is money
+        // staying in the system: it moves balances (handled above) but is
+        // neither income nor expense.
+        if (t.transactionType === "deposit") {
+          if (t.toAccountId && snapshot[t.toAccountId]) {
+            const s = snapshot[t.toAccountId];
+            s.inflow = addMoney(s.inflow, dstCurrency, inbound);
+          }
+        } else if (t.transactionType === "expense") {
+          if (t.fromAccountId && snapshot[t.fromAccountId]) {
+            const s = snapshot[t.fromAccountId];
+            s.outflow = addMoney(s.outflow, srcCurrency, t.amount);
+          }
+          if (t.toAccountId && snapshot[t.toAccountId]) {
+            const s = snapshot[t.toAccountId];
+            s.outflow = addMoney(s.outflow, dstCurrency, -inbound);
+          }
         }
       }
     }

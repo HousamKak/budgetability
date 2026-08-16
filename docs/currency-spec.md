@@ -130,4 +130,12 @@ remounts the subtree when Settings closes after currency changes.
   follow the chosen currency; non-base entries show a live `≈ base` hint.
 - **Transactions dialog**: opening/closing balance and money in/out shown per
   currency; each transaction row in its own currency.
+- **In/Out summaries are ECONOMIC flows** (Accounts page header, account row
+  activity, transactions dialog): In = deposits; Out = expenses, with refunds
+  reversing spending rather than counting as income. Transfers, in-wallet
+  exchanges, budget allocations (and their refunds), savings contributions and
+  overdraft coverage are **internal** — money staying in the system — so they
+  move balances but never count as income or expense. The transactions dialog
+  nets them on a separate "Internal Moves" line, and its Net Change is
+  closing − opening over the full ledger, so the statement still reconciles.
 - **Settings → Preferences**: base currency + AED/LBP rate editors (v1).
