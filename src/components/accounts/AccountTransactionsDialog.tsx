@@ -309,7 +309,7 @@ export function AccountTransactionsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-5xl">
+      <DialogContent className="sm:max-w-5xl p-0 shadow-none bg-transparent">
         <DialogHeader className="sr-only">
           <DialogTitle>{account.name} Transactions</DialogTitle>
           <DialogDescription>
