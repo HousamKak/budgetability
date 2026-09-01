@@ -26,6 +26,7 @@ import { AccountForm } from "./accounts/AccountForm";
 import { AccountGroupBand } from "./accounts/AccountGroupBand";
 import { AccountRow } from "./accounts/AccountRow";
 import { AccountTransactionsDialog } from "./accounts/AccountTransactionsDialog";
+import { TotalsDialog } from "./accounts/TotalsDialog";
 import { DepositDialog } from "./accounts/DepositDialog";
 import { GroupForm } from "./accounts/GroupForm";
 import { GroupSummaryDialog } from "./accounts/GroupSummaryDialog";
@@ -84,6 +85,7 @@ export default function AccountsPage() {
   const [showDepositDialog, setShowDepositDialog] = useState(false);
   const [depositAccount, setDepositAccount] = useState<Account | null>(null);
   const [showTransactionsDialog, setShowTransactionsDialog] = useState(false);
+  const [showTotals, setShowTotals] = useState(false);
   const [transactionsAccount, setTransactionsAccount] = useState<Account | null>(null);
 
   useEffect(() => {
@@ -566,9 +568,18 @@ export default function AccountsPage() {
               )}
             />
             <div className="relative flex flex-wrap gap-6">
-              <div>
-                <p className="text-sm text-stone-500">
+              {/* Pressable: opens the per-currency / per-wallet breakdown */}
+              <button
+                type="button"
+                onClick={() => setShowTotals(true)}
+                title="See totals across all currencies"
+                className="text-left -m-2 p-2 rounded-lg hover:bg-white/60 transition-colors cursor-pointer"
+              >
+                <p className="text-sm text-stone-500 flex items-center gap-1">
                   {isCurrentMonth ? "Total Balance" : `Total · end of ${monthLabel}`}
+                  <span className="text-[10px] text-amber-600 border border-amber-300 rounded px-1 leading-4">
+                    details
+                  </span>
                 </p>
                 <p
                   className={cn(
@@ -579,7 +590,7 @@ export default function AccountsPage() {
                 >
                   ≈ {formatCurrency(totalBalance)}
                 </p>
-              </div>
+              </button>
               <div>
                 <p className="text-sm text-stone-500">In · {monthLabel}</p>
                 <p
@@ -891,6 +902,15 @@ export default function AccountsPage() {
           onOpenChange={setShowDepositDialog}
           account={depositAccount}
           onDeposit={handleDeposit}
+        />
+
+        <TotalsDialog
+          open={showTotals}
+          onOpenChange={setShowTotals}
+          accounts={viewAccounts}
+          title={
+            isCurrentMonth ? "Total Balance" : `Total · end of ${monthLabel}`
+          }
         />
 
         <AccountTransactionsDialog
