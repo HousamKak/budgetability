@@ -7,10 +7,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { CURRENCIES, type CurrencyCode } from "@/lib/currency";
+import {
+  CURRENCIES,
+  type CurrencyCode,
+  convertAt,
+  getBaseCurrency,
+  rateBetween,
+} from "@/lib/currency";
 import type { Account } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { CurrencyChips } from "./CurrencyChips";
+import { RateOverride } from "./RateOverride";
 import { WalletBalances } from "./WalletBalances";
 import { paperTheme } from "@/styles";
 import { ArrowUpRight, TrendingUp } from "lucide-react";
@@ -27,6 +34,7 @@ interface DepositDialogProps {
     note?: string,
     inForecast?: boolean,
     currency?: CurrencyCode,
+    exchangeRate?: number,
   ) => void;
 }
 
@@ -43,6 +51,9 @@ export function DepositDialog({
   const [note, setNote] = useState("");
   const [inForecast, setInForecast] = useState(false);
   const [currency, setCurrency] = useState<CurrencyCode>("USD");
+  // Per-transaction exchange-rate override (base per 1 unit of `currency`);
+  // null = Settings default.
+  const [rateOverride, setRateOverride] = useState<number | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -51,11 +62,19 @@ export function DepositDialog({
       // Opt-in every time: nothing reaches the forecast unless marked here.
       setInForecast(false);
       setCurrency(account?.currency ?? "USD");
+      setRateOverride(null);
     }
   }, [open, account]);
 
+  // Switching currency invalidates a typed rate.
+  useEffect(() => {
+    setRateOverride(null);
+  }, [currency]);
+
   const depositAmount = parseFloat(amount) || 0;
   const canDeposit = account && depositAmount > 0;
+  const base = getBaseCurrency();
+  const effectiveRate = rateOverride ?? rateBetween(currency, base);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,6 +85,7 @@ export function DepositDialog({
         note || undefined,
         inForecast,
         currency,
+        rateOverride ?? undefined,
       );
       onOpenChange(false);
     }
@@ -165,6 +185,22 @@ export function DepositDialog({
                 )}
               />
             </div>
+            {currency !== base && (
+              <div className="space-y-1 pt-1">
+                <RateOverride
+                  from={currency}
+                  to={base}
+                  rate={rateOverride}
+                  onChange={setRateOverride}
+                />
+                {depositAmount > 0 && (
+                  <p className="text-xs text-stone-500">
+                    ≈ {formatCurrency(convertAt(depositAmount, effectiveRate))}{" "}
+                    counted as income
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Note */}

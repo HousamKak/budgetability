@@ -13,9 +13,13 @@ import {
   CURRENCIES,
   type CurrencyCode,
   convert,
+  convertAt,
+  displayRate,
+  formatRate,
   getBaseCurrency,
-  toBase,
+  rateBetween,
 } from "@/lib/currency";
+import { RateOverride } from "@/components/accounts/RateOverride";
 import { formatCurrency } from "@/lib/utils";
 import { cn, dialogStyles } from "@/styles";
 import { Check, Pencil, TrendingUp, X } from "lucide-react";
@@ -66,6 +70,12 @@ interface ExpenseDialogProps {
   /** Which of the paying wallet's currencies the amount is typed in. */
   entryCurrency?: CurrencyCode;
   onEntryCurrencyChange?: (code: CurrencyCode) => void;
+  /**
+   * Per-expense exchange-rate override (base per 1 entryCurrency); null =
+   * Settings default. Only meaningful when entryCurrency isn't base.
+   */
+  entryRate?: number | null;
+  onEntryRateChange?: (rate: number | null) => void;
   accounts: Account[];
   // "Show in Forecast" — opt this entry in to the Forecast page as an outflow
   // in its own month. Off by default; nothing is forecast unless marked.
@@ -85,6 +95,7 @@ interface ExpenseDialogProps {
     amount: number;
     originalAmount?: number;
     originalCurrency?: CurrencyCode;
+    exchangeRate?: number;
     category?: string;
     accountId?: string;
     note?: string;
@@ -120,6 +131,8 @@ export function ExpenseDialog({
   onAccountIdChange,
   entryCurrency: entryCurrencyProp,
   onEntryCurrencyChange,
+  entryRate = null,
+  onEntryRateChange,
   accounts,
   inForecast,
   onInForecastChange,
@@ -187,11 +200,17 @@ export function ExpenseDialog({
   const originalFieldsFor = (baseAmount: number, payAccountId?: string) => {
     const acc = accounts.find((x) => x.id === payAccountId);
     if (!acc || acc.currencies.includes(getBaseCurrency())) {
-      return { originalAmount: undefined, originalCurrency: undefined };
+      return {
+        originalAmount: undefined,
+        originalCurrency: undefined,
+        exchangeRate: undefined,
+      };
     }
     return {
       originalAmount: convert(baseAmount, getBaseCurrency(), acc.currency),
       originalCurrency: acc.currency,
+      // Base per 1 native — the Settings default at edit time.
+      exchangeRate: rateBetween(acc.currency, getBaseCurrency()),
     };
   };
 
@@ -253,6 +272,16 @@ export function ExpenseDialog({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId]);
+
+  // A different entry currency invalidates a typed rate.
+  useEffect(() => {
+    onEntryRateChange?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entryCurrency]);
+
+  // Rate in force for a non-base entry (base per 1 entryCurrency).
+  const effectiveEntryRate =
+    entryRate ?? rateBetween(entryCurrency, getBaseCurrency());
 
   // Clear selected account if amount exceeds the balance being spent.
   // When editing, the original amount is already deducted from the balance,
@@ -557,16 +586,30 @@ export function ExpenseDialog({
                         inputMode="decimal"
                         className={dialogStyles.form.input}
                       />
-                      {entryCurrency !== getBaseCurrency() &&
-                        (parseFloat(amount) || 0) > 0 && (
-                          <p className="text-xs text-stone-500 mt-1">
-                            ≈{" "}
-                            {formatCurrency(
-                              toBase(parseFloat(amount) || 0, entryCurrency),
-                            )}{" "}
-                            on the budget
-                          </p>
-                        )}
+                      {entryCurrency !== getBaseCurrency() && (
+                        <div className="space-y-1 mt-1">
+                          {onEntryRateChange && (
+                            <RateOverride
+                              from={entryCurrency}
+                              to={getBaseCurrency()}
+                              rate={entryRate}
+                              onChange={onEntryRateChange}
+                            />
+                          )}
+                          {(parseFloat(amount) || 0) > 0 && (
+                            <p className="text-xs text-stone-500">
+                              ≈{" "}
+                              {formatCurrency(
+                                convertAt(
+                                  parseFloat(amount) || 0,
+                                  effectiveEntryRate,
+                                ),
+                              )}{" "}
+                              on the budget
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className={dialogStyles.form.fieldContainer}>
                       <Label className={dialogStyles.form.label}>
@@ -1069,6 +1112,16 @@ export function ExpenseDialog({
                                                         expense.originalAmount,
                                                         expense.originalCurrency,
                                                       )}
+                                                      {expense.exchangeRate
+                                                        ? (() => {
+                                                            const v = displayRate(
+                                                              expense.originalCurrency,
+                                                              getBaseCurrency(),
+                                                              expense.exchangeRate,
+                                                            );
+                                                            return ` @ 1 ${v.anchor} = ${formatRate(v.perAnchor)} ${v.other}`;
+                                                          })()
+                                                        : ""}
                                                       )
                                                     </span>
                                                   )}

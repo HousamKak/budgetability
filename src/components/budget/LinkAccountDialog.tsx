@@ -10,12 +10,14 @@ import { Label } from "@/components/ui/label";
 import {
   CURRENCIES,
   type CurrencyCode,
+  convertAt,
   getBaseCurrency,
-  toBase,
+  rateBetween,
 } from "@/lib/currency";
 import type { Account, BudgetAllocation } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { CurrencyChips } from "@/components/accounts/CurrencyChips";
+import { RateOverride } from "@/components/accounts/RateOverride";
 import { paperTheme } from "@/styles";
 import { PiggyBank, Check } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -31,6 +33,7 @@ interface LinkAccountDialogProps {
     accountId: string,
     amount: number,
     currency: CurrencyCode,
+    exchangeRate?: number,
   ) => void;
 }
 
@@ -52,6 +55,8 @@ export function LinkAccountDialog({
   );
   const [amount, setAmount] = useState<string>("");
   const [currency, setCurrency] = useState<CurrencyCode>("USD");
+  // Per-transaction rate override (base per 1 `currency`); null = default.
+  const [rateOverride, setRateOverride] = useState<number | null>(null);
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -59,8 +64,13 @@ export function LinkAccountDialog({
       setSelectedAccountId(null);
       setAmount("");
       setCurrency("USD");
+      setRateOverride(null);
     }
   }, [open]);
+
+  useEffect(() => {
+    setRateOverride(null);
+  }, [currency]);
 
   // Filter out accounts that are already linked to this month's budget
   const linkedAccountIds = new Set(existingAllocations.map((a) => a.accountId));
@@ -79,6 +89,9 @@ export function LinkAccountDialog({
 
   const allocationAmount = parseFloat(amount) || 0;
   const available = selectedAccount?.balances[currency] ?? 0;
+  const effectiveRate =
+    rateOverride ?? rateBetween(currency, getBaseCurrency());
+  const toBaseAt = (n: number) => convertAt(n, effectiveRate);
 
   // Validate form
   const canSubmit =
@@ -90,7 +103,12 @@ export function LinkAccountDialog({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (canSubmit && selectedAccountId) {
-      onLinkAccount(selectedAccountId, allocationAmount, currency);
+      onLinkAccount(
+        selectedAccountId,
+        allocationAmount,
+        currency,
+        rateOverride ?? undefined,
+      );
       onOpenChange(false);
     }
   };
@@ -241,11 +259,21 @@ export function LinkAccountDialog({
                   Exceeds available balance
                 </p>
               )}
-              {currency !== getBaseCurrency() && allocationAmount > 0 && (
-                <p className="text-xs text-stone-500">
-                  ≈ {formatCurrency(toBase(allocationAmount, currency))} added
-                  to the budget
-                </p>
+              {currency !== getBaseCurrency() && (
+                <div className="space-y-1 pt-1">
+                  <RateOverride
+                    from={currency}
+                    to={getBaseCurrency()}
+                    rate={rateOverride}
+                    onChange={setRateOverride}
+                  />
+                  {allocationAmount > 0 && (
+                    <p className="text-xs text-stone-500">
+                      ≈ {formatCurrency(toBaseAt(allocationAmount))} added to
+                      the budget
+                    </p>
+                  )}
+                </div>
               )}
 
               {/* Quick amounts */}
@@ -298,7 +326,7 @@ export function LinkAccountDialog({
                   <div>
                     <p className="text-xs text-stone-400">Added to Budget</p>
                     <p className="font-medium text-green-600">
-                      +{formatCurrency(toBase(allocationAmount, currency))}
+                      +{formatCurrency(toBaseAt(allocationAmount))}
                     </p>
                   </div>
                 </div>

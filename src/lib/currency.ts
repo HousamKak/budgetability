@@ -128,6 +128,64 @@ export function toBase(amount: number, from: CurrencyCode): number {
   return convert(amount, from, active.baseCurrency);
 }
 
+/**
+ * The DEFAULT pair rate from Settings: units of `to` per 1 unit of `from`,
+ * unrounded (0.2723 USD per AED must not become 0.27). Transactions may
+ * override it; the rate actually used is stored on the transaction.
+ */
+export function rateBetween(from: CurrencyCode, to: CurrencyCode): number {
+  if (from === to) return 1;
+  return rateOf(to) / rateOf(from);
+}
+
+/** Apply an explicit pair rate (units of target per 1 source), 2 dp. */
+export function convertAt(amount: number, rate: number): number {
+  return Math.round(amount * rate * 100) / 100;
+}
+
+/**
+ * Parse a user-typed decimal. Accepts "3.6725", "3,6725", "89 500" and
+ * "89,500.5" (a comma is a decimal separator only when there is no dot).
+ * Returns NaN when the text isn't a number.
+ */
+export function parseDecimal(text: string): number {
+  const trimmed = text.trim().replace(/\s+/g, "");
+  if (!trimmed) return NaN;
+  const normalized = trimmed.includes(".")
+    ? trimmed.replace(/,/g, "")
+    : trimmed.replace(",", ".");
+  return Number(normalized);
+}
+
+/**
+ * How a pair rate reads best: "1 <strong> = N <weak>", where the strong
+ * currency is the one worth more per unit (fewer units per USD). Returns the
+ * anchor currency and the number of `other` per 1 anchor.
+ */
+export function displayRate(
+  from: CurrencyCode,
+  to: CurrencyCode,
+  rateToPerFrom: number,
+): { anchor: CurrencyCode; other: CurrencyCode; perAnchor: number } {
+  const fromIsStrong = rateOf(from) <= rateOf(to);
+  if (fromIsStrong) {
+    return { anchor: from, other: to, perAnchor: rateToPerFrom };
+  }
+  return {
+    anchor: to,
+    other: from,
+    perAnchor: rateToPerFrom > 0 ? 1 / rateToPerFrom : 0,
+  };
+}
+
+/** Format a rate number compactly: up to 4 decimals, thousands grouped. */
+export function formatRate(rate: number): string {
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: rate >= 100 ? 2 : 4,
+  }).format(rate);
+}
+
 /** A set of amounts keyed by their currency (wallet balances, in/out totals). */
 export type MoneyByCurrency = Partial<Record<CurrencyCode, number>>;
 

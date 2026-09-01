@@ -17,8 +17,9 @@ import { supabase } from "@/lib/supabase";
 import {
   type CurrencyCode,
   convert,
+  convertAt,
   getBaseCurrency,
-  toBase,
+  rateBetween,
 } from "@/lib/currency";
 import { formatCurrency } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
@@ -278,6 +279,7 @@ export default function PaperBudget() {
         ? convert(p.amount, getBaseCurrency(), payCur)
         : undefined,
       originalCurrency: nonBase ? payCur : undefined,
+      exchangeRate: nonBase ? rateBetween(payCur, getBaseCurrency()) : undefined,
       category: p.category,
       accountId: p.accountId,
       note: p.note,
@@ -333,6 +335,9 @@ export default function PaperBudget() {
   const [expenseAccountId, setExpenseAccountId] = useState<string>("");
   // Which of the paying wallet's currencies the amount is typed in.
   const [expenseCurrency, setExpenseCurrency] = useState<CurrencyCode>("USD");
+  // Per-expense exchange-rate override (base per 1 expenseCurrency);
+  // null = Settings default.
+  const [expenseRate, setExpenseRate] = useState<number | null>(null);
   // "Show in Forecast" for the entry being added/edited. Always starts off —
   // an entry only reaches the Forecast page if it is explicitly marked.
   const [inForecast, setInForecast] = useState(false);
@@ -362,12 +367,18 @@ export default function PaperBudget() {
         : payingAccount.currency
       : getBaseCurrency();
     const nonBase = payingAccount && entryCur !== getBaseCurrency();
+    // Settings rate by default; the dialog may have overridden it for this
+    // one expense. Either way the rate used is stored on the record.
+    const rateUsed = nonBase
+      ? (expenseRate ?? rateBetween(entryCur, getBaseCurrency()))
+      : undefined;
     addExpense({
       id: makeId(),
       date: formDate,
-      amount: Number((nonBase ? toBase(a, entryCur) : a).toFixed(2)),
+      amount: Number((rateUsed ? convertAt(a, rateUsed) : a).toFixed(2)),
       originalAmount: nonBase ? Number(a.toFixed(2)) : undefined,
       originalCurrency: nonBase ? entryCur : undefined,
+      exchangeRate: rateUsed,
       category,
       accountId: expenseAccountId || undefined,
       note,
@@ -385,6 +396,7 @@ export default function PaperBudget() {
     setAmount("");
     setNote("");
     setInForecast(false);
+    setExpenseRate(null);
     setOpen(false);
   }
 
@@ -588,6 +600,8 @@ export default function PaperBudget() {
         onAccountIdChange={setExpenseAccountId}
         entryCurrency={expenseCurrency}
         onEntryCurrencyChange={setExpenseCurrency}
+        entryRate={expenseRate}
+        onEntryRateChange={setExpenseRate}
         accounts={accounts}
         inForecast={inForecast}
         onInForecastChange={setInForecast}

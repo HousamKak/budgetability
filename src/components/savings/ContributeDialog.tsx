@@ -18,10 +18,12 @@ import {
   CURRENCIES,
   type CurrencyCode,
   convert,
+  convertAt,
   getBaseCurrency,
-  toBase,
+  rateBetween,
 } from "@/lib/currency";
 import { CurrencyChips } from "@/components/accounts/CurrencyChips";
+import { RateOverride } from "@/components/accounts/RateOverride";
 import type { Account, SavingsGoal } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -38,7 +40,8 @@ interface ContributeDialogProps {
     accountId: string,
     amount: number,
     note?: string,
-    currency?: CurrencyCode
+    currency?: CurrencyCode,
+    exchangeRate?: number
   ) => void;
 }
 
@@ -56,6 +59,8 @@ export function ContributeDialog({
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [currency, setCurrency] = useState<CurrencyCode>("USD");
+  // Per-transaction exchange-rate override (base per 1 `currency`).
+  const [rateOverride, setRateOverride] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -65,8 +70,13 @@ export function ContributeDialog({
       setNote("");
       setSelectedAccountId("");
       setCurrency("USD");
+      setRateOverride(null);
     }
   }, [open]);
+
+  useEffect(() => {
+    setRateOverride(null);
+  }, [currency]);
 
   const loadAccounts = async () => {
     try {
@@ -109,7 +119,8 @@ export function ContributeDialog({
         selectedAccountId,
         amountNum,
         note || undefined,
-        currency
+        currency,
+        rateOverride ?? undefined
       );
       onOpenChange(false);
     } catch (error) {
@@ -121,8 +132,14 @@ export function ContributeDialog({
 
   // Contribution-scale quick amounts in the chosen currency.
   const quickAmounts = CURRENCIES[currency].presets.map((p) => p / 10);
+  // Rate in force for this contribution (base per 1 `currency`).
+  const effectiveRate = rateOverride ?? rateBetween(currency, getBaseCurrency());
+  const toBaseAt = (n: number) => convertAt(n, effectiveRate);
   // How much of the goal remains, expressed in the chosen currency.
-  const remainingNative = convert(remaining, getBaseCurrency(), currency);
+  const remainingNative =
+    effectiveRate > 0
+      ? Math.round((remaining / effectiveRate) * 100) / 100
+      : convert(remaining, getBaseCurrency(), currency);
 
   if (!goal) return null;
 
@@ -260,10 +277,20 @@ export function ContributeDialog({
                 )}
               />
             </div>
-            {currency !== getBaseCurrency() && amountNum > 0 && (
-              <p className="text-xs text-stone-500">
-                ≈ {formatCurrency(toBase(amountNum, currency))} toward the goal
-              </p>
+            {currency !== getBaseCurrency() && (
+              <div className="space-y-1 pt-1">
+                <RateOverride
+                  from={currency}
+                  to={getBaseCurrency()}
+                  rate={rateOverride}
+                  onChange={setRateOverride}
+                />
+                {amountNum > 0 && (
+                  <p className="text-xs text-stone-500">
+                    ≈ {formatCurrency(toBaseAt(amountNum))} toward the goal
+                  </p>
+                )}
+              </div>
             )}
 
             {/* Quick amounts */}
@@ -349,9 +376,7 @@ export function ContributeDialog({
                   </p>
                   <p className="text-xs text-green-600">
                     →{" "}
-                    {formatCurrency(
-                      goal.currentAmount + toBase(amountNum, currency),
-                    )}
+                    {formatCurrency(goal.currentAmount + toBaseAt(amountNum))}
                   </p>
                 </div>
               </div>

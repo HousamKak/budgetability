@@ -152,6 +152,7 @@ export type Database = {
           base_amount: number | null
           created_at: string | null
           currency: string | null
+          exchange_rate: number | null
           forecast_enabled: boolean
           forecast_flow_id: string | null
           from_account_id: string | null
@@ -171,6 +172,7 @@ export type Database = {
           base_amount?: number | null
           created_at?: string | null
           currency?: string | null
+          exchange_rate?: number | null
           forecast_enabled?: boolean
           forecast_flow_id?: string | null
           from_account_id?: string | null
@@ -190,6 +192,7 @@ export type Database = {
           base_amount?: number | null
           created_at?: string | null
           currency?: string | null
+          exchange_rate?: number | null
           forecast_enabled?: boolean
           forecast_flow_id?: string | null
           from_account_id?: string | null
@@ -493,6 +496,7 @@ export type Database = {
           category_id: string | null
           created_at: string | null
           date: string
+          exchange_rate: number | null
           forecast_enabled: boolean
           forecast_flow_id: string | null
           id: string
@@ -511,6 +515,7 @@ export type Database = {
           category_id?: string | null
           created_at?: string | null
           date: string
+          exchange_rate?: number | null
           forecast_enabled?: boolean
           forecast_flow_id?: string | null
           id?: string
@@ -529,6 +534,7 @@ export type Database = {
           category_id?: string | null
           created_at?: string | null
           date?: string
+          exchange_rate?: number | null
           forecast_enabled?: boolean
           forecast_flow_id?: string | null
           id?: string

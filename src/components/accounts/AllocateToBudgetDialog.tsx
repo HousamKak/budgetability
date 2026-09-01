@@ -10,11 +10,13 @@ import { Label } from "@/components/ui/label";
 import {
   CURRENCIES,
   type CurrencyCode,
+  convertAt,
   formatCurrency,
   getBaseCurrency,
-  toBase,
+  rateBetween,
 } from "@/lib/currency";
 import { CurrencyChips } from "./CurrencyChips";
+import { RateOverride } from "./RateOverride";
 import type { Account } from "@/lib/data-service";
 import { cn } from "@/lib/utils";
 import { paperTheme } from "@/styles";
@@ -33,6 +35,7 @@ interface AllocateToBudgetDialogProps {
     monthKey: string,
     amount: number,
     currency: CurrencyCode,
+    exchangeRate?: number,
   ) => void;
 }
 
@@ -50,23 +53,39 @@ export function AllocateToBudgetDialog({
   const [amount, setAmount] = useState("");
   const [monthKey, setMonthKey] = useState(currentMonthKey);
   const [currency, setCurrency] = useState<CurrencyCode>("USD");
+  // Per-transaction rate override (base per 1 `currency`); null = default.
+  const [rateOverride, setRateOverride] = useState<number | null>(null);
 
   useEffect(() => {
     if (open) {
       setAmount("");
       setMonthKey(currentMonthKey);
       setCurrency(account?.currency ?? "USD");
+      setRateOverride(null);
     }
   }, [open, currentMonthKey, account]);
+
+  useEffect(() => {
+    setRateOverride(null);
+  }, [currency]);
 
   const allocateAmount = parseFloat(amount) || 0;
   const available = account?.balances[currency] ?? 0;
   const canAllocate = account && allocateAmount > 0 && allocateAmount <= available;
+  const effectiveRate =
+    rateOverride ?? rateBetween(currency, getBaseCurrency());
+  const toBaseAt = (n: number) => convertAt(n, effectiveRate);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (canAllocate && account) {
-      onAllocate(account.id, monthKey, allocateAmount, currency);
+      onAllocate(
+        account.id,
+        monthKey,
+        allocateAmount,
+        currency,
+        rateOverride ?? undefined,
+      );
       onOpenChange(false);
     }
   };
@@ -214,11 +233,21 @@ export function AllocateToBudgetDialog({
             {allocateAmount > available && (
               <p className="text-xs text-red-500">Exceeds available balance</p>
             )}
-            {currency !== getBaseCurrency() && allocateAmount > 0 && (
-              <p className="text-xs text-stone-500">
-                ≈ {formatCurrency(toBase(allocateAmount, currency))} added
-                to the budget
-              </p>
+            {currency !== getBaseCurrency() && (
+              <div className="space-y-1 pt-1">
+                <RateOverride
+                  from={currency}
+                  to={getBaseCurrency()}
+                  rate={rateOverride}
+                  onChange={setRateOverride}
+                />
+                {allocateAmount > 0 && (
+                  <p className="text-xs text-stone-500">
+                    ≈ {formatCurrency(toBaseAt(allocateAmount))} added to the
+                    budget
+                  </p>
+                )}
+              </div>
             )}
           </div>
 
@@ -270,9 +299,7 @@ export function AllocateToBudgetDialog({
                     {formatMonth(monthKey)} Budget
                   </p>
                   <p className="font-medium text-green-600">
-                    {formatCurrency(
-                      currentBudget + toBase(allocateAmount, currency),
-                    )}
+                    {formatCurrency(currentBudget + toBaseAt(allocateAmount))}
                   </p>
                 </div>
               </div>

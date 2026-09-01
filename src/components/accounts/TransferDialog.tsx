@@ -14,10 +14,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CURRENCIES, type CurrencyCode, convert } from "@/lib/currency";
+import {
+  CURRENCIES,
+  type CurrencyCode,
+  convertAt,
+  rateBetween,
+} from "@/lib/currency";
 import type { Account } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { CurrencyChips } from "./CurrencyChips";
+import { RateOverride } from "./RateOverride";
 import { paperTheme } from "@/styles";
 import { ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -56,8 +62,11 @@ export function TransferDialog({
   const [toCurrency, setToCurrency] = useState<CurrencyCode>("USD");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
-  // Cross-currency: destination-side amount, pre-filled from the rate table
-  // but user-editable (street rates differ from the table rate).
+  // Cross-currency: the rate in force for THIS transfer (destination per 1
+  // source). null = Settings default. Editing the rate recomputes the
+  // received amount; editing the received amount implies a rate. Either way
+  // the rate actually used is stored on the transaction.
+  const [rateOverride, setRateOverride] = useState<number | null>(null);
   const [toAmountText, setToAmountText] = useState("");
   const [toAmountTouched, setToAmountTouched] = useState(false);
 
@@ -71,6 +80,7 @@ export function TransferDialog({
       setNote("");
       setToAmountText("");
       setToAmountTouched(false);
+      setRateOverride(null);
     }
   }, [open, sourceAccount]);
 
@@ -79,6 +89,7 @@ export function TransferDialog({
   const transferAmount = parseFloat(amount) || 0;
   const crossCurrency = fromCurrency !== toCurrency;
   const availableFrom = fromAccount?.balances[fromCurrency] ?? 0;
+  const effectiveRate = rateOverride ?? rateBetween(fromCurrency, toCurrency);
 
   // Snap the currency selections into each account's held set.
   useEffect(() => {
@@ -100,20 +111,20 @@ export function TransferDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toAccountId, fromCurrency]);
 
-  // Keep the converted amount in sync until the user overrides it.
+  // Keep the received amount in sync with the rate in force until the user
+  // types a received amount directly.
   useEffect(() => {
     if (!crossCurrency) return;
     if (toAmountTouched) return;
     setToAmountText(
-      transferAmount > 0
-        ? String(convert(transferAmount, fromCurrency, toCurrency))
-        : "",
+      transferAmount > 0 ? String(convertAt(transferAmount, effectiveRate)) : "",
     );
-  }, [crossCurrency, transferAmount, fromCurrency, toCurrency, toAmountTouched]);
+  }, [crossCurrency, transferAmount, effectiveRate, toAmountTouched]);
 
   // A new destination or currency pair resets any manual override.
   useEffect(() => {
     setToAmountTouched(false);
+    setRateOverride(null);
   }, [toAccountId, fromAccountId, fromCurrency, toCurrency]);
 
   const toAmountNum = parseFloat(toAmountText) || 0;
@@ -378,6 +389,12 @@ export function TransferDialog({
                   onChange={(e) => {
                     setToAmountTouched(true);
                     setToAmountText(e.target.value);
+                    // A typed received amount implies the rate the exchange
+                    // actually gave — reflect it in the rate field.
+                    const typed = parseFloat(e.target.value);
+                    if (typed > 0 && transferAmount > 0) {
+                      setRateOverride(typed / transferAmount);
+                    }
                   }}
                   placeholder={CURRENCIES[toCurrency].inputPlaceholder}
                   className={cn(
@@ -389,17 +406,20 @@ export function TransferDialog({
                   )}
                 />
               </div>
+              <RateOverride
+                from={fromCurrency}
+                to={toCurrency}
+                rate={rateOverride}
+                onChange={(r) => {
+                  setRateOverride(r);
+                  // A typed rate drives the received amount again.
+                  setToAmountTouched(false);
+                }}
+              />
               <p className="text-xs text-stone-500">
-                Pre-filled from your exchange rate — adjust it to what the
-                exchange actually gives you.
-                {transferAmount > 0 && toAmountNum > 0 && (
-                  <>
-                    {" "}
-                    Effective rate:{" "}
-                    {formatCurrency(transferAmount, fromCurrency)} ={" "}
-                    {formatCurrency(toAmountNum, toCurrency)}
-                  </>
-                )}
+                Settings supplies the default rate; edit either the rate or
+                the received amount to record what the exchange actually gave
+                you. The rate used is saved on this transaction.
               </p>
             </div>
           )}

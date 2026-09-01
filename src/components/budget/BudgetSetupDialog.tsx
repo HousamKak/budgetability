@@ -35,6 +35,7 @@ interface BudgetSetupDialogProps {
     accountId: string,
     amount: number,
     currency: CurrencyCode,
+    exchangeRate?: number,
   ) => void;
   onAdjustAllocation: (accountId: string, newAmount: number) => void;
   onRemoveAllocation: (accountId: string) => void;

@@ -10,6 +10,9 @@ import {
   type CurrencyCode,
   type MoneyByCurrency,
   addMoney,
+  displayRate,
+  formatRate,
+  getBaseCurrency,
 } from "@/lib/currency";
 import type { Account, AccountTransaction } from "@/lib/data-service";
 import { dataService } from "@/lib/data-service";
@@ -583,6 +586,23 @@ export function AccountTransactionsDialog({
                                     <span className="text-xs text-stone-500 ml-2">
                                       {label}
                                     </span>
+                                    {tx.exchangeRate && tx.currency && (
+                                      <span
+                                        className="text-[11px] text-stone-400 ml-2"
+                                        title="Exchange rate used for this transaction"
+                                      >
+                                        {(() => {
+                                          const target =
+                                            tx.toCurrency ?? getBaseCurrency();
+                                          const v = displayRate(
+                                            tx.currency,
+                                            target,
+                                            tx.exchangeRate,
+                                          );
+                                          return `@ 1 ${v.anchor} = ${formatRate(v.perAnchor)} ${v.other}`;
+                                        })()}
+                                      </span>
+                                    )}
                                   </div>
                                   {tx.note && (
                                     <div className="text-xs text-stone-400 handwriting mt-0.5">

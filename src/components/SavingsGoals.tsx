@@ -86,7 +86,8 @@ export default function SavingsGoals() {
     accountId: string,
     amount: number,
     note?: string,
-    currency?: CurrencyCode
+    currency?: CurrencyCode,
+    exchangeRate?: number
   ) => {
     try {
       await dataService.contributeToSavingsGoal(
@@ -95,6 +96,7 @@ export default function SavingsGoals() {
         amount,
         note,
         currency,
+        exchangeRate,
       );
       await loadGoals();
     } catch (error) {

@@ -7,9 +7,11 @@ import {
   DEFAULT_RATES,
   addMoney,
   convert,
+  convertAt,
   formatCurrency,
   getBaseCurrency,
   isCurrencyCode,
+  rateBetween,
   toBase,
 } from "./currency";
 import { supabase } from "./supabase";
@@ -156,6 +158,12 @@ export type AccountTransaction = {
   toAmount?: number;
   toCurrency?: CurrencyCode;
   baseAmount?: number;
+  /**
+   * The rate actually used for a cross-currency movement: units of the
+   * target currency (toCurrency, else base) per 1 unit of `currency`.
+   * Settings supplies the default; the user may override it per transaction.
+   */
+  exchangeRate?: number;
   transactionType:
     | "transfer"
     | "budget_allocation"
@@ -214,6 +222,8 @@ export type Expense = {
   amount: number;
   originalAmount?: number;
   originalCurrency?: CurrencyCode;
+  /** Base per 1 unit of originalCurrency — the rate this expense used. */
+  exchangeRate?: number;
   category?: string; // Legacy TEXT field
   categoryId?: string; // NEW: Reference to categories table
   accountId?: string; // Account this expense was paid from
@@ -605,6 +615,26 @@ export class DataService {
     return accounts.find((a) => a.id === accountId)?.currency ?? "USD";
   }
 
+  /**
+   * Base-currency snapshot of a native amount. Uses the per-transaction
+   * override when given, else the Settings default. Returns the rate that
+   * was actually applied (undefined for same-currency movements, where there
+   * is nothing to record).
+   */
+  private baseSnapshot(
+    amount: number,
+    currency: CurrencyCode,
+    exchangeRate?: number,
+  ): { baseAmount: number; rate: number | undefined } {
+    const base = getBaseCurrency();
+    if (currency === base) return { baseAmount: amount, rate: undefined };
+    const rate =
+      exchangeRate && exchangeRate > 0
+        ? exchangeRate
+        : rateBetween(currency, base);
+    return { baseAmount: convertAt(amount, rate), rate };
+  }
+
   // Budget operations
   async getBudget(monthKey: string): Promise<number> {
     if (this.useSupabase && supabase) {
@@ -708,6 +738,8 @@ export class DataService {
             originalCurrency: isCurrencyCode(row.original_currency)
               ? row.original_currency
               : undefined,
+            exchangeRate:
+              row.exchange_rate != null ? Number(row.exchange_rate) : undefined,
             category: row.category || undefined,
             categoryId: row.category_id || undefined,
             accountId: row.account_id || undefined,
@@ -758,6 +790,7 @@ export class DataService {
             amount: expense.amount,
             original_amount: expense.originalAmount ?? null,
             original_currency: expense.originalCurrency ?? null,
+            exchange_rate: expense.exchangeRate ?? null,
             category: expense.category,
             category_id: expense.categoryId || null,
             account_id: expense.accountId || null,
@@ -781,6 +814,7 @@ export class DataService {
                 amount: expense.originalAmount ?? expense.amount,
                 currency: expense.originalCurrency ?? getBaseCurrency(),
                 base_amount: expense.amount,
+                exchange_rate: expense.exchangeRate ?? null,
                 transaction_type: "expense",
                 month_key: monthKey,
                 note: expense.note || expense.category || "Expense",
@@ -817,6 +851,7 @@ export class DataService {
           amount: nativeAmount,
           currency: payCurrency,
           baseAmount: expense.amount,
+          exchangeRate: expense.exchangeRate,
           transactionType: "expense",
           monthKey,
           note: expense.note || expense.category || "Expense",
@@ -1311,7 +1346,9 @@ export class DataService {
         // Fetch old expense to handle account balance adjustments
         const { data: oldExpense } = await supabase
           .from("expenses")
-          .select("account_id, amount, original_amount, original_currency")
+          .select(
+            "account_id, amount, original_amount, original_currency, exchange_rate",
+          )
           .eq("id", id)
           .single();
 
@@ -1323,6 +1360,7 @@ export class DataService {
           // missing pair must CLEAR any stale native snapshot, not keep it.
           dbUpdates.original_amount = updates.originalAmount ?? null;
           dbUpdates.original_currency = updates.originalCurrency ?? null;
+          dbUpdates.exchange_rate = updates.exchangeRate ?? null;
         }
         if (updates.category !== undefined)
           dbUpdates.category = updates.category;
@@ -1384,6 +1422,10 @@ export class DataService {
                 amount: oldNative,
                 currency: oldCurrency,
                 base_amount: oldBase,
+                exchange_rate:
+                  oldExpense.exchange_rate != null
+                    ? Number(oldExpense.exchange_rate)
+                    : null,
                 transaction_type: "expense",
                 month_key: monthKey,
                 note: "Expense updated - old amount refunded",
@@ -1401,6 +1443,13 @@ export class DataService {
                 amount: newNative,
                 currency: newCurrency,
                 base_amount: newBase,
+                exchange_rate:
+                  newCurrency === getBaseCurrency()
+                    ? null
+                    : (updates.exchangeRate ??
+                      (newNative > 0
+                        ? Math.round((newBase / newNative) * 1e8) / 1e8
+                        : null)),
                 transaction_type: "expense",
                 month_key: monthKey,
                 note: "Expense updated - new amount deducted",
@@ -1425,6 +1474,7 @@ export class DataService {
         ? {
             originalAmount: undefined,
             originalCurrency: undefined,
+            exchangeRate: undefined,
             ...updates,
           }
         : updates;
@@ -2193,17 +2243,24 @@ export class DataService {
     inForecast = false,
     // Which of the wallet's balances grows; defaults to its primary currency.
     currency?: CurrencyCode,
+    // Per-transaction rate override (base per 1 unit of `currency`).
+    exchangeRate?: number,
   ): Promise<void> {
     const id = crypto.randomUUID();
     const depositCurrency =
       currency ?? (await this.accountCurrency(accountId));
-    const baseAmount = toBase(amount, depositCurrency);
+    const { baseAmount, rate } = this.baseSnapshot(
+      amount,
+      depositCurrency,
+      exchangeRate,
+    );
     const transaction: AccountTransaction = {
       id,
       toAccountId: accountId,
       amount,
       currency: depositCurrency,
       baseAmount,
+      exchangeRate: rate,
       transactionType: "deposit",
       note,
       createdAt: new Date().toISOString(),
@@ -2224,6 +2281,7 @@ export class DataService {
           amount,
           currency: depositCurrency,
           base_amount: baseAmount,
+          exchange_rate: rate ?? null,
           transaction_type: "deposit",
           note,
           in_forecast: inForecast,
@@ -2279,6 +2337,11 @@ export class DataService {
     const destinationAmount = crossCurrency
       ? (toAmount ?? convert(amount, srcCurrency, dstCurrency))
       : undefined;
+    // The rate the exchange actually applied: destination per 1 source.
+    const exchangeRate =
+      crossCurrency && destinationAmount !== undefined && amount > 0
+        ? Math.round((destinationAmount / amount) * 1e8) / 1e8
+        : undefined;
     const baseAmount = toBase(amount, srcCurrency);
     const transaction: AccountTransaction = {
       id,
@@ -2289,6 +2352,7 @@ export class DataService {
       toAmount: destinationAmount,
       toCurrency: crossCurrency ? dstCurrency : undefined,
       baseAmount,
+      exchangeRate,
       transactionType: "transfer",
       note,
       createdAt: new Date().toISOString(),
@@ -2310,6 +2374,7 @@ export class DataService {
           to_amount: destinationAmount ?? null,
           to_currency: crossCurrency ? dstCurrency : null,
           base_amount: baseAmount,
+          exchange_rate: exchangeRate ?? null,
           transaction_type: "transfer",
           note,
         });
@@ -2347,6 +2412,8 @@ export class DataService {
     monthKey: string,
     amount: number,
     currency?: CurrencyCode,
+    // Per-transaction rate override (base per 1 unit of `currency`).
+    exchangeRate?: number,
   ): Promise<void> {
     if (amount <= 0) throw new Error("Allocation amount must be positive");
 
@@ -2364,7 +2431,11 @@ export class DataService {
       );
     }
 
-    const baseAmount = toBase(amount, allocCurrency);
+    const { baseAmount, rate: allocRate } = this.baseSnapshot(
+      amount,
+      allocCurrency,
+      exchangeRate,
+    );
     const transactionId = crypto.randomUUID();
     const allocationId = crypto.randomUUID();
 
@@ -2416,6 +2487,7 @@ export class DataService {
             amount,
             currency: allocCurrency,
             base_amount: baseAmount,
+            exchange_rate: allocRate ?? null,
             transaction_type: "budget_allocation",
             month_key: monthKey,
           });
@@ -2461,6 +2533,7 @@ export class DataService {
         amount,
         currency: allocCurrency,
         baseAmount,
+        exchangeRate: allocRate,
         transactionType: "budget_allocation",
         monthKey,
         createdAt: new Date().toISOString(),
@@ -2929,6 +3002,8 @@ export class DataService {
               : undefined,
             baseAmount:
               row.base_amount != null ? Number(row.base_amount) : undefined,
+            exchangeRate:
+              row.exchange_rate != null ? Number(row.exchange_rate) : undefined,
             transactionType:
               row.transaction_type as AccountTransaction["transactionType"],
             monthKey: row.month_key || undefined,
@@ -3153,6 +3228,8 @@ export class DataService {
               : undefined,
             baseAmount:
               row.base_amount != null ? Number(row.base_amount) : undefined,
+            exchangeRate:
+              row.exchange_rate != null ? Number(row.exchange_rate) : undefined,
             transactionType:
               row.transaction_type as AccountTransaction["transactionType"],
             monthKey: row.month_key || undefined,
@@ -3322,11 +3399,17 @@ export class DataService {
     amount: number,
     note?: string,
     currency?: CurrencyCode,
+    // Per-transaction rate override (base per 1 unit of `currency`).
+    exchangeRate?: number,
   ): Promise<void> {
     const contributionId = crypto.randomUUID();
     const transactionId = crypto.randomUUID();
     const payCurrency = currency ?? (await this.accountCurrency(accountId));
-    const baseAmount = toBase(amount, payCurrency);
+    const { baseAmount, rate: payRate } = this.baseSnapshot(
+      amount,
+      payCurrency,
+      exchangeRate,
+    );
 
     if (this.useSupabase && supabase) {
       try {
@@ -3343,6 +3426,7 @@ export class DataService {
             amount,
             currency: payCurrency,
             base_amount: baseAmount,
+            exchange_rate: payRate ?? null,
             transaction_type: "savings_contribution",
             savings_goal_id: goalId,
             note,
@@ -3411,6 +3495,7 @@ export class DataService {
         amount,
         currency: payCurrency,
         baseAmount,
+        exchangeRate: payRate,
         transactionType: "savings_contribution",
         savingsGoalId: goalId,
         note,
@@ -3550,6 +3635,8 @@ export class DataService {
             originalCurrency: isCurrencyCode(row.original_currency)
               ? row.original_currency
               : undefined,
+            exchangeRate:
+              row.exchange_rate != null ? Number(row.exchange_rate) : undefined,
             category: row.category || undefined,
             categoryId: row.category_id || undefined,
             accountId: row.account_id || undefined,

@@ -198,6 +198,7 @@ export default function AccountsPage() {
     note?: string,
     inForecast?: boolean,
     currency?: CurrencyCode,
+    exchangeRate?: number,
   ) => {
     try {
       await dataService.depositToAccount(
@@ -206,6 +207,7 @@ export default function AccountsPage() {
         note,
         inForecast,
         currency,
+        exchangeRate,
       );
       await loadData();
     } catch (error) {

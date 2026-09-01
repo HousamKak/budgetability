@@ -17,6 +17,7 @@ import {
   CURRENCY_CODES,
   DEFAULT_RATES,
   type CurrencyCode,
+  parseDecimal,
 } from "@/lib/currency";
 import { dataService, type Category } from "@/lib/data-service";
 import { cn } from "@/lib/utils";
@@ -121,7 +122,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   }
 
   async function handleRateBlur(code: CurrencyCode) {
-    const value = parseFloat(rateInputs[code] ?? "");
+    // parseDecimal accepts both "." and "," so phone keyboards and
+    // non-English locales can type decimals.
+    const value = parseDecimal(rateInputs[code] ?? "");
     if (!(value > 0)) {
       setRateInputs((prev) => ({
         ...prev,
@@ -560,10 +563,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             label={`${CURRENCIES[code].name} rate`}
             description={`${code} per 1 USD — used to convert between currencies`}
           >
+            {/* A text field with a decimal keypad: <input type="number">
+                rejects decimals on some phone keyboards and in locales that
+                use a comma separator, which blocked rates like 3.6725. */}
             <input
-              type="number"
-              min="0"
-              step="any"
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
               value={rateInputs[code] ?? ""}
               onChange={(e) =>
                 setRateInputs((prev) => ({ ...prev, [code]: e.target.value }))
