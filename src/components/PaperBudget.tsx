@@ -29,6 +29,7 @@ import { layoutStyles } from "@/styles";
 import { Calendar } from "./budget/Calendar";
 import { DashboardHeader } from "./budget/DashboardHeader";
 import { ExpenseDialog } from "./budget/ExpenseDialog";
+import { PayPlanDialog } from "./budget/PayPlanDialog";
 import { CalendarIcon, Trash, Wallet } from "./budget/Icons";
 import { BudgetDetailsDialog } from "./budget/BudgetDetailsDialog";
 import { MonthlyBookDialog } from "./budget/MonthlyBookDialog";
@@ -260,26 +261,45 @@ export default function PaperBudget() {
       console.error("Failed to remove plan:", error);
     }
   }
+  // Marking a plan paid must record what actually left the wallet. A wallet
+  // holding several currencies gets asked which balance paid and how much;
+  // a single-currency wallet (or no account) settles immediately.
   function markPlanPaid(p: PlanItem) {
-    const date = p.targetDate || ymd(new Date());
-    // Plans are base-denominated. Pay from the wallet's base balance when it
-    // holds one; otherwise convert into its primary currency at today's rate.
     const payingAccount = accounts.find((x) => x.id === p.accountId);
+    if (payingAccount && payingAccount.currencies.length > 1) {
+      setPayingPlan(p);
+      return;
+    }
     const payCur: CurrencyCode = payingAccount
-      ? payingAccount.currencies.includes(getBaseCurrency())
-        ? getBaseCurrency()
-        : payingAccount.currency
+      ? payingAccount.currency
       : getBaseCurrency();
-    const nonBase = payingAccount && payCur !== getBaseCurrency();
+    const rate =
+      payCur === getBaseCurrency() ? null : rateBetween(payCur, getBaseCurrency());
+    const native =
+      rate && rate > 0 ? Math.round((p.amount / rate) * 100) / 100 : p.amount;
+    finalizePlanPaid(p, payCur, native, rate);
+  }
+
+  function finalizePlanPaid(
+    p: PlanItem,
+    currency: CurrencyCode,
+    nativeAmount: number,
+    exchangeRate: number | null,
+  ) {
+    const date = p.targetDate || ymd(new Date());
+    const nonBase = currency !== getBaseCurrency();
+    const rateUsed = nonBase
+      ? (exchangeRate ?? rateBetween(currency, getBaseCurrency()))
+      : undefined;
     addExpense({
       id: makeId(),
       date,
-      amount: p.amount,
-      originalAmount: nonBase
-        ? convert(p.amount, getBaseCurrency(), payCur)
-        : undefined,
-      originalCurrency: nonBase ? payCur : undefined,
-      exchangeRate: nonBase ? rateBetween(payCur, getBaseCurrency()) : undefined,
+      // The budget sees the base value of what was really paid; the plan's
+      // figure was only an estimate.
+      amount: Number((rateUsed ? convertAt(nativeAmount, rateUsed) : nativeAmount).toFixed(2)),
+      originalAmount: nonBase ? Number(nativeAmount.toFixed(2)) : undefined,
+      originalCurrency: nonBase ? currency : undefined,
+      exchangeRate: rateUsed,
       category: p.category,
       accountId: p.accountId,
       note: p.note,
@@ -338,6 +358,8 @@ export default function PaperBudget() {
   // Per-expense exchange-rate override (base per 1 expenseCurrency);
   // null = Settings default.
   const [expenseRate, setExpenseRate] = useState<number | null>(null);
+  // A plan awaiting "which currency did you pay with?"
+  const [payingPlan, setPayingPlan] = useState<PlanItem | null>(null);
   // "Show in Forecast" for the entry being added/edited. Always starts off —
   // an entry only reaches the Forecast page if it is explicitly marked.
   const [inForecast, setInForecast] = useState(false);
@@ -585,6 +607,19 @@ export default function PaperBudget() {
       />
 
       {/* ExpenseDialog - moved outside header for cleaner structure */}
+      <PayPlanDialog
+        open={payingPlan !== null}
+        onOpenChange={(o) => {
+          if (!o) setPayingPlan(null);
+        }}
+        plan={payingPlan}
+        account={
+          payingPlan
+            ? (accounts.find((x) => x.id === payingPlan.accountId) ?? null)
+            : null
+        }
+        onConfirm={finalizePlanPaid}
+      />
       <ExpenseDialog
         open={open}
         onOpenChange={handleDialogOpenChange}

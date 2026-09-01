@@ -4,8 +4,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import type { MoneyByCurrency } from "@/lib/currency";
-import { sumToBase } from "@/lib/currency";
+import type { CurrencyCode, MoneyByCurrency } from "@/lib/currency";
 import type { Account } from "@/lib/data-service";
 import { cn, formatCurrency } from "@/lib/utils";
 import { WalletBalances } from "./WalletBalances";
@@ -65,11 +64,19 @@ export function AccountRow({
 }: AccountRowProps) {
   const typeColor = getAccountTypeConfig(account.accountType).color;
   const icon = account.icon || "wallet";
-  // Month activity summarized in base — the row is too dense for per-currency
-  // in/out; the transactions dialog has the full native story.
-  const inflowBase = activity ? sumToBase(activity.inflow) : 0;
-  const outflowBase = activity ? sumToBase(activity.outflow) : 0;
-  const hasActivity = inflowBase > 0 || outflowBase > 0;
+  // Month activity per currency — what actually moved through each balance
+  // (a lira expense reads as lira, not as its dollar value).
+  const inflows = activity
+    ? (Object.entries(activity.inflow) as [CurrencyCode, number][]).filter(
+        ([, v]) => v > 0,
+      )
+    : [];
+  const outflows = activity
+    ? (Object.entries(activity.outflow) as [CurrencyCode, number][]).filter(
+        ([, v]) => v > 0,
+      )
+    : [];
+  const hasActivity = inflows.length > 0 || outflows.length > 0;
 
   return (
     <div
@@ -113,18 +120,17 @@ export function AccountRow({
             amountClassName="text-sm leading-tight"
           />
           {hasActivity && (
-            <span className="text-[11px] tabular-nums text-stone-400">
-              {inflowBase > 0 && (
-                <span className="text-green-600">
-                  +{formatCurrency(inflowBase)}
+            <span className="text-[11px] tabular-nums text-stone-400 inline-flex flex-wrap gap-x-1.5">
+              {inflows.map(([c, v]) => (
+                <span key={`in-${c}`} className="text-green-600">
+                  +{formatCurrency(v, c)}
                 </span>
-              )}
-              {inflowBase > 0 && outflowBase > 0 && " · "}
-              {outflowBase > 0 && (
-                <span className="text-red-500">
-                  −{formatCurrency(outflowBase)}
+              ))}
+              {outflows.map(([c, v]) => (
+                <span key={`out-${c}`} className="text-red-500">
+                  −{formatCurrency(v, c)}
                 </span>
-              )}
+              ))}
             </span>
           )}
         </div>
