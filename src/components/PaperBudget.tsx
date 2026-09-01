@@ -16,7 +16,6 @@ import {
 import { supabase } from "@/lib/supabase";
 import {
   type CurrencyCode,
-  convert,
   convertAt,
   getBaseCurrency,
   rateBetween,
