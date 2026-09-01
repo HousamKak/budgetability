@@ -63,6 +63,71 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+// Render helpers live at module scope on purpose: defined inside the
+// component, React saw a new component type on every render and
+// remounted the inputs, dropping focus after each keystroke.
+
+function SettingRow({
+  icon,
+  label,
+  description,
+  children,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-4 p-3 rounded-xl bg-white border border-stone-200 hover:shadow-sm transition-all">
+      <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shrink-0">
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-stone-800">{label}</p>
+        {description && (
+          <p className="text-xs text-stone-500 mt-0.5">{description}</p>
+        )}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+function Toggle({
+  enabled,
+  onChange,
+}: {
+  enabled: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!enabled)}
+      className={cn(
+        "relative w-11 h-6 rounded-full transition-colors",
+        enabled ? "bg-amber-500" : "bg-stone-300"
+      )}
+    >
+      <span
+        className={cn(
+          "absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform",
+          enabled && "translate-x-5"
+        )}
+      />
+    </button>
+  );
+}
+
+function ComingSoonBadge() {
+  return (
+    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-600 border border-amber-200">
+      Soon
+    </span>
+  );
+}
+
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("categories");
 
@@ -85,6 +150,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     useCurrency();
   const [rateInputs, setRateInputs] = useState<Record<string, string>>({});
   const [currencyDirty, setCurrencyDirty] = useState(false);
+  const [savedRate, setSavedRate] = useState<CurrencyCode | null>(null);
 
   // Preferences state (placeholders)
   const [weekStart, setWeekStart] = useState<"monday" | "sunday">("monday");
@@ -121,7 +187,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     }
   }
 
-  async function handleRateBlur(code: CurrencyCode) {
+  async function handleRateSave(code: CurrencyCode): Promise<boolean> {
     // parseDecimal accepts both "." and "," so phone keyboards and
     // non-English locales can type decimals.
     const value = parseDecimal(rateInputs[code] ?? "");
@@ -130,14 +196,18 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         ...prev,
         [code]: String(rates[code] ?? DEFAULT_RATES[code as "AED" | "LBP"]),
       }));
-      return;
+      return false;
     }
-    if (value === rates[code]) return;
+    if (value === rates[code]) return true;
     try {
       await setRate(code, value);
       setCurrencyDirty(true);
+      setSavedRate(code);
+      window.setTimeout(() => setSavedRate((c) => (c === code ? null : c)), 1800);
+      return true;
     } catch (error) {
       console.error("Failed to save exchange rate:", error);
+      return false;
     }
   }
 
@@ -263,69 +333,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     } catch (error) {
       console.error("Failed to delete category:", error);
     }
-  }
-
-  // ─── Render helpers ──────────────────────────────────────────────────────
-
-  function SettingRow({
-    icon,
-    label,
-    description,
-    children,
-  }: {
-    icon: React.ReactNode;
-    label: string;
-    description?: string;
-    children: React.ReactNode;
-  }) {
-    return (
-      <div className="flex items-center gap-4 p-3 rounded-xl bg-white border border-stone-200 hover:shadow-sm transition-all">
-        <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shrink-0">
-          {icon}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-stone-800">{label}</p>
-          {description && (
-            <p className="text-xs text-stone-500 mt-0.5">{description}</p>
-          )}
-        </div>
-        <div className="shrink-0">{children}</div>
-      </div>
-    );
-  }
-
-  function Toggle({
-    enabled,
-    onChange,
-  }: {
-    enabled: boolean;
-    onChange: (v: boolean) => void;
-  }) {
-    return (
-      <button
-        type="button"
-        onClick={() => onChange(!enabled)}
-        className={cn(
-          "relative w-11 h-6 rounded-full transition-colors",
-          enabled ? "bg-amber-500" : "bg-stone-300"
-        )}
-      >
-        <span
-          className={cn(
-            "absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform",
-            enabled && "translate-x-5"
-          )}
-        />
-      </button>
-    );
-  }
-
-  function ComingSoonBadge() {
-    return (
-      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-600 border border-amber-200">
-        Soon
-      </span>
-    );
   }
 
   // ─── Tab content ─────────────────────────────────────────────────────────
@@ -566,17 +573,41 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             {/* A text field with a decimal keypad: <input type="number">
                 rejects decimals on some phone keyboards and in locales that
                 use a comma separator, which blocked rates like 3.6725. */}
-            <input
-              type="text"
-              inputMode="decimal"
-              autoComplete="off"
-              value={rateInputs[code] ?? ""}
-              onChange={(e) =>
-                setRateInputs((prev) => ({ ...prev, [code]: e.target.value }))
-              }
-              onBlur={() => handleRateBlur(code)}
-              className="h-8 w-28 px-2 text-sm text-right rounded-lg border border-stone-300 bg-white text-stone-700 focus:outline-none focus:border-amber-400"
-            />
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                value={rateInputs[code] ?? ""}
+                onChange={(e) =>
+                  setRateInputs((prev) => ({ ...prev, [code]: e.target.value }))
+                }
+                onBlur={() => handleRateSave(code)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleRateSave(code);
+                  }
+                }}
+                className="h-8 w-28 px-2 text-sm text-right rounded-lg border border-stone-300 bg-white text-stone-700 focus:outline-none focus:border-amber-400"
+              />
+              <button
+                type="button"
+                onClick={() => handleRateSave(code)}
+                disabled={
+                  savedRate !== code &&
+                  parseDecimal(rateInputs[code] ?? "") === rates[code]
+                }
+                className={cn(
+                  "h-8 px-2.5 text-xs font-medium rounded-lg border transition-colors",
+                  savedRate === code
+                    ? "border-green-300 bg-green-50 text-green-700"
+                    : "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-default",
+                )}
+              >
+                {savedRate === code ? "Saved" : "Save"}
+              </button>
+            </div>
           </SettingRow>
         ))}
 
