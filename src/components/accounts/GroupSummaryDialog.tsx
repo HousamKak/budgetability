@@ -136,7 +136,7 @@ export function GroupSummaryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="sm:max-w-3xl p-0 shadow-none bg-transparent">
         <DialogHeader className="sr-only">
           <DialogTitle>{group.name} — Combined Status</DialogTitle>
           <DialogDescription>

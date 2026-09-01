@@ -37,7 +37,9 @@ export function BudgetDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-5xl">
+      {/* The paper book supplies its own frame; strip the generic dialog
+          padding/shadow so no ghost rectangle shows behind it. */}
+      <DialogContent className="sm:max-w-5xl p-0 shadow-none bg-transparent">
         <DialogHeader className="sr-only">
           <DialogTitle>{monthLabel} Budget Details</DialogTitle>
           <DialogDescription>
