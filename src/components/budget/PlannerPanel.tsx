@@ -4,6 +4,7 @@ import { weekIndexOf } from "./utils";
 import { DraftView } from "./DraftView";
 import { WeekView } from "./WeekView";
 import { MonthView } from "./MonthView";
+import { CalculatorView } from "./CalculatorView";
 import { dataService, type Expense, type PlanItem, type DraftItem } from "@/lib/data-service";
 
 interface PlannerPanelProps {
@@ -37,7 +38,7 @@ export function PlannerPanel({
   onMarkPaid,
   onPlanAnimation,
 }: PlannerPanelProps) {
-  const [viewMode, setViewMode] = useState<'draft' | 'week' | 'month'>('draft');
+  const [viewMode, setViewMode] = useState<'draft' | 'week' | 'month' | 'calc'>('draft');
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
 
   // Load drafts from database on mount
@@ -120,12 +121,18 @@ export function PlannerPanel({
           </h2>
         </div>
 
-        {/* Three-way toggle selector */}
+        {/* Four-way toggle selector */}
         <div className="relative bg-amber-100/50 rounded-lg p-1">
           {/* Sliding background indicator */}
           <div
-            className={`absolute top-1 h-8 w-1/3 bg-white shadow-sm rounded-md transition-all duration-300 ease-in-out ${
-              viewMode === 'draft' ? 'left-1' : viewMode === 'week' ? 'left-1/3' : 'left-2/3'
+            className={`absolute top-1 h-8 w-1/4 bg-white shadow-sm rounded-md transition-all duration-300 ease-in-out ${
+              viewMode === 'draft'
+                ? 'left-1'
+                : viewMode === 'week'
+                  ? 'left-1/4'
+                  : viewMode === 'month'
+                    ? 'left-1/2'
+                    : 'left-3/4'
             }`}
           />
 
@@ -161,6 +168,16 @@ export function PlannerPanel({
             >
               Month
             </button>
+            <button
+              onClick={() => setViewMode('calc')}
+              className={`relative z-10 flex-1 h-8 text-sm font-medium rounded-md transition-colors duration-200 cursor-pointer ${
+                viewMode === 'calc'
+                  ? 'text-stone-900'
+                  : 'text-stone-600 hover:text-stone-800'
+              }`}
+            >
+              Calc
+            </button>
           </div>
         </div>
       </div>
@@ -189,6 +206,7 @@ export function PlannerPanel({
             onMarkPaid={onMarkPaid}
           />
         )}
+        {viewMode === 'calc' && <CalculatorView />}
         {viewMode === 'month' && (
           <MonthView
             year={year}
