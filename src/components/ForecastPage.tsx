@@ -47,7 +47,21 @@ type SourceFilter = "all" | "manual" | "linked" | "rules";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const CURRENT_MONTH_IDX = new Date().getMonth(); // 0..11, for the "now" marker
+const CURRENT_MONTH_KEY = `${CURRENT_YEAR}-${String(CURRENT_MONTH_IDX + 1).padStart(2, "0")}`;
 const START_KEY = "forecast-opening-balance";
+
+// The muted figure beside a rule month that carries a target. The main number
+// is whatever drives the forecast (real total for closed months, the plan from
+// the current month on); this is the other one. A month that has not started
+// shows nothing, there is no actual to compare yet.
+function ruleAside(f: ForecastFlow): string | null {
+  if (f.ruleTarget === undefined) return null;
+  const key = f.source?.monthKey ?? "";
+  if (key < CURRENT_MONTH_KEY) return `target ${formatCurrency(f.ruleTarget)}`;
+  if (key === CURRENT_MONTH_KEY)
+    return `actual ${formatCurrency(f.ruleActual ?? 0)}`;
+  return null;
+}
 
 // Where a line's number came from, by colour: amber for one you typed, sky for
 // one linked to a single record, teal for one computed from many. Violet stays
@@ -350,7 +364,7 @@ export default function ForecastPage() {
       const kind = SOURCE_LABEL[f.source.kind].toLowerCase();
       if (
         !confirm(
-          `Remove "${label}" from the forecast?\n\nThe ${kind} itself stays exactly where it is — this only unmarks it.`,
+          `Remove "${label}" from the forecast?\n\nThe ${kind} itself stays exactly where it is, this only unmarks it.`,
         )
       )
         return;
@@ -939,6 +953,14 @@ function FlowRow({
     : formatCurrency(amount);
   const linked = flow.source;
   const isRule = linked?.kind === "rule";
+  // On a rule's expanded month, the other figure (plan vs real); on the rule's
+  // own row, the plan per month. Never both — the def row carries no ruleTarget
+  // and the expansion carries no rule spec.
+  const aside =
+    ruleAside(flow) ??
+    (isRule && flow.rule?.targetValue !== undefined
+      ? `target ${formatCurrency(flow.rule.targetValue)}/mo`
+      : null);
   return (
     <div
       className={cn(
@@ -957,14 +979,14 @@ function FlowRow({
         title={
           flow.enabled
             ? isRule
-              ? "Counted every month — click to mute the whole rule"
+              ? "Counted every month. Click to mute the whole rule"
               : linked
-                ? "Counted in the forecast — click to mute"
+                ? "Counted in the forecast. Click to mute"
                 : "Enabled"
             : isRule
-              ? "Muted — the rule still exists, it just isn't counted"
+              ? "Muted. The rule still exists, it just isn't counted"
               : linked
-                ? "Muted — still linked, not counted"
+                ? "Muted. Still linked, not counted"
                 : "Disabled"
         }
       />
@@ -991,16 +1013,25 @@ function FlowRow({
           <span className="text-[11px] text-stone-400">{monthsLabel(flow.months)}</span>
         )}
       </div>
-      <span
-        className={cn(
-          "text-sm font-bold tabular-nums shrink-0",
-          flow.type === "in" ? "text-green-700" : "text-red-600",
+      <div className="shrink-0 text-right">
+        <span
+          className={cn(
+            "block text-sm font-bold tabular-nums",
+            flow.type === "in" ? "text-green-700" : "text-red-600",
+          )}
+        >
+          {flow.type === "in" ? "+" : "−"}
+          {amountLabel}
+        </span>
+        {aside && (
+          <span className="block text-[10px] tabular-nums text-teal-600">
+            {aside}
+          </span>
         )}
-      >
-        {flow.type === "in" ? "+" : "−"}
-        {amountLabel}
-      </span>
-      <div className="flex items-center gap-0.5 shrink-0 invisible group-hover/row:visible">
+      </div>
+      {/* Fixed width whether the row offers one action or two, so every
+          amount ends in the same column no matter where the flow came from. */}
+      <div className="flex items-center justify-end gap-0.5 shrink-0 w-[50px] invisible group-hover/row:visible">
         {/* Records linked one-by-one have no editable fields here — everything
             about them lives on the record. A rule's definition is editable. */}
         {(!linked || isRule) && (
@@ -1095,6 +1126,7 @@ function MonthlyPaymentsTable({ flows }: { flows: ForecastFlow[] }) {
                   const amount = f.uncertain
                     ? `${formatCurrency(Math.min(f.lowValue ?? 0, f.highValue ?? 0))} – ${formatCurrency(Math.max(f.lowValue ?? 0, f.highValue ?? 0))}`
                     : formatCurrency(Math.abs(f.value ?? 0));
+                  const aside = ruleAside(f);
                   return (
                     <div
                       key={f.id}
@@ -1128,6 +1160,11 @@ function MonthlyPaymentsTable({ flows }: { flows: ForecastFlow[] }) {
                         {f.type === "in" ? "+" : "−"}
                         {amount}
                       </div>
+                      {aside && (
+                        <div className="text-[9px] font-mono text-teal-600">
+                          {aside}
+                        </div>
+                      )}
                     </div>
                   );
                 })
@@ -1316,6 +1353,7 @@ function MonthlyLedger({
                 const amount = f.uncertain
                   ? `${formatCurrency(Math.min(f.lowValue ?? 0, f.highValue ?? 0))} – ${formatCurrency(Math.max(f.lowValue ?? 0, f.highValue ?? 0))}`
                   : formatCurrency(Math.abs(f.value ?? 0));
+                const aside = ruleAside(f);
                 return (
                   <div
                     key={f.id}
@@ -1339,6 +1377,11 @@ function MonthlyLedger({
                         <span className="text-[10px] text-amber-600 bg-amber-50 px-1 rounded shrink-0">±</span>
                       )}
                     </span>
+                    {aside && (
+                      <span className="text-[10px] tabular-nums text-teal-600 shrink-0">
+                        {aside}
+                      </span>
+                    )}
                     <span
                       className={cn(
                         "text-sm font-bold tabular-nums shrink-0",

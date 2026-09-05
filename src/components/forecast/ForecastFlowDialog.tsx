@@ -57,7 +57,7 @@ const RULE_SOURCES: {
 ];
 
 const PROJECTIONS: { key: ForecastProjection; label: string; hint: string }[] = [
-  { key: "none", label: "Nothing", hint: "Actuals only — a historical overlay" },
+  { key: "none", label: "Nothing", hint: "Actuals only, a historical overlay" },
   { key: "median", label: "Median", hint: "Typical recent month, ignores spikes" },
   { key: "average", label: "Average", hint: "Mean of recent months" },
   { key: "last", label: "Last month", hint: "Repeat the most recent month" },
@@ -90,6 +90,7 @@ export function ForecastFlowDialog({
   const [projection, setProjection] = useState<ForecastProjection>("none");
   const [projectionWindow, setProjectionWindow] = useState("3");
   const [fixedValue, setFixedValue] = useState("");
+  const [targetValue, setTargetValue] = useState("");
 
   // Member picking
   const [pickable, setPickable] = useState<PickableExpense[]>([]);
@@ -124,6 +125,7 @@ export function ForecastFlowDialog({
       setProjection(r?.projection ?? "none");
       setProjectionWindow(String(r?.projectionWindow ?? 3));
       setFixedValue(r?.fixedValue?.toString() ?? "");
+      setTargetValue(r?.targetValue?.toString() ?? "");
     } else {
       setName("");
       setYear(defaultYear);
@@ -142,6 +144,7 @@ export function ForecastFlowDialog({
       setProjection("none");
       setProjectionWindow("3");
       setFixedValue("");
+      setTargetValue("");
     }
     setPickable([]);
     setMemberIds([]);
@@ -366,6 +369,10 @@ export function ForecastFlowDialog({
             projectionWindow: Math.max(1, parseInt(projectionWindow, 10) || 3),
             fixedValue:
               projection === "fixed" ? parseFloat(fixedValue) || 0 : undefined,
+            targetValue:
+              !pickedMode && targetValue.trim() !== ""
+                ? Math.abs(parseFloat(targetValue) || 0)
+                : undefined,
           }
         : undefined,
     };
@@ -761,7 +768,7 @@ export function ForecastFlowDialog({
                                   taken
                                     ? "Already part of another grouped forecast line"
                                     : p.inForecast
-                                      ? "Marked on its own — picking it here moves it into this group"
+                                      ? "Marked on its own. Picking it here moves it into this group"
                                       : undefined
                                 }
                                 className={cn(
@@ -812,7 +819,7 @@ export function ForecastFlowDialog({
                   From accounts
                   <span className="ml-1.5 text-xs font-normal text-stone-400">
                     {ruleAccounts.length === 0
-                      ? "none picked — every account"
+                      ? "none picked, every account"
                       : `${ruleAccounts.length} picked`}
                   </span>
                 </Label>
@@ -850,7 +857,7 @@ export function ForecastFlowDialog({
                     Skip records already marked
                   </span>
                   <span className="block text-xs text-stone-500">
-                    Otherwise an item you marked counts twice — alone and in
+                    Otherwise an item you marked counts twice: alone and in
                     this total.
                   </span>
                 </span>
@@ -914,6 +921,31 @@ export function ForecastFlowDialog({
                     <span className="text-xs text-stone-500">every month</span>
                   </div>
                 )}
+              </div>
+
+              <div className="space-y-1.5 border-t border-teal-200/70 pt-2">
+                <Label className={cn("text-sm", paperTheme.fonts.handwriting)}>
+                  Monthly target (optional)
+                </Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-stone-500">I plan for</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={targetValue}
+                    onChange={(e) => setTargetValue(e.target.value)}
+                    placeholder="e.g. 1235"
+                    className="w-32 px-2 py-1 rounded-lg border-2 border-teal-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-400/50"
+                  />
+                  <span className="text-xs text-stone-500">every month</span>
+                </div>
+                <p className="text-xs text-stone-500">
+                  When set, the graph and forecast use this number from the
+                  current month on, and the real total shows beside it. Closed
+                  months keep what actually happened. Leave empty to forecast
+                  from the totals alone.
+                </p>
               </div>
               </>
               )}
