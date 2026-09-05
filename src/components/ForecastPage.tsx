@@ -255,6 +255,22 @@ export default function ForecastPage() {
     }
   };
 
+  // "Separate flow per month": the dialog hands back one flow per selected
+  // month; each is stored as its own record with its own id.
+  const handleSubmitFlowsSplit = async (
+    flows: Array<Omit<ForecastFlow, "id" | "sortOrder">>,
+  ) => {
+    try {
+      const base = manualFlows.length;
+      await dataService.addForecastFlows(
+        flows.map((f, i) => ({ ...f, sortOrder: base + i })),
+      );
+      await loadData();
+    } catch (e) {
+      console.error("Failed to save flows:", e);
+    }
+  };
+
   const handleImport = async (
     incoming: Array<Omit<ForecastFlow, "id">>,
   ) => {
@@ -753,6 +769,7 @@ export default function ForecastPage() {
             if (!o) setEditingFlow(undefined);
           }}
           onSubmit={handleSubmitFlow}
+          onSubmitSplit={handleSubmitFlowsSplit}
           editingFlow={editingFlow}
           defaultYear={year}
           accounts={accounts}
