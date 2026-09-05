@@ -28,6 +28,13 @@ interface ForecastFlowDialogProps {
     flow: Omit<ForecastFlow, "id" | "sortOrder">,
     memberIds?: string[],
   ) => void;
+  /**
+   * Used instead of onSubmit when "separate flow per month" is checked:
+   * one independent flow per selected month, editable and deletable alone.
+   */
+  onSubmitSplit?: (
+    flows: Array<Omit<ForecastFlow, "id" | "sortOrder">>,
+  ) => void;
   editingFlow?: ForecastFlow;
   defaultYear: number;
   accounts: Account[];
@@ -61,6 +68,7 @@ export function ForecastFlowDialog({
   open,
   onOpenChange,
   onSubmit,
+  onSubmitSplit,
   editingFlow,
   defaultYear,
   accounts,
@@ -142,6 +150,7 @@ export function ForecastFlowDialog({
     setFilterAccount("");
     setFilterCategory("");
     setPickedOnly(false);
+    setSplitPerMonth(false);
   }, [open, editingFlow, defaultYear]);
 
   // Direction follows the source for a computed flow: expenses and plans go
@@ -304,6 +313,10 @@ export function ForecastFlowDialog({
     return [...map.entries()].sort((a, b) => a[0] - b[0]);
   }, [filtered]);
 
+  // One record spanning the chosen months (default), or one independent flow
+  // per month so each can be edited or deleted on its own.
+  const [splitPerMonth, setSplitPerMonth] = useState(false);
+
   const toggleMonth = (m: number) =>
     setMonths((prev) =>
       prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m].sort((a, b) => a - b),
@@ -356,7 +369,17 @@ export function ForecastFlowDialog({
           }
         : undefined,
     };
-    onSubmit(flow, pickedMode ? memberIds : undefined);
+    if (
+      !isEditing &&
+      !pickedMode &&
+      splitPerMonth &&
+      effectiveMonths.length > 1 &&
+      onSubmitSplit
+    ) {
+      onSubmitSplit(effectiveMonths.map((m) => ({ ...flow, months: [m] })));
+    } else {
+      onSubmit(flow, pickedMode ? memberIds : undefined);
+    }
     onOpenChange(false);
   };
 
@@ -532,6 +555,23 @@ export function ForecastFlowDialog({
                 );
               })}
             </div>
+            {!isEditing && months.length > 1 && (
+              <label className="flex items-start gap-2 pt-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={splitPerMonth}
+                  onChange={(e) => setSplitPerMonth(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-amber-500 cursor-pointer"
+                />
+                <span className="text-xs text-stone-600">
+                  <span className="font-medium">Separate flow per month</span>
+                  <span className="block text-stone-400">
+                    Creates {months.length} individual flows, one per selected
+                    month, so each can be edited or deleted on its own.
+                  </span>
+                </span>
+              </label>
+            )}
           </div>
           )}
 
