@@ -587,6 +587,7 @@ export type Database = {
           rule_projection: string
           rule_projection_window: number
           rule_source: string | null
+          rule_target_value: number | null
           sort_order: number | null
           type: string
           uncertain: boolean
@@ -611,6 +612,7 @@ export type Database = {
           rule_projection?: string
           rule_projection_window?: number
           rule_source?: string | null
+          rule_target_value?: number | null
           sort_order?: number | null
           type: string
           uncertain?: boolean
@@ -635,6 +637,7 @@ export type Database = {
           rule_projection?: string
           rule_projection_window?: number
           rule_source?: string | null
+          rule_target_value?: number | null
           sort_order?: number | null
           type?: string
           uncertain?: boolean

@@ -112,6 +112,10 @@ export type ForecastRuleSpec = {
   projection: ForecastProjection;
   projectionWindow: number; // months of history the projection learns from
   fixedValue?: number;
+  // The committed plan number per month. When set, the current and future
+  // months forecast with this figure (the graph shows where you need to be)
+  // while the real total stays visible beside it.
+  targetValue?: number;
 };
 
 // Forecast flow type - a projected inflow/outflow across months of a year.
@@ -133,6 +137,11 @@ export type ForecastFlow = {
   source?: ForecastSource; // set only on linked (derived) flows
   // Present = this flow's amount is computed per month rather than typed.
   rule?: ForecastRuleSpec;
+  // Display-only, set on the months a rule with a target expands into: the
+  // real total and the plan number, so views can show both side by side.
+  // Never persisted.
+  ruleActual?: number;
+  ruleTarget?: number;
 };
 
 // Account Group type - a non-transactable "mother account" that groups several
@@ -4264,9 +4273,21 @@ export class DataService {
         if (m < 1 || m > 12) continue;
         const monthKey = `${year}-${String(m).padStart(2, "0")}`;
         const actual = byMonth.get(monthKey) ?? 0;
-        const value =
-          picked || monthKey <= currentMonthKey ? actual : projected;
+        const target = picked ? undefined : rule.targetValue;
+        // With a target set, the plan number drives the forecast from the
+        // current month forward; only closed months keep the real total.
+        // Without one, behaviour is unchanged: real totals through the
+        // current month, projection after.
+        let value: number;
+        if (picked) value = actual;
+        else if (target !== undefined && monthKey >= currentMonthKey)
+          value = target;
+        else if (monthKey <= currentMonthKey) value = actual;
+        else value = projected;
         out.push({
+          ...(target !== undefined
+            ? { ruleActual: actual, ruleTarget: target }
+            : {}),
           id: `rule:${def.id}:${monthKey}`,
           year,
           months: [m],
@@ -4633,6 +4654,10 @@ function ruleSpecFromRow(
       row.rule_fixed_value === null || row.rule_fixed_value === undefined
         ? undefined
         : Number(row.rule_fixed_value),
+    targetValue:
+      row.rule_target_value === null || row.rule_target_value === undefined
+        ? undefined
+        : Number(row.rule_target_value),
   };
 }
 
@@ -4652,6 +4677,7 @@ function ruleSpecToRow(
     rule_projection: rule.projection,
     rule_projection_window: rule.projectionWindow,
     rule_fixed_value: rule.fixedValue ?? null,
+    rule_target_value: rule.targetValue ?? null,
   };
 }
 
