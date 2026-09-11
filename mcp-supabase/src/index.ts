@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Budgetability MCP server — LIVE Supabase edition (stdio).
+ * Budgetability MCP server - LIVE Supabase edition (stdio).
  *
  * Operates on the production backend the web and mobile apps use, signed in
  * as your user, under RLS. Mirrors the apps' data-service semantics: balance
@@ -69,17 +69,28 @@ const json = (data: unknown) => ({
 
 const mk = (m?: string) => m ?? currentMonthKey();
 
+/** First day of the month after a "YYYY-MM" key, as an ISO date string. */
+function nextMonthStart(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
+}
+
 // ----------------------------------------------------------- row mappers
 
 const expenseJson = (r: Record<string, unknown>) => ({
   id: r.id,
   monthKey: r.month_key,
   date: r.date,
-  amount: Number(r.amount),
+  amount: Number(r.amount), // always in the base display currency
+  // What was really paid, when it was not the base currency
+  originalAmount: r.original_amount !== null ? Number(r.original_amount) : undefined,
+  originalCurrency: r.original_currency ?? undefined,
+  exchangeRate: r.exchange_rate !== null ? Number(r.exchange_rate) : undefined,
   category: r.category ?? undefined,
   categoryId: r.category_id ?? undefined,
   accountId: r.account_id ?? undefined,
   note: r.note ?? undefined,
+  inForecast: r.in_forecast ? true : undefined,
 });
 
 const planJson = (r: Record<string, unknown>) => ({
@@ -108,6 +119,15 @@ async function insertTx(
     savingsGoalId?: string;
     note?: string;
     inForecast?: boolean;
+    // Wallet currency snapshot: `currency` denominates `amount` (the balance
+    // it left); on cross-currency movements toAmount/toCurrency describe the
+    // destination side; baseAmount freezes the base-currency value at entry;
+    // exchangeRate is target units per 1 source unit.
+    currency?: string;
+    toAmount?: number;
+    toCurrency?: string;
+    baseAmount?: number;
+    exchangeRate?: number;
   },
 ): Promise<string> {
   const id = newId();
@@ -121,7 +141,12 @@ async function insertTx(
     month_key: tx.monthKey ?? null,
     savings_goal_id: tx.savingsGoalId ?? null,
     note: tx.note ?? null,
-    // Deposits only — a DB check constraint rejects the flag on other types.
+    currency: tx.currency ?? null,
+    to_amount: tx.toAmount !== undefined ? money(tx.toAmount) : null,
+    to_currency: tx.toCurrency ?? null,
+    base_amount: tx.baseAmount !== undefined ? money(tx.baseAmount) : null,
+    exchange_rate: tx.exchangeRate ?? null,
+    // Deposits only - a DB check constraint rejects the flag on other types.
     in_forecast: tx.inForecast ?? false,
   });
   check(error, "Recording account transaction failed");
@@ -153,10 +178,16 @@ tool(
     const totalSpent = money(expenses.reduce((s, e) => s + Number(e.amount), 0));
     const totalPlanned = money((planRes.data ?? []).reduce((s, p) => s + Number(p.amount), 0));
     const catName = new Map((catRes.data ?? []).map((c) => [c.id as string, c.name as string]));
+    // Old expenses carry free-text categories in mixed case ("groceries" vs
+    // "Groceries"). Fold case-insensitively and prefer the registry's casing.
+    const canonical = new Map(
+      (catRes.data ?? []).map((c) => [(c.name as string).toLowerCase(), c.name as string]),
+    );
     const byCategory = new Map<string, { total: number; count: number }>();
     for (const e of expenses) {
-      const name =
+      const raw =
         (e.category_id && catName.get(e.category_id)) || e.category || "Uncategorized";
+      const name = canonical.get(String(raw).toLowerCase()) ?? raw;
       const cur = byCategory.get(name) ?? { total: 0, count: 0 };
       cur.total = money(cur.total + Number(e.amount));
       cur.count += 1;
@@ -448,7 +479,7 @@ tool(
 
 tool(
   "update_plan",
-  "Edit a planned (unpaid) expense in place — change its amount, category, account, week, target date, or note. No balance effects (a plan only moves money when marked paid). Omitted fields are left unchanged.",
+  "Edit a planned (unpaid) expense in place - change its amount, category, account, week, target date, or note. No balance effects (a plan only moves money when marked paid). Omitted fields are left unchanged.",
   {
     monthKey: monthKeySchema,
     planId: z.string().uuid(),
@@ -606,29 +637,196 @@ tool(
   },
 );
 
+tool(
+  "update_category",
+  "Rename a category or change its color/icon. Expenses keep pointing at it by id.",
+  {
+    categoryId: z.string().uuid(),
+    name: z.string().min(1).optional(),
+    color: z.string().optional(),
+    icon: z.string().optional(),
+  },
+  async ({ categoryId, ...u }) => {
+    const userId = await ensureUserId();
+    const patch: Record<string, unknown> = {};
+    if (u.name !== undefined) patch.name = u.name;
+    if (u.color !== undefined) patch.color = u.color;
+    if (u.icon !== undefined) patch.icon = u.icon;
+    if (Object.keys(patch).length === 0) throw new Error("Nothing to update");
+    const { error, count } = await supabase
+      .from("categories")
+      .update(patch, { count: "exact" })
+      .eq("id", categoryId)
+      .eq("user_id", userId);
+    check(error, "Updating category failed");
+    if (!count) throw new Error("Category not found");
+    return json({ updated: categoryId });
+  },
+);
+
+tool(
+  "normalize_expense_categories",
+  "Bulk cleanup: attach expenses that only carry free-text categories to the matching registry category (case-insensitive), fixing splits like 'groceries' vs 'Groceries'. Optionally remap named categories to another (e.g. everything texted 'food' onto Groceries). Dry-run by default; pass apply: true to write.",
+  {
+    fromMonth: monthKeySchema.describe('Earliest month "YYYY-MM" (inclusive); defaults to all history'),
+    toMonth: monthKeySchema.describe('Latest month "YYYY-MM" (inclusive)'),
+    remap: z
+      .record(z.string())
+      .optional()
+      .describe('Extra text-to-category mappings, e.g. {"food": "Groceries"} (values are registry category names)'),
+    apply: z.boolean().optional().describe("Actually write the changes (default false: report only)"),
+  },
+  async ({ fromMonth, toMonth, remap, apply }) => {
+    const userId = await ensureUserId();
+    const { data: cats, error: catErr } = await supabase
+      .from("categories")
+      .select("id, name")
+      .eq("user_id", userId);
+    check(catErr, "Loading categories failed");
+    const byLower = new Map(
+      (cats ?? []).map((c) => [(c.name as string).toLowerCase(), { id: c.id as string, name: c.name as string }]),
+    );
+    for (const [from, to] of Object.entries(remap ?? {})) {
+      const target = byLower.get(to.toLowerCase());
+      if (!target) throw new Error(`remap target "${to}" is not a category`);
+      byLower.set(from.toLowerCase(), target);
+    }
+
+    let q = supabase
+      .from("expenses")
+      .select("id, month_key, category, category_id")
+      .eq("user_id", userId)
+      .is("category_id", null)
+      .not("category", "is", null);
+    if (fromMonth) q = q.gte("month_key", fromMonth);
+    if (toMonth) q = q.lte("month_key", toMonth);
+    const { data: rows, error } = await q.limit(5000);
+    check(error, "Loading expenses failed");
+
+    const planned = new Map<string, { name: string; ids: string[] }>();
+    const unmatched = new Map<string, number>();
+    for (const r of rows ?? []) {
+      const target = byLower.get(String(r.category).toLowerCase());
+      if (!target) {
+        const key = String(r.category);
+        unmatched.set(key, (unmatched.get(key) ?? 0) + 1);
+        continue;
+      }
+      const cur = planned.get(target.id) ?? { name: target.name, ids: [] };
+      cur.ids.push(r.id as string);
+      planned.set(target.id, cur);
+    }
+
+    if (apply) {
+      for (const [categoryId, { name, ids }] of planned) {
+        // Chunk the id list so the request stays well under URL limits.
+        for (let i = 0; i < ids.length; i += 100) {
+          const chunk = ids.slice(i, i + 100);
+          const { error: upErr } = await supabase
+            .from("expenses")
+            .update({ category_id: categoryId, category: name })
+            .eq("user_id", userId)
+            .in("id", chunk);
+          check(upErr, `Normalizing to ${name} failed`);
+        }
+      }
+    }
+
+    return json({
+      applied: !!apply,
+      scanned: rows?.length ?? 0,
+      changes: [...planned.entries()].map(([categoryId, v]) => ({
+        categoryId,
+        category: v.name,
+        expenses: v.ids.length,
+      })),
+      unmatchedTexts: [...unmatched.entries()].map(([text, count]) => ({ text, count })),
+    });
+  },
+);
+
 // ----------------------------------------------------------------- accounts
 
 tool(
   "list_accounts",
-  "List accounts with their current balances.",
+  "List wallet accounts: the currencies each holds, its balance per currency, and the total converted to the base display currency at the user's exchange rates.",
   {},
   async () => {
     const userId = await ensureUserId();
-    const { data, error } = await supabase
-      .from("accounts")
-      .select("id, name, account_type, current_balance, is_default, color, icon")
-      .eq("user_id", userId)
-      .order("sort_order");
-    check(error, "Loading accounts failed");
+    const [accRes, balRes, setRes, rateRes] = await Promise.all([
+      supabase
+        .from("accounts")
+        .select("id, name, account_type, currency, currencies, is_default, color, icon")
+        .eq("user_id", userId)
+        .order("sort_order"),
+      supabase
+        .from("account_balances")
+        .select("account_id, currency, current_balance, initial_balance")
+        .eq("user_id", userId),
+      supabase.from("user_settings").select("base_currency").eq("user_id", userId).maybeSingle(),
+      supabase.from("exchange_rates").select("currency, rate").eq("user_id", userId),
+    ]);
+    check(accRes.error, "Loading accounts failed");
+    check(balRes.error, "Loading account balances failed");
+    check(setRes.error, "Loading settings failed");
+    check(rateRes.error, "Loading exchange rates failed");
+
+    const baseCurrency = (setRes.data?.base_currency as string) ?? "USD";
+    // rate = units of the currency per 1 base unit; base itself is 1.
+    const perBase = new Map<string, number>([[baseCurrency, 1]]);
+    for (const r of rateRes.data ?? []) perBase.set(r.currency as string, Number(r.rate));
+
+    const byAccount = new Map<string, Record<string, number>>();
+    for (const b of balRes.data ?? []) {
+      const cur = byAccount.get(b.account_id as string) ?? {};
+      cur[b.currency as string] = Number(b.current_balance);
+      byAccount.set(b.account_id as string, cur);
+    }
+
     return json({
-      accounts: (data ?? []).map((a) => ({
-        id: a.id,
-        name: a.name,
-        accountType: a.account_type,
-        currentBalance: Number(a.current_balance),
-        isDefault: !!a.is_default,
-        color: a.color ?? undefined,
-        icon: a.icon ?? undefined,
+      baseCurrency,
+      accounts: (accRes.data ?? []).map((a) => {
+        const balances = byAccount.get(a.id as string) ?? {};
+        let baseTotal = 0;
+        for (const [cur, amt] of Object.entries(balances)) {
+          const rate = perBase.get(cur);
+          baseTotal += rate ? amt / rate : 0;
+        }
+        return {
+          id: a.id,
+          name: a.name,
+          accountType: a.account_type,
+          primaryCurrency: a.currency,
+          currencies: a.currencies ?? [a.currency],
+          balances, // native amount per currency
+          baseBalance: money(baseTotal), // everything converted to baseCurrency
+          isDefault: !!a.is_default,
+          color: a.color ?? undefined,
+          icon: a.icon ?? undefined,
+        };
+      }),
+    });
+  },
+);
+
+tool(
+  "get_currency_settings",
+  "Get the base display currency and the user's default exchange rates (units of each currency per 1 base unit). Per-transaction rate overrides are snapshotted on the transactions themselves.",
+  {},
+  async () => {
+    const userId = await ensureUserId();
+    const [setRes, rateRes] = await Promise.all([
+      supabase.from("user_settings").select("base_currency").eq("user_id", userId).maybeSingle(),
+      supabase.from("exchange_rates").select("currency, rate, updated_at").eq("user_id", userId),
+    ]);
+    check(setRes.error, "Loading settings failed");
+    check(rateRes.error, "Loading exchange rates failed");
+    return json({
+      baseCurrency: (setRes.data?.base_currency as string) ?? "USD",
+      rates: (rateRes.data ?? []).map((r) => ({
+        currency: r.currency,
+        ratePerBase: Number(r.rate),
+        updatedAt: r.updated_at ?? undefined,
       })),
     });
   },
@@ -663,10 +861,22 @@ tool(
 
 tool(
   "deposit",
-  "Deposit money into an account. This is the app's income event.",
+  "Deposit money into an account. This is the app's income event. Amount is in `currency` (defaults to the account's primary currency in a wallet, or the base currency).",
   {
     accountId: z.string().uuid(),
     amount: z.number().positive(),
+    currency: z
+      .string()
+      .length(3)
+      .optional()
+      .describe('Currency of the amount, e.g. "USD", "AED", "LBP". Must be one the account holds.'),
+    exchangeRate: z
+      .number()
+      .positive()
+      .optional()
+      .describe(
+        "Override rate for this transaction: base units per 1 unit of `currency` (e.g. ~0.2717 for AED when 1 USD = 3.68 AED). Defaults to the Settings rate.",
+      ),
     note: z.string().optional(),
     inForecast: z
       .boolean()
@@ -675,30 +885,66 @@ tool(
         "Mark 'Show in Forecast': the income also appears on the Forecast page as an inflow in the month it's recorded. Off unless set.",
       ),
   },
-  async ({ accountId, amount, note, inForecast }) => {
+  async ({ accountId, amount, currency, exchangeRate, note, inForecast }) => {
     const userId = await ensureUserId();
+    // Snapshot the base value at entry, so later rate edits never rewrite
+    // history. Stored exchange_rate follows the app's convention: target
+    // (base) units per 1 source (currency) unit.
+    let baseAmount: number | undefined;
+    if (currency) {
+      const [setRes, rateRes] = await Promise.all([
+        supabase.from("user_settings").select("base_currency").eq("user_id", userId).maybeSingle(),
+        supabase.from("exchange_rates").select("rate").eq("user_id", userId).eq("currency", currency).maybeSingle(),
+      ]);
+      const base = (setRes.data?.base_currency as string) ?? "USD";
+      // Settings store currency-per-base; invert to base-per-currency.
+      const settingsRate = rateRes.data ? 1 / Number(rateRes.data.rate) : undefined;
+      const rate = currency === base ? 1 : exchangeRate ?? settingsRate;
+      if (!rate) throw new Error(`No exchange rate known for ${currency}; pass exchangeRate`);
+      exchangeRate = rate;
+      baseAmount = amount * rate;
+    }
     const txId = await insertTx(userId, {
       toAccountId: accountId,
       amount,
       type: "deposit",
       note: note ?? "Deposit",
       inForecast,
+      currency,
+      baseAmount,
+      exchangeRate,
     });
-    return json({ transactionId: txId });
+    return json({ transactionId: txId, baseAmount: baseAmount !== undefined ? money(baseAmount) : undefined });
   },
 );
 
 tool(
   "transfer",
-  "Transfer money between two accounts.",
+  "Transfer money between two accounts, or between two currencies of the same wallet account (pass the same account with different currency/toCurrency). Amount is in `currency`; toAmount in `toCurrency` for cross-currency moves.",
   {
     fromAccountId: z.string().uuid(),
     toAccountId: z.string().uuid(),
     amount: z.number().positive(),
+    currency: z.string().length(3).optional().describe("Currency the amount leaves in"),
+    toAmount: z
+      .number()
+      .positive()
+      .optional()
+      .describe("Amount arriving on the destination side (cross-currency moves)"),
+    toCurrency: z.string().length(3).optional().describe("Currency the money arrives in"),
+    exchangeRate: z
+      .number()
+      .positive()
+      .optional()
+      .describe("Rate used for this transaction: toCurrency units per 1 source unit"),
     note: z.string().optional(),
   },
-  async ({ fromAccountId, toAccountId, amount, note }) => {
-    if (fromAccountId === toAccountId) throw new Error("Cannot transfer to the same account");
+  async ({ fromAccountId, toAccountId, amount, currency, toAmount, toCurrency, exchangeRate, note }) => {
+    const crossCurrency = toCurrency !== undefined && toCurrency !== currency;
+    if (fromAccountId === toAccountId && !crossCurrency)
+      throw new Error("Cannot transfer to the same account (same-account moves must change currency)");
+    if (crossCurrency && toAmount === undefined && exchangeRate === undefined)
+      throw new Error("Cross-currency transfer needs toAmount or exchangeRate");
     const userId = await ensureUserId();
     const txId = await insertTx(userId, {
       fromAccountId,
@@ -706,6 +952,10 @@ tool(
       amount,
       type: "transfer",
       note: note ?? "Transfer",
+      currency,
+      toCurrency,
+      toAmount: crossCurrency ? toAmount ?? money(amount * exchangeRate!) : undefined,
+      exchangeRate,
     });
     return json({ transactionId: txId });
   },
@@ -734,7 +984,13 @@ tool(
     let q = supabase.from("account_transactions").select("*").eq("user_id", userId);
     if (accountId) q = q.or(`from_account_id.eq.${accountId},to_account_id.eq.${accountId}`);
     if (type) q = q.eq("transaction_type", type);
-    if (monthKey) q = q.eq("month_key", monthKey);
+    // Deposits and transfers carry no month_key; match them by created_at so a
+    // month filter actually returns the month's income.
+    if (monthKey) {
+      q = q.or(
+        `month_key.eq.${monthKey},and(month_key.is.null,created_at.gte.${monthKey}-01,created_at.lt.${nextMonthStart(monthKey)})`,
+      );
+    }
     const { data, error } = await q
       .order("created_at", { ascending: false })
       .limit(limit ?? 200);
@@ -745,10 +1001,16 @@ tool(
         fromAccountId: r.from_account_id ?? undefined,
         toAccountId: r.to_account_id ?? undefined,
         amount: Number(r.amount),
+        currency: r.currency ?? undefined,
+        toAmount: r.to_amount !== null ? Number(r.to_amount) : undefined,
+        toCurrency: r.to_currency ?? undefined,
+        baseAmount: r.base_amount !== null ? Number(r.base_amount) : undefined,
+        exchangeRate: r.exchange_rate !== null ? Number(r.exchange_rate) : undefined,
         transactionType: r.transaction_type,
         monthKey: r.month_key ?? undefined,
         savingsGoalId: r.savings_goal_id ?? undefined,
         note: r.note ?? undefined,
+        inForecast: r.in_forecast ? true : undefined,
         createdAt: r.created_at,
       })),
     });
@@ -886,7 +1148,7 @@ tool(
     const userId = await ensureUserId();
     const amt = money(amount);
     // Contribution row (DB trigger advances the goal), then the account
-    // transaction (DB trigger deducts the balance) — the app's order.
+    // transaction (DB trigger deducts the balance) - the app's order.
     const { error } = await supabase.from("savings_contributions").insert({
       id: newId(),
       user_id: userId,
@@ -909,50 +1171,167 @@ tool(
 
 // ----------------------------------------------------------------- forecast
 
+const forecastFlowJson = (r: Record<string, unknown>) => ({
+  id: r.id,
+  year: r.year,
+  months: r.months ?? [],
+  type: r.type,
+  name: r.name ?? undefined,
+  uncertain: !!r.uncertain,
+  value: r.value !== null ? Number(r.value) : undefined,
+  lowValue: r.low_value !== null ? Number(r.low_value) : undefined,
+  highValue: r.high_value !== null ? Number(r.high_value) : undefined,
+  isGhost: !!r.is_ghost,
+  enabled: !!r.enabled,
+  // Computed (rule) flows: no stored amount, the months are totalled from real
+  // records instead. rule.targetValue is the committed monthly plan number
+  // that drives the forecast from the current month on.
+  rule: r.rule_source
+    ? {
+        source: r.rule_source,
+        accountIds: r.rule_account_ids ?? [],
+        categoryIds: r.rule_category_ids ?? [],
+        excludeLinked: r.rule_exclude_linked !== false,
+        projection: r.rule_projection ?? "none",
+        projectionWindow: Number(r.rule_projection_window ?? 3),
+        fixedValue: r.rule_fixed_value !== null ? Number(r.rule_fixed_value) : undefined,
+        targetValue: r.rule_target_value !== null ? Number(r.rule_target_value) : undefined,
+      }
+    : undefined,
+});
+
+const ruleShape = {
+  ruleSource: z
+    .enum(["expenses", "deposits", "plans", "picked"])
+    .optional()
+    .describe("Makes this a computed flow: total real records per month instead of typing an amount"),
+  ruleAccountIds: z.array(z.string().uuid()).optional().describe("Restrict the rule to these accounts (empty = all)"),
+  ruleCategoryIds: z.array(z.string().uuid()).optional().describe("Restrict the rule to these categories (empty = all)"),
+  ruleExcludeLinked: z.boolean().optional().describe("Skip records already marked on the forecast individually (default true)"),
+  ruleProjection: z.enum(["none", "average", "median", "last", "fixed"]).optional(),
+  ruleProjectionWindow: z.number().int().min(1).max(24).optional(),
+  ruleFixedValue: z.number().optional(),
+  ruleTargetValue: z
+    .number()
+    .optional()
+    .describe("Committed monthly plan number: drives the forecast and graph from the current month on, with the real total shown beside it"),
+};
+
+function ruleColumns(b: {
+  ruleSource?: string;
+  ruleAccountIds?: string[];
+  ruleCategoryIds?: string[];
+  ruleExcludeLinked?: boolean;
+  ruleProjection?: string;
+  ruleProjectionWindow?: number;
+  ruleFixedValue?: number;
+  ruleTargetValue?: number;
+}): Record<string, unknown> {
+  if (!b.ruleSource) return {};
+  return {
+    rule_source: b.ruleSource,
+    rule_account_ids: b.ruleAccountIds ?? [],
+    rule_category_ids: b.ruleCategoryIds ?? [],
+    rule_exclude_linked: b.ruleExcludeLinked ?? true,
+    rule_projection: b.ruleProjection ?? "none",
+    rule_projection_window: b.ruleProjectionWindow ?? 3,
+    rule_fixed_value: b.ruleFixedValue ?? null,
+    rule_target_value: b.ruleTargetValue ?? null,
+  };
+}
+
 tool(
   "list_forecast_flows",
-  "List cash-flow forecast entries (recurring ins/outs by year and month, with uncertainty ranges).",
+  "List cash-flow forecast entries for a year: typed flows, computed (rule) flows with their rule spec and monthly target, and the real records linked onto the forecast (expenses, plans, deposits marked 'Show in Forecast').",
   { year: z.number().int().optional() },
   async ({ year }) => {
     const userId = await ensureUserId();
-    let q = supabase.from("forecast_flows").select("*").eq("user_id", userId);
-    if (year !== undefined) q = q.eq("year", year);
-    const { data, error } = await q.order("sort_order");
-    check(error, "Loading forecast flows failed");
+    const y = year ?? new Date().getFullYear();
+    let q = supabase.from("forecast_flows").select("*").eq("user_id", userId).eq("year", y);
+    const [flowRes, expRes, planRes, depRes] = await Promise.all([
+      q.order("sort_order"),
+      supabase
+        .from("expenses")
+        .select("id, date, amount, note, category, forecast_enabled")
+        .eq("user_id", userId)
+        .eq("in_forecast", true)
+        .gte("month_key", `${y}-01`)
+        .lte("month_key", `${y}-12`),
+      supabase
+        .from("plans")
+        .select("id, month_key, target_date, amount, note, category, forecast_enabled")
+        .eq("user_id", userId)
+        .eq("in_forecast", true)
+        .gte("month_key", `${y}-01`)
+        .lte("month_key", `${y}-12`),
+      supabase
+        .from("account_transactions")
+        .select("id, amount, base_amount, note, created_at, forecast_enabled")
+        .eq("user_id", userId)
+        .eq("transaction_type", "deposit")
+        .eq("in_forecast", true)
+        .gte("created_at", `${y}-01-01`)
+        .lt("created_at", `${y + 1}-01-01`),
+    ]);
+    check(flowRes.error, "Loading forecast flows failed");
+    check(expRes.error, "Loading linked expenses failed");
+    check(planRes.error, "Loading linked plans failed");
+    check(depRes.error, "Loading linked deposits failed");
     return json({
-      flows: (data ?? []).map((r) => ({
-        id: r.id,
-        year: r.year,
-        months: r.months ?? [],
-        type: r.type,
-        name: r.name ?? undefined,
-        uncertain: !!r.uncertain,
-        value: r.value !== null ? Number(r.value) : undefined,
-        lowValue: r.low_value !== null ? Number(r.low_value) : undefined,
-        highValue: r.high_value !== null ? Number(r.high_value) : undefined,
-        isGhost: !!r.is_ghost,
-        enabled: !!r.enabled,
-      })),
+      year: y,
+      flows: (flowRes.data ?? []).map(forecastFlowJson),
+      linked: [
+        ...(expRes.data ?? []).map((r) => ({
+          kind: "expense",
+          id: r.id,
+          month: Number(String(r.date).slice(5, 7)),
+          type: "out",
+          amount: Number(r.amount),
+          name: r.note ?? r.category ?? "Expense",
+          enabled: r.forecast_enabled !== false,
+        })),
+        ...(planRes.data ?? []).map((r) => ({
+          kind: "plan",
+          id: r.id,
+          month: Number(String(r.target_date ?? `${r.month_key}-01`).slice(5, 7)),
+          type: "out",
+          amount: Number(r.amount),
+          name: r.note ?? r.category ?? "Plan",
+          enabled: r.forecast_enabled !== false,
+        })),
+        ...(depRes.data ?? []).map((r) => ({
+          kind: "deposit",
+          id: r.id,
+          month: Number(String(r.created_at).slice(5, 7)),
+          type: "in",
+          amount: r.base_amount !== null ? Number(r.base_amount) : Number(r.amount),
+          name: r.note ?? "Income",
+          enabled: r.forecast_enabled !== false,
+        })),
+      ],
     });
   },
 );
 
 tool(
   "add_forecast_flow",
-  "Add a forecast cash flow: money in or out, in specific months of a year, certain (value) or uncertain (lowValue..highValue).",
+  "Add a forecast cash flow: money in or out, in specific months of a year, certain (value) or uncertain (lowValue..highValue). Pass ruleSource to create a computed flow that totals real records per month instead (with an optional monthly target).",
   {
     year: z.number().int(),
     months: z.array(z.number().int().min(1).max(12)).describe("Months 1-12 the flow occurs in"),
     type: z.enum(["in", "out"]),
     name: z.string().optional(),
-    value: z.number().optional().describe("Certain amount"),
+    value: z.number().optional().describe("Certain amount (ignored for computed flows)"),
     uncertain: z.boolean().optional(),
     lowValue: z.number().optional(),
     highValue: z.number().optional(),
+    isGhost: z.boolean().optional().describe("Hypothetical what-if flow"),
+    ...ruleShape,
   },
   async (b) => {
     const userId = await ensureUserId();
     const id = newId();
+    const computed = !!b.ruleSource;
     const { error } = await supabase.from("forecast_flows").insert({
       id,
       user_id: userId,
@@ -960,13 +1339,76 @@ tool(
       months: b.months,
       type: b.type,
       name: b.name ?? null,
-      uncertain: b.uncertain ?? false,
-      value: b.value ?? null,
-      low_value: b.lowValue ?? null,
-      high_value: b.highValue ?? null,
+      uncertain: computed ? false : b.uncertain ?? false,
+      value: computed ? null : b.value ?? null,
+      low_value: computed ? null : b.lowValue ?? null,
+      high_value: computed ? null : b.highValue ?? null,
+      is_ghost: b.isGhost ?? false,
+      ...ruleColumns(b),
     });
     check(error, "Creating forecast flow failed");
     return json({ id, ...b });
+  },
+);
+
+tool(
+  "update_forecast_flow",
+  "Update a forecast flow: amount, months, name, on/off, or its rule settings (including the monthly target). Omitted fields are left unchanged.",
+  {
+    flowId: z.string().uuid(),
+    months: z.array(z.number().int().min(1).max(12)).optional(),
+    name: z.string().optional(),
+    value: z.number().optional(),
+    lowValue: z.number().optional(),
+    highValue: z.number().optional(),
+    enabled: z.boolean().optional(),
+    ...ruleShape,
+  },
+  async ({ flowId, ...u }) => {
+    const userId = await ensureUserId();
+    const patch: Record<string, unknown> = {};
+    if (u.months !== undefined) patch.months = u.months;
+    if (u.name !== undefined) patch.name = u.name;
+    if (u.value !== undefined) patch.value = money(u.value);
+    if (u.lowValue !== undefined) patch.low_value = money(u.lowValue);
+    if (u.highValue !== undefined) patch.high_value = money(u.highValue);
+    if (u.enabled !== undefined) patch.enabled = u.enabled;
+    // Rule fields patch individually so a target can be set without restating
+    // the whole rule.
+    if (u.ruleSource !== undefined) patch.rule_source = u.ruleSource;
+    if (u.ruleAccountIds !== undefined) patch.rule_account_ids = u.ruleAccountIds;
+    if (u.ruleCategoryIds !== undefined) patch.rule_category_ids = u.ruleCategoryIds;
+    if (u.ruleExcludeLinked !== undefined) patch.rule_exclude_linked = u.ruleExcludeLinked;
+    if (u.ruleProjection !== undefined) patch.rule_projection = u.ruleProjection;
+    if (u.ruleProjectionWindow !== undefined) patch.rule_projection_window = u.ruleProjectionWindow;
+    if (u.ruleFixedValue !== undefined) patch.rule_fixed_value = u.ruleFixedValue;
+    if (u.ruleTargetValue !== undefined) patch.rule_target_value = u.ruleTargetValue;
+    if (Object.keys(patch).length === 0) throw new Error("Nothing to update");
+    const { error, count } = await supabase
+      .from("forecast_flows")
+      .update(patch, { count: "exact" })
+      .eq("id", flowId)
+      .eq("user_id", userId);
+    check(error, "Updating forecast flow failed");
+    if (!count) throw new Error("Forecast flow not found");
+    return json({ updated: flowId });
+  },
+);
+
+tool(
+  "delete_forecast_flow",
+  "Delete a forecast flow (typed or computed). Real records a rule was totalling are not touched.",
+  { flowId: z.string().uuid() },
+  async ({ flowId }) => {
+    const userId = await ensureUserId();
+    const { error, count } = await supabase
+      .from("forecast_flows")
+      .delete({ count: "exact" })
+      .eq("id", flowId)
+      .eq("user_id", userId);
+    check(error, "Deleting forecast flow failed");
+    if (!count) throw new Error("Forecast flow not found");
+    return json({ deleted: flowId });
   },
 );
 
@@ -978,7 +1420,7 @@ console.error("budgetability-live MCP server running (stdio, Supabase backend)")
 
 // Register with H exactly like comms-hub: announce the stdio launch spec to H's
 // MCP registry on startup + on a TTL timer. H then spawns this server into every
-// agent/terminal, and each spawned instance re-announces — so the entry stays
+// agent/terminal, and each spawned instance re-announces - so the entry stays
 // `up` resiliently instead of dying with one standalone heartbeat process.
 startHAnnounce(3600);
 
@@ -987,7 +1429,7 @@ startRegistryAnnouncer({
   name: SERVER_NAME,
   version: SERVER_VERSION,
   description:
-    "Budgetability live MCP server — operates on the production Supabase backend as the signed-in user (RLS enforced). Budgets, expenses, plans, envelope accounts, savings goals, forecast.",
+    "Budgetability live MCP server - operates on the production Supabase backend as the signed-in user (RLS enforced). Budgets, expenses, plans, envelope accounts, savings goals, forecast.",
   tags: ["budgetability", "budget", "finance", "supabase", "live"],
   env: [
     { name: "SUPABASE_EMAIL", required: true, description: "Budgetability account email" },
