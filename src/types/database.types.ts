@@ -874,16 +874,19 @@ export type Database = {
       user_settings: {
         Row: {
           base_currency: string
+          forecast_opening_balance: number | null
           updated_at: string | null
           user_id: string
         }
         Insert: {
           base_currency?: string
+          forecast_opening_balance?: number | null
           updated_at?: string | null
           user_id: string
         }
         Update: {
           base_currency?: string
+          forecast_opening_balance?: number | null
           updated_at?: string | null
           user_id?: string
         }

@@ -114,8 +114,32 @@ export default function ForecastPage() {
   // loaded once; switching years is pure recomputation, no refetch.
   useEffect(() => {
     loadData();
+    syncStartBalance();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The opening balance lives in user_settings so every device shows the same
+  // forecast. localStorage is only the instant first paint and the one-time
+  // seed for accounts that never saved it to the cloud.
+  async function syncStartBalance() {
+    try {
+      const cloud = await dataService.getForecastOpeningBalance();
+      if (cloud !== null) {
+        setStartBalance(cloud);
+        try {
+          localStorage.setItem(START_KEY, String(cloud));
+        } catch {
+          /* ignore */
+        }
+      } else {
+        const raw = localStorage.getItem(START_KEY);
+        const n = raw == null ? NaN : parseFloat(raw);
+        if (Number.isFinite(n)) await dataService.setForecastOpeningBalance(n);
+      }
+    } catch (e) {
+      console.warn("Opening balance sync failed:", e);
+    }
+  }
 
   async function loadData() {
     try {
@@ -165,6 +189,7 @@ export default function ForecastPage() {
     } catch {
       /* ignore */
     }
+    void dataService.setForecastOpeningBalance(value);
   };
 
   const model = useMemo(

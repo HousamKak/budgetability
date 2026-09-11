@@ -292,6 +292,8 @@ export type Store = {
   forecastFlows: ForecastFlow[];
   settings: { baseCurrency: CurrencyCode };
   exchangeRates: ExchangeRates;
+  // Offline mirror of user_settings.forecast_opening_balance.
+  forecastOpeningBalance?: number;
 };
 
 // Default categories seed data
@@ -585,6 +587,55 @@ export class DataService {
     }
 
     this.localStore.settings = { baseCurrency: code };
+    saveStoreToLocalStorage(this.localStore);
+  }
+
+  // Forecast opening balance: one number per user in user_settings, shared
+  // across devices. null = never saved anywhere; the forecast page uses that
+  // to seed the cloud once from the old per-device localStorage value.
+  async getForecastOpeningBalance(): Promise<number | null> {
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser();
+        if (user) {
+          const { data, error } = await supabase
+            .from("user_settings")
+            .select("forecast_opening_balance")
+            .eq("user_id", user.id)
+            .maybeSingle();
+          if (error) throw error;
+          const v = data?.forecast_opening_balance;
+          if (v !== null && v !== undefined) {
+            // Mirror locally so offline sessions keep the same view.
+            this.localStore.forecastOpeningBalance = Number(v);
+            saveStoreToLocalStorage(this.localStore);
+            return Number(v);
+          }
+          return null;
+        }
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+      }
+    }
+    return this.localStore.forecastOpeningBalance ?? null;
+  }
+
+  async setForecastOpeningBalance(value: number): Promise<void> {
+    if (this.useSupabase && supabase) {
+      try {
+        const user = await this.getCurrentUser();
+        if (!user) throw new Error("Not authenticated");
+        const { error } = await supabase.from("user_settings").upsert({
+          user_id: user.id,
+          forecast_opening_balance: value,
+          updated_at: new Date().toISOString(),
+        });
+        if (error) throw error;
+      } catch (error) {
+        console.warn("Supabase error, falling back to localStorage:", error);
+      }
+    }
+    this.localStore.forecastOpeningBalance = value;
     saveStoreToLocalStorage(this.localStore);
   }
 
