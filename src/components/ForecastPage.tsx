@@ -110,10 +110,12 @@ export default function ForecastPage() {
   const [startBalance, setStartBalance] = useState<number>(loadStartBalance);
   const [showStartDialog, setShowStartDialog] = useState(false);
 
-  // Rules are evaluated against the year on screen, so a year change reloads.
+  // Everything (typed, linked, and rule expansions for every rule year) is
+  // loaded once; switching years is pure recomputation, no refetch.
   useEffect(() => {
     loadData();
-  }, [year]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function loadData() {
     try {
@@ -128,7 +130,15 @@ export default function ForecastPage() {
       setRuleDefs(defs);
       setLinkedFlows(linked);
       setAccounts(accts);
-      setRuleFlows(await dataService.evaluateRuleFlows(defs, year));
+      // Expand rules for every year they exist in, not just the year on
+      // screen. Next year's opening balance rolls the previous year's net
+      // forward, and that net must include what the rules totalled; expanding
+      // only the visible year silently dropped them from the carry-over.
+      const ruleYears = [...new Set(defs.map((d) => d.year))];
+      const expansions = await Promise.all(
+        ruleYears.map((y) => dataService.evaluateRuleFlows(defs, y)),
+      );
+      setRuleFlows(expansions.flat());
     } catch (e) {
       console.error("Failed to load forecast:", e);
     } finally {
