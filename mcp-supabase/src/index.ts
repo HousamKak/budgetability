@@ -833,6 +833,41 @@ tool(
 );
 
 tool(
+  "get_forecast_opening_balance",
+  "Get the forecast's manual opening balance (user_settings.forecast_opening_balance). This is the number the forecast builds from at January of its base year; each later year's opening carries the previous year's net forward from it. null = never saved to the cloud (a device may still hold an old local value).",
+  {},
+  async () => {
+    const userId = await ensureUserId();
+    const { data, error } = await supabase
+      .from("user_settings")
+      .select("forecast_opening_balance")
+      .eq("user_id", userId)
+      .maybeSingle();
+    check(error, "Loading settings failed");
+    const v = data?.forecast_opening_balance;
+    return json({
+      openingBalance: v === null || v === undefined ? null : Number(v),
+    });
+  },
+);
+
+tool(
+  "set_forecast_opening_balance",
+  "Set the forecast's manual opening balance. Applies at January of the forecast's base year and rolls through every later year; all devices see it.",
+  { value: z.number() },
+  async ({ value }) => {
+    const userId = await ensureUserId();
+    const { error } = await supabase.from("user_settings").upsert({
+      user_id: userId,
+      forecast_opening_balance: money(value),
+      updated_at: new Date().toISOString(),
+    });
+    check(error, "Saving opening balance failed");
+    return json({ openingBalance: money(value) });
+  },
+);
+
+tool(
   "create_account",
   "Create an account (checking, savings, credit, cash, or other) with an opening balance.",
   {
