@@ -818,8 +818,10 @@ function DrillDownPanel({
   items: DrillDownItem[];
   onClose: () => void;
 }) {
+  // Base-currency amounts throughout, matching the cell and the line items;
+  // tx.amount is native to the deposit's currency.
   const total = items.reduce((s, it) => {
-    if (it.kind === "deposit") return s + it.tx.amount;
+    if (it.kind === "deposit") return s + (it.tx.baseAmount ?? it.tx.amount);
     return s + it.expense.amount;
   }, 0);
 

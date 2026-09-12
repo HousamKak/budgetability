@@ -3260,20 +3260,32 @@ export class DataService {
   ): Promise<AccountTransaction[]> {
     if (this.useSupabase && supabase) {
       try {
-        let query = supabase
-          .from("account_transactions")
-          .select("*")
-          .order("created_at", { ascending: false });
-
-        if (accountId) {
-          query = query.or(
-            `from_account_id.eq.${accountId},to_account_id.eq.${accountId}`,
-          );
+        // PostgREST silently caps a response at 1000 rows; a single fetch
+        // would drop the OLDEST transactions once history grows past that,
+        // and every monthly total built from them would quietly shrink.
+        // Page through until a short page says we have everything.
+        const PAGE = 1000;
+        const pages = [];
+        for (let from = 0; ; from += PAGE) {
+          let query = supabase
+            .from("account_transactions")
+            .select("*")
+            .order("created_at", { ascending: false })
+            // Stable tiebreaker so identical timestamps can't shuffle rows
+            // across page boundaries (dropping or duplicating them).
+            .order("id", { ascending: true })
+            .range(from, from + PAGE - 1);
+          if (accountId) {
+            query = query.or(
+              `from_account_id.eq.${accountId},to_account_id.eq.${accountId}`,
+            );
+          }
+          const { data: page, error } = await query;
+          if (error) throw error;
+          pages.push(page ?? []);
+          if (!page || page.length < PAGE) break;
         }
-
-        const { data, error } = await query;
-
-        if (error) throw error;
+        const data = pages.flat();
 
         return (
           data?.map((row) => ({
@@ -3671,14 +3683,25 @@ export class DataService {
   ): Promise<Record<string, Expense[]>> {
     if (this.useSupabase && supabase) {
       try {
-        const { data, error } = await supabase
-          .from("expenses")
-          .select("*")
-          .gte("month_key", startMonthKey)
-          .lte("month_key", endMonthKey)
-          .order("date", { ascending: true });
-
-        if (error) throw error;
+        // Paged for the same reason as getAccountTransactions: PostgREST
+        // caps one response at 1000 rows, and a year of expenses is heading
+        // past that.
+        const PAGE = 1000;
+        const pages = [];
+        for (let from = 0; ; from += PAGE) {
+          const { data: page, error } = await supabase
+            .from("expenses")
+            .select("*")
+            .gte("month_key", startMonthKey)
+            .lte("month_key", endMonthKey)
+            .order("date", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, from + PAGE - 1);
+          if (error) throw error;
+          pages.push(page ?? []);
+          if (!page || page.length < PAGE) break;
+        }
+        const data = pages.flat();
 
         const result: Record<string, Expense[]> = {};
         for (const row of data ?? []) {

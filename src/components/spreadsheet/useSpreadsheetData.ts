@@ -102,10 +102,9 @@ export function useSpreadsheetData(
         const startKey = mk(startYear, startMonth);
         const endKey = mk(endYear, endMonth);
 
-        const [expensesByMonth, , manualEntries, cats, allTxs] =
+        const [expensesByMonth, manualEntries, cats, allTxs] =
           await Promise.all([
             dataService.getExpensesForMonthRange(startKey, endKey),
-            dataService.getBudgetsForMonthRange(startKey, endKey),
             dataService.getSpreadsheetEntries(),
             dataService.getCategories(),
             dataService.getAccountTransactions(),
@@ -204,16 +203,17 @@ export function useSpreadsheetData(
           // Net = Income + Payments (payments already negative).
           values.net = incomeTotal + values.payment_total;
 
-          // Savings (from manual entries)
-          values.savings_drhm = entryMap.get(`${monthKey}:savings_drhm`) ?? 0;
-          values.savings_dollar = entryMap.get(`${monthKey}:savings_dollar`) ?? 0;
-          values.savings_cash = entryMap.get(`${monthKey}:savings_cash`) ?? 0;
+          // Manual columns: null (not 0) when never filled, so the footer's
+          // avg/min aggregates only count months that actually have an entry.
+          // Cells render null and 0 identically (blank).
+          values.savings_drhm = entryMap.get(`${monthKey}:savings_drhm`) ?? null;
+          values.savings_dollar = entryMap.get(`${monthKey}:savings_dollar`) ?? null;
+          values.savings_cash = entryMap.get(`${monthKey}:savings_cash`) ?? null;
 
-          // Other (from manual entries)
-          values.other_credit_card = entryMap.get(`${monthKey}:other_credit_card`) ?? 0;
-          values.other_loans = entryMap.get(`${monthKey}:other_loans`) ?? 0;
-          values.other_buy_exchange = entryMap.get(`${monthKey}:other_buy_exchange`) ?? 0;
-          values.other_sell_exchange = entryMap.get(`${monthKey}:other_sell_exchange`) ?? 0;
+          values.other_credit_card = entryMap.get(`${monthKey}:other_credit_card`) ?? null;
+          values.other_loans = entryMap.get(`${monthKey}:other_loans`) ?? null;
+          values.other_buy_exchange = entryMap.get(`${monthKey}:other_buy_exchange`) ?? null;
+          values.other_sell_exchange = entryMap.get(`${monthKey}:other_sell_exchange`) ?? null;
 
           return {
             monthKey,
