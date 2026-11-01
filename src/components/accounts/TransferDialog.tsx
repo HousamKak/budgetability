@@ -18,6 +18,7 @@ import {
   CURRENCIES,
   type CurrencyCode,
   convertAt,
+  parseAmount,
   rateBetween,
 } from "@/lib/currency";
 import type { Account } from "@/lib/data-service";
@@ -64,8 +65,9 @@ export function TransferDialog({
   const [note, setNote] = useState("");
   // Cross-currency: the rate in force for THIS transfer (destination per 1
   // source). null = Settings default. Editing the rate recomputes the
-  // received amount; editing the received amount implies a rate. Either way
-  // the rate actually used is stored on the transaction.
+  // received amount; a typed received amount stays put and implies the rate,
+  // whichever order the two amounts are entered in. Either way the rate
+  // actually used is stored on the transaction.
   const [rateOverride, setRateOverride] = useState<number | null>(null);
   const [toAmountText, setToAmountText] = useState("");
   const [toAmountTouched, setToAmountTouched] = useState(false);
@@ -86,7 +88,7 @@ export function TransferDialog({
 
   const fromAccount = accounts.find((a) => a.id === fromAccountId);
   const toAccount = accounts.find((a) => a.id === toAccountId);
-  const transferAmount = parseFloat(amount) || 0;
+  const transferAmount = parseAmount(amount, fromCurrency) || 0;
   const crossCurrency = fromCurrency !== toCurrency;
   const availableFrom = fromAccount?.balances[fromCurrency] ?? 0;
   const effectiveRate = rateOverride ?? rateBetween(fromCurrency, toCurrency);
@@ -99,17 +101,41 @@ export function TransferDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromAccountId]);
   useEffect(() => {
-    if (toAccount && !toAccount.currencies.includes(toCurrency)) {
-      // Default the destination to the source currency when held (a plain
-      // move), else the destination wallet's primary (an exchange).
+    if (!toAccount) return;
+    if (toAccountId === fromAccountId) {
+      // Same wallet means an exchange, so the two sides must differ. The
+      // one-tap exchange button has already picked a valid pair by this point.
+      if (
+        toCurrency !== fromCurrency &&
+        toAccount.currencies.includes(toCurrency)
+      ) {
+        return;
+      }
+      // A single-currency wallet has no other side: stay on its one currency
+      // so the dialog reports a no-op rather than credit a currency it lacks.
       setToCurrency(
-        toAccount.currencies.includes(fromCurrency)
-          ? fromCurrency
-          : toAccount.currency,
+        toAccount.currencies.find((c) => c !== fromCurrency) ?? toAccount.currency,
       );
+      return;
     }
+    // Another wallet: a plain move in the source currency when held, else the
+    // destination wallet's primary (an exchange).
+    setToCurrency(
+      toAccount.currencies.includes(fromCurrency)
+        ? fromCurrency
+        : toAccount.currency,
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toAccountId, fromCurrency]);
+  }, [toAccountId, fromAccountId]);
+
+  // Within one wallet, moving the source onto the destination's currency would
+  // cancel the exchange, so the destination steps aside.
+  useEffect(() => {
+    if (toAccountId !== fromAccountId || toCurrency !== fromCurrency) return;
+    const other = toAccount?.currencies.find((c) => c !== fromCurrency);
+    if (other) setToCurrency(other);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromCurrency]);
 
   // Keep the received amount in sync with the rate in force until the user
   // types a received amount directly.
@@ -117,9 +143,14 @@ export function TransferDialog({
     if (!crossCurrency) return;
     if (toAmountTouched) return;
     setToAmountText(
-      transferAmount > 0 ? String(convertAt(transferAmount, effectiveRate)) : "",
+      transferAmount > 0
+        ? // LBP has no decimals, so 24,370.32 L.L. is shown as 24,370.
+          convertAt(transferAmount, effectiveRate).toFixed(
+            CURRENCIES[toCurrency].decimals,
+          )
+        : "",
     );
-  }, [crossCurrency, transferAmount, effectiveRate, toAmountTouched]);
+  }, [crossCurrency, transferAmount, effectiveRate, toAmountTouched, toCurrency]);
 
   // A new destination or currency pair resets any manual override.
   useEffect(() => {
@@ -127,7 +158,13 @@ export function TransferDialog({
     setRateOverride(null);
   }, [toAccountId, fromAccountId, fromCurrency, toCurrency]);
 
-  const toAmountNum = parseFloat(toAmountText) || 0;
+  const toAmountNum = parseAmount(toAmountText, toCurrency) || 0;
+  // A typed received amount is what the exchange actually gave, so the rate
+  // shown is derived from it and always matches what gets saved.
+  const impliedRate =
+    toAmountTouched && toAmountNum > 0 && transferAmount > 0
+      ? toAmountNum / transferAmount
+      : null;
   // Same wallet is allowed when the currencies differ (an exchange).
   const sameAccountNoop = fromAccountId === toAccountId && !crossCurrency;
 
@@ -327,7 +364,9 @@ export function TransferDialog({
             )}
             {sameAccountNoop && (
               <p className="text-xs text-red-500">
-                Pick a different currency to exchange within this account.
+                {toAccount && toAccount.currencies.length > 1
+                  ? "Pick a different currency to exchange within this account."
+                  : "This account holds one currency, so there is nothing to exchange. Pick another account."}
               </p>
             )}
           </div>
@@ -343,10 +382,9 @@ export function TransferDialog({
               </span>
               <input
                 id="amount"
-                type="number"
-                step={CURRENCIES[fromCurrency].inputStep}
-                min={CURRENCIES[fromCurrency].inputStep}
-                max={fromAccount ? availableFrom : undefined}
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder={CURRENCIES[fromCurrency].inputPlaceholder}
@@ -382,19 +420,13 @@ export function TransferDialog({
                 </span>
                 <input
                   id="to-amount"
-                  type="number"
-                  step={CURRENCIES[toCurrency].inputStep}
-                  min={CURRENCIES[toCurrency].inputStep}
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
                   value={toAmountText}
                   onChange={(e) => {
                     setToAmountTouched(true);
                     setToAmountText(e.target.value);
-                    // A typed received amount implies the rate the exchange
-                    // actually gave — reflect it in the rate field.
-                    const typed = parseFloat(e.target.value);
-                    if (typed > 0 && transferAmount > 0) {
-                      setRateOverride(typed / transferAmount);
-                    }
                   }}
                   placeholder={CURRENCIES[toCurrency].inputPlaceholder}
                   className={cn(
@@ -409,7 +441,7 @@ export function TransferDialog({
               <RateOverride
                 from={fromCurrency}
                 to={toCurrency}
-                rate={rateOverride}
+                rate={impliedRate ?? rateOverride}
                 onChange={(r) => {
                   setRateOverride(r);
                   // A typed rate drives the received amount again.

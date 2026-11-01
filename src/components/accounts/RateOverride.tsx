@@ -49,13 +49,12 @@ export function RateOverride({
 
   if (from === to) return null;
 
-  const commit = () => {
-    setEditing(false);
-    const typed = parseDecimal(text);
-    if (!(typed > 0)) {
-      setText(formatRate(view.perAnchor));
-      return;
-    }
+  // Applied on every keystroke so amounts follow the rate as it is typed.
+  // Partial text that isn't a number yet ("", ".") changes nothing.
+  const applyTyped = (value: string) => {
+    setText(value);
+    const typed = parseDecimal(value);
+    if (!(typed > 0)) return;
     // Convert the anchored figure back into "to per 1 from".
     const toPerFrom = view.anchor === from ? typed : 1 / typed;
     // Typing the default back clears the override.
@@ -80,10 +79,16 @@ export function RateOverride({
         autoComplete="off"
         value={text}
         onFocus={() => setEditing(true)}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
+        onChange={(e) => applyTyped(e.target.value)}
+        // Leaving the field reformats whatever rate is in force (the sync
+        // effect above), and a bad entry falls back to it.
+        onBlur={() => setEditing(false)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Enter") {
+            // Confirm the rate; don't submit the surrounding money form.
+            e.preventDefault();
+            (e.target as HTMLInputElement).blur();
+          }
         }}
         className={cn(
           "h-7 w-28 px-2 text-right rounded-md border bg-white text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-400/50",

@@ -158,6 +158,16 @@ export function parseDecimal(text: string): number {
 }
 
 /**
+ * Parse a typed money amount in a known currency. A currency with no decimals
+ * (LBP) can't have a decimal comma, so "89,500" is 89500 there, never 89.5.
+ */
+export function parseAmount(text: string, code: CurrencyCode): number {
+  return parseDecimal(
+    CURRENCIES[code].decimals === 0 ? text.replace(/,/g, "") : text,
+  );
+}
+
+/**
  * How a pair rate reads best: "1 <strong> = N <weak>", where the strong
  * currency is the one worth more per unit (fewer units per USD). Returns the
  * anchor currency and the number of `other` per 1 anchor.
